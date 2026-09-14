@@ -1,0 +1,38 @@
+# Blueprint Render per il backend di Kilo.
+# Guida completa: DEPLOY.md
+#
+# Il frontend NON è qui: va su Vercel (vedi DEPLOY.md).
+
+services:
+  - name: kilo-backend
+    type: web
+    runtime: python
+    plan: free
+    # Stessa regione del database Neon (eu-central-1 = Frankfurt): ogni query
+    # attraversa l'oceano se backend e database stanno in continenti diversi.
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Il pre-deploy command non è disponibile sul piano free, quindi le
+    # migrazioni partono all'avvio. `upgrade head` è idempotente: se lo schema
+    # è già aggiornato non fa nulla. Se una migrazione fallisce, il servizio
+    # non parte e la versione precedente resta online.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      # Chiave di firma delle sessioni: generata da Render (256 bit casuali).
+      # Attenzione: cambiarla disconnette tutti gli utenti.
+      - key: SECRET_KEY
+        generateValue: true
+      # Segreti: Render li chiede alla creazione del Blueprint, non stanno nel repo.
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: USDA_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-lite-latest

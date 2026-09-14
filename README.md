@@ -219,6 +219,14 @@ Le sezioni sono **Oggi · Scheda · Diario · Ricette · Progressi · Integrator
 
 ---
 
+## Deploy online
+
+Backend su **Render** (configurato da [`render.yaml`](render.yaml)), frontend
+su **Vercel**, database su Neon, tutto con piani gratuiti. La guida passo
+passo è in **[DEPLOY.md](DEPLOY.md)**.
+
+---
+
 ## Test
 
 ```bash
