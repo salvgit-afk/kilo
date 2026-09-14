@@ -33,3 +33,6 @@ Thumbs.db
 # --- Logs / DB dumps ---
 *.log
 *.sqlite3
+
+# Script locali di verifica UI
+frontend/probe.mjs
