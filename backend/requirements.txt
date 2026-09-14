@@ -1,0 +1,28 @@
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Database ---
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3      # driver Postgres (sync) per Neon
+alembic==1.14.0
+
+# --- External APIs ---
+# Nessun SDK: wger, USDA FoodData Central, TheMealDB e Google Gemini vengono
+# tutti chiamati via REST con httpx.
+
+# --- Utils ---
+python-dotenv==1.0.1
+httpx==0.28.1
+
+# --- Test ---
+pytest==8.3.4
+
+# --- Autenticazione ---
+# pwdlib con Argon2: algoritmo raccomandato da OWASP per le password, senza
+# i limiti di bcrypt sulla lunghezza. PyJWT per i token di sessione.
+pwdlib[argon2]==0.2.1
+pyjwt==2.10.1
+python-multipart==0.0.20

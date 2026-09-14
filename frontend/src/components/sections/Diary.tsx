@@ -1,0 +1,549 @@
+"use client";
+
+/**
+ * Diario alimentare — la via precisa del conteggio.
+ *
+ * La ricerca mostra **tutti** i candidati con i loro valori per 100 g e non
+ * sceglie al posto dell'utente. È voluto: i dati di Open Food Facts sono
+ * inseriti dagli utenti e a volte sbagliati (esiste davvero una voce "petto
+ * di pollo" da 65 kcal e 3 g di proteine). Con i valori in vista un errore
+ * del genere si riconosce a colpo d'occhio prima di finire nel conteggio.
+ *
+ * La parte agentica è «Cosa mi manca oggi»: alimenti e grammi calcolati per
+ * chiudere le proteine nelle calorie rimaste, aggiunti solo con un clic.
+ */
+
+import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  MEAL_LABELS,
+  api,
+  type Diary as DiaryData,
+  type FoodResult,
+  type GapSuggestions,
+} from "@/lib/api";
+import { mealForNow, type Intent } from "@/lib/coach";
+import { Card, Empty, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
+import { PageHeader } from "@/components/Shell";
+import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/controls";
+import { Mascot } from "@/components/Mascot";
+
+const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
+
+export function Diary({
+  profileId,
+  intent,
+  onIntentHandled,
+}: {
+  profileId: number;
+  intent?: Intent | null;
+  onIntentHandled?: () => void;
+}) {
+  const [data, setData] = useState<DiaryData | null>(null);
+  const [gap, setGap] = useState<GapSuggestions | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState<{ meal: string; query?: string } | null>(null);
+
+  const loadGap = useCallback(() => {
+    api
+      .get<GapSuggestions>(`/nutrition/diary/fill-gap?profile_id=${profileId}`)
+      .then(setGap)
+      .catch(() => setGap(null));
+  }, [profileId]);
+
+  const load = useCallback(async () => {
+    setData(await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}`));
+    setLoading(false);
+    loadGap();
+  }, [profileId, loadGap]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Il coach ha proposto di cercare un alimento: si apre la ricerca già compilata.
+  useEffect(() => {
+    if (intent?.section === "diario" && intent.foodQuery) {
+      setAdding({ meal: mealForNow(), query: intent.foodQuery });
+      onIntentHandled?.();
+    }
+  }, [intent, onIntentHandled]);
+
+  if (loading || !data) return <Spinner label="Carico il diario…" />;
+
+  const { totals, targets, remaining, progress } = data;
+  const byType = Object.fromEntries(data.meals.map((m) => [m.meal_type, m]));
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Nutrizione"
+        title="Diario di oggi"
+        description="Cerchi l'alimento, scegli tu quale e indichi i grammi: qui non c'è niente di stimato."
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_350px]">
+        <div className="space-y-3">
+          {MEAL_ORDER.map((type) => {
+            const meal = byType[type];
+            return (
+              <Card key={type} hover>
+                <div className="flex items-center justify-between gap-3 px-5 py-3.5">
+                  <div className="flex items-baseline gap-3">
+                    <h3 className="text-[14px] font-semibold text-white">{MEAL_LABELS[type]}</h3>
+                    {meal && meal.items.length > 0 && (
+                      <span className="font-mono text-[12px] tabular-nums text-white/45">
+                        {Math.round(meal.kcal)} kcal · P {Math.round(meal.protein_g)}g
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setAdding({ meal: type })}
+                    className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                      <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
+                    </svg>
+                    Aggiungi
+                  </button>
+                </div>
+
+                {meal && meal.items.length > 0 && (
+                  <div className="border-t border-white/[0.06] px-2 py-1.5">
+                    {meal.items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="group flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/[0.03]"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] text-white/80">{item.name}</p>
+                          <p className="text-[11px] text-white/35">{Math.round(item.quantity_g)} g</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="font-mono text-[12.5px] tabular-nums text-white/70">
+                            {Math.round(item.kcal)} kcal
+                          </p>
+                          <p className="font-mono text-[10.5px] tabular-nums text-white/30">
+                            P{Math.round(item.protein_g)} C{Math.round(item.carbs_g)} G
+                            {Math.round(item.fat_g)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await api.del(`/nutrition/diary/items/${item.id}`);
+                            load();
+                          }}
+                          aria-label="Elimina"
+                          className="shrink-0 rounded-lg p-1.5 text-white/20 opacity-0 transition group-hover:opacity-100 hover:bg-rose-400/10 hover:text-rose-300"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                            <path d="M7 6V4h10v2h4v2h-2v12H5V8H3V6h4Zm2 4v8h2v-8H9Zm4 0v8h2v-8h-2Z" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+
+        <div className="space-y-4">
+          {gap && <GapCard gap={gap} profileId={profileId} onAdded={load} />}
+
+          <Card>
+            <div className="flex flex-col items-center gap-4 px-5 py-5">
+              <ProgressRing
+                value={progress.kcal ?? 0}
+                label={`${Math.round(totals.kcal ?? 0)}`}
+                sublabel={`di ${Math.round(targets.target_kcal)} kcal`}
+              />
+              <p className="text-center text-[12.5px] text-white/45">
+                {remaining.kcal > 0
+                  ? `Ti restano ${Math.round(remaining.kcal)} kcal`
+                  : `Hai superato di ${Math.abs(Math.round(remaining.kcal))} kcal`}
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-white/[0.06] px-5 py-4">
+              <StatBar label="Proteine" value={totals.protein_g ?? 0} target={targets.protein_g} tone="lime" />
+              <StatBar label="Carboidrati" value={totals.carbs_g ?? 0} target={targets.carbs_g} tone="iris" />
+              <StatBar label="Grassi" value={totals.fat_g ?? 0} target={targets.fat_g} tone="rose" />
+              <StatBar label="Fibra" value={totals.fiber_g ?? 0} target={targets.fiber_g} tone="lime" />
+            </div>
+          </Card>
+
+          {targets.warnings.map((w, i) => (
+            <Notice key={i}>{w}</Notice>
+          ))}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {adding && (
+          <FoodSearchDialog
+            profileId={profileId}
+            mealType={adding.meal}
+            initialQuery={adding.query}
+            onClose={() => setAdding(null)}
+            onAdded={() => {
+              setAdding(null);
+              load();
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function GapCard({
+  gap,
+  profileId,
+  onAdded,
+}: {
+  gap: GapSuggestions;
+  profileId: number;
+  onAdded: () => void;
+}) {
+  const [busy, setBusy] = useState<number | null>(null);
+  const meal = mealForNow();
+
+  async function add(ingredientId: number, grams: number) {
+    setBusy(ingredientId);
+    try {
+      await api.post(`/nutrition/diary/items?profile_id=${profileId}`, {
+        ingredient_id: ingredientId,
+        grams,
+        meal_type: meal,
+      });
+      onAdded();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3 border-b border-white/[0.06] px-4 py-4">
+        <Mascot size={36} />
+        <div className="min-w-0">
+          <h2 className="text-[14.5px] font-semibold text-white">Cosa mi manca oggi</h2>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-white/50">{gap.message}</p>
+        </div>
+      </div>
+
+      {gap.foods.length > 0 && (
+        <div className="space-y-1.5 p-3">
+          {gap.foods.map((f) => (
+            <div
+              key={f.ingredient_id}
+              className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] text-white/85" title={f.name}>
+                  {f.name}
+                </p>
+                <p className="font-mono text-[11px] tabular-nums text-white/40">
+                  {f.grams} g · {f.kcal} kcal · P{f.protein_g} C{f.carbs_g} G{f.fat_g}
+                </p>
+                {f.habitual && <p className="text-[10.5px] text-lime-300/70">lo registri spesso</p>}
+              </div>
+              <button
+                disabled={busy !== null}
+                onClick={() => add(f.ingredient_id, f.grams)}
+                title={`Aggiungi ${f.grams} g a ${MEAL_LABELS[meal]}`}
+                aria-label={`Aggiungi ${f.grams} g di ${f.name}`}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-lime-400/25 bg-lime-400/[0.08] text-lime-200 transition hover:bg-lime-400/[0.18] disabled:opacity-40"
+              >
+                {busy === f.ingredient_id ? (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-lime-200/30 border-t-lime-200" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                    <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          ))}
+          <p className="px-1 pt-1 text-[11px] leading-snug text-white/30">
+            Con + la porzione va in {MEAL_LABELS[meal].toLowerCase()}: puoi eliminarla quando
+            vuoi.
+          </p>
+        </div>
+      )}
+
+      <div className="border-t border-white/[0.06] px-4 py-3">
+        <AskCoachButton
+          size="sm"
+          question="Cosa potrei mangiare nel resto della giornata per chiudere i miei macro?"
+          context="Sezione Diario"
+          label="Chiedi idee a Kilo"
+        />
+      </div>
+    </Card>
+  );
+}
+
+function FoodSearchDialog({
+  profileId,
+  mealType,
+  initialQuery,
+  onClose,
+  onAdded,
+}: {
+  profileId: number;
+  mealType: string;
+  initialQuery?: string;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [meal, setMeal] = useState(mealType);
+  const [query, setQuery] = useState(initialQuery ?? "");
+  const [results, setResults] = useState<FoodResult[]>([]);
+  const [names, setNames] = useState<Record<number, string>>({});
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<FoodResult | null>(null);
+  const [grams, setGrams] = useState<number | null>(100);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const gramsRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // La ricerca interroga USDA e Open Food Facts: si aspetta che l'utente
+  // smetta di digitare invece di partire a ogni tasto.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    let annullata = false;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      setError(null);
+      try {
+        const res = await api.get<FoodResult[]>(
+          `/nutrition/foods/search?q=${encodeURIComponent(q)}&limit=12`
+        );
+        if (annullata) return;
+        setResults(res);
+        // I nomi italiani mancanti arrivano dopo, senza far aspettare i risultati.
+        const mancanti = res.filter((r) => !r.name_it).map((r) => r.ingredient_id);
+        if (mancanti.length) {
+          api
+            .post<Record<string, string>>("/nutrition/foods/names", { ids: mancanti })
+            .then((tradotti) => {
+              if (annullata) return;
+              setNames((prev) => ({
+                ...prev,
+                ...Object.fromEntries(Object.entries(tradotti).map(([k, v]) => [Number(k), v])),
+              }));
+            })
+            .catch(() => {});
+        }
+      } catch (e) {
+        if (!annullata) setError(e instanceof Error ? e.message : "Ricerca non riuscita");
+      } finally {
+        if (!annullata) setSearching(false);
+      }
+    }, 450);
+    return () => {
+      annullata = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const nameOf = (r: FoodResult) => r.name_it ?? names[r.ingredient_id] ?? r.name;
+
+  async function add() {
+    if (!selected || !grams) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post(`/nutrition/diary/items?profile_id=${profileId}`, {
+        ingredient_id: selected.ingredient_id,
+        grams,
+        meal_type: meal,
+      });
+      onAdded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito ad aggiungere l'alimento");
+      setSaving(false);
+    }
+  }
+
+  const factor = (grams ?? 0) / 100;
+
+  return (
+    <Modal onClose={onClose} align="top" className="max-w-xl">
+      {/* Intestazione fissa: ricerca e pasto */}
+      <div className="shrink-0 space-y-3 border-b border-white/[0.06] p-4">
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-1">
+            <svg
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 fill-white/25"
+            >
+              <path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z" />
+            </svg>
+            <input
+              ref={inputRef}
+              className="input pl-10"
+              placeholder="Cerca un alimento — es. petto di pollo, riso, banana"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelected(null);
+              }}
+            />
+          </div>
+          <CloseButton onClose={onClose} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {MEAL_ORDER.map((m) => (
+            <button
+              key={m}
+              onClick={() => setMeal(m)}
+              className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition ${
+                meal === m
+                  ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
+                  : "border-white/[0.08] text-white/45 hover:text-white/80"
+              }`}
+            >
+              {MEAL_LABELS[m]}
+            </button>
+          ))}
+          <span className="ml-auto text-[11px] text-white/30">valori per 100 g</span>
+        </div>
+      </div>
+
+      {/* Risultati: l'unica parte che scorre */}
+      <div className="min-h-[140px] flex-1 overflow-y-auto overscroll-contain p-2">
+        {searching && <Spinner label="Cerco su USDA e Open Food Facts…" />}
+
+        {error && (
+          <div className="p-2">
+            <Notice>{error}</Notice>
+          </div>
+        )}
+
+        {!searching && !error && query.trim().length >= 2 && results.length === 0 && (
+          <Empty title="Nessun risultato" hint="Prova con un nome più semplice, es. «riso» o «yogurt greco»." />
+        )}
+
+        {!searching &&
+          results.map((r) => {
+            const isSelected = selected?.ingredient_id === r.ingredient_id;
+            const nome = nameOf(r);
+            return (
+              <button
+                key={r.ingredient_id}
+                onClick={() => {
+                  setSelected(r);
+                  setTimeout(() => gramsRef.current?.focus(), 60);
+                }}
+                className={`mb-1 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
+                  isSelected
+                    ? "border-lime-400/40 bg-lime-400/[0.08]"
+                    : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-white/85" title={r.name}>
+                    {nome}
+                  </p>
+                  <span
+                    className={`pill mt-1 border ${
+                      r.is_generic
+                        ? "border-lime-400/20 bg-lime-400/[0.08] text-lime-200/80"
+                        : "border-white/10 bg-white/[0.05] text-white/45"
+                    }`}
+                  >
+                    {r.source_label}
+                  </span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="font-mono text-[13px] tabular-nums text-white/80">
+                    {Math.round(r.kcal_100g)}
+                    <span className="text-[10px] text-white/35"> kcal</span>
+                  </p>
+                  <p className="font-mono text-[10.5px] tabular-nums text-white/35">
+                    P{r.protein_100g.toFixed(1)} C{r.carbs_100g.toFixed(1)} G{r.fat_100g.toFixed(1)}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+      </div>
+
+      {/* Piè di pagina fisso: sempre visibile, anche con molti risultati */}
+      <AnimatePresence initial={false}>
+        {selected && (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 14 }}
+            transition={{ duration: 0.18 }}
+            className="shrink-0 border-t border-white/[0.08] bg-ink-800/95 p-4"
+          >
+            <p className="mb-3 truncate text-[13px] font-medium text-white">{nameOf(selected)}</p>
+            <div className="mb-3 flex flex-wrap items-center gap-2.5">
+              <NumberField
+                value={grams}
+                onChange={setGrams}
+                min={1}
+                max={5000}
+                step={10}
+                suffix="g"
+                ariaLabel="Grammi"
+                inputRef={gramsRef}
+                onEnter={add}
+                className="w-40"
+              />
+              <div className="flex gap-1.5">
+                {[50, 100, 150, 200].map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setGrams(g)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[11.5px] transition ${
+                      grams === g
+                        ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
+                        : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-3 grid grid-cols-4 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
+              {[
+                ["kcal", Math.round(selected.kcal_100g * factor)],
+                ["proteine", `${(selected.protein_100g * factor).toFixed(1)}g`],
+                ["carboid.", `${(selected.carbs_100g * factor).toFixed(1)}g`],
+                ["grassi", `${(selected.fat_100g * factor).toFixed(1)}g`],
+              ].map(([label, value]) => (
+                <div key={label} className="text-center">
+                  <p className="font-mono text-[14px] tabular-nums text-white">{value}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-white/30">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <button className="btn-primary w-full" disabled={saving || !grams} onClick={add}>
+              {saving ? "Aggiungo…" : `Aggiungi a ${MEAL_LABELS[meal]}`}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Modal>
+  );
+}

@@ -1,0 +1,34 @@
+import { chromium } from "playwright-core";
+const browser = await chromium.launch({ channel: "chromium-headless-shell" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 950 }, deviceScaleFactor: 2 });
+const errs = [];
+page.on("pageerror", (e) => errs.push("PAGEERROR: " + e.message));
+
+const email = `finale${Date.now()}@test.it`;
+await page.goto("http://127.0.0.1:3000/", { waitUntil: "networkidle" });
+await page.evaluate(() => localStorage.clear());
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForTimeout(900);
+await page.locator('button:has-text("Crea account")').click();
+await page.locator('input[type=email]').fill(email);
+await page.locator('input[type=password]').fill("passwordsicura1");
+await page.locator('button[type=submit]').click();
+await page.waitForTimeout(2200);
+await page.locator('input[placeholder="Il tuo nome"]').fill("Salvatore");
+await page.locator('button:has-text("Continua")').click();
+await page.waitForTimeout(600);
+await page.locator('button:has-text("Inizia")').click();
+await page.waitForTimeout(2500);
+
+await page.locator("aside button").filter({ hasText: "Scheda" }).first().click();
+await page.waitForTimeout(900);
+await page.locator('button:has-text("Per gruppo muscolare")').click();
+await page.locator('button:has-text("Genera scheda")').click();
+await page.waitForTimeout(26000);
+console.log("titolo scheda:", (await page.locator("h1").first().textContent())?.trim());
+const righe = await page.locator("main p.text-\\[11\\.5px\\]").allTextContents().catch(()=>[]);
+const meta = await page.locator("main div.mt-0\\.5 span").allTextContents();
+console.log("prime etichette esercizio:", meta.slice(0, 6).join(" | "));
+await page.screenshot({ path: "/tmp/finale.png" });
+console.log("errori:", errs.length ? errs.slice(0,3).join("\n") : "nessuno");
+await browser.close();

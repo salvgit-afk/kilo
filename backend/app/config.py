@@ -1,0 +1,92 @@
+"""Configurazione centralizzata dell'applicazione.
+
+Tutte le chiavi/segreti sono letti da variabili d'ambiente (file `.env`).
+Non c'è alcun default con valori reali: se una chiave manca, i servizi che
+la usano falliscono in modo controllato, non l'avvio dell'app.
+
+Nota sulle integrazioni esterne: sono tutte gratuite e, tranne USDA, non
+richiedono nemmeno una chiave. wger espone senza autenticazione gli endpoint
+pubblici (esercizi e ingredienti), TheMealDB accetta la chiave di test "1".
+"""
+
+from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    # Database (Neon) — deve includere ?sslmode=require
+    database_url: str = "postgresql+psycopg://user:password@localhost/db?sslmode=require"
+
+    # --- LLM ---------------------------------------------------------------
+    # Google Gemini, piano gratuito: https://aistudio.google.com/apikey
+    # Serve solo a personalizzare/spiegare le schede e i consigli. Se manca,
+    # l'app resta usabile: i piani si generano comunque dai parametri della
+    # knowledge base, senza il testo esplicativo.
+    gemini_api_key: str = ""
+    # Alias "latest": robusto alle deprecazioni dei nomi con versione.
+    gemini_model: str = "gemini-flash-lite-latest"
+    # Modello per le traduzioni del catalogo: si fanno una volta sola e
+    # restano salvate, quindi conviene la qualità alla velocità.
+    gemini_translation_model: str = "gemini-3.5-flash"
+
+    # --- Database esercizi e alimenti --------------------------------------
+    # wger: open source (AGPL), endpoint pubblici senza autenticazione.
+    # Fornisce sia gli esercizi (con gruppo muscolare e attrezzatura) sia gli
+    # ingredienti (re-import di Open Food Facts).
+    wger_base_url: str = "https://wger.de/api/v2"
+
+    # USDA FoodData Central: chiave gratuita self-service, 1000 richieste/ora.
+    # https://fdc.nal.usda.gov/api-key-signup
+    # Copre gli alimenti generici/grezzi, dove Open Food Facts è più debole.
+    secret_key: str = ""
+    usda_api_key: str = ""
+    usda_base_url: str = "https://api.nal.usda.gov/fdc/v1"
+
+    # TheMealDB: ricette (struttura e procedimento). I macro NON vengono da
+    # qui: si calcolano sommando gli ingredienti (vedi models.Recipe).
+    themealdb_base_url: str = "https://www.themealdb.com/api/json/v1/1"
+
+    # --- CORS ---------------------------------------------------------------
+    frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("database_url")
+    @classmethod
+    def _force_psycopg_driver(cls, v: str) -> str:
+        """Accetta la connection string "grezza" di Neon.
+
+        Neon fornisce `postgresql://…` (o `postgres://…`): forziamo il driver
+        `psycopg` (v3) che usiamo qui, così si può incollare tale e quale.
+        """
+        if v.startswith("postgresql+"):
+            return v  # driver già esplicitato
+        if v.startswith("postgresql://"):
+            return "postgresql+psycopg://" + v[len("postgresql://") :]
+        if v.startswith("postgres://"):
+            return "postgresql+psycopg://" + v[len("postgres://") :]
+        return v
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.frontend_origins.split(",") if o.strip()]
+
+    @property
+    def gemini_configured(self) -> bool:
+        return bool(self.gemini_api_key)
+
+    @property
+    def usda_configured(self) -> bool:
+        return bool(self.usda_api_key)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Istanza singleton delle impostazioni (cache per tutto il processo)."""
+    return Settings()

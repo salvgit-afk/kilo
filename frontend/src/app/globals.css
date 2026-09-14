@@ -1,0 +1,261 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  La profondità qui non viene da ombre generiche ma da tre livelli
+  sovrapposti: un fondo con sorgenti luminose sfocate, superfici in vetro
+  semitrasparente che lasciano intravedere quel fondo, e bordi chiari solo
+  sul lato superiore — come se la luce arrivasse dall'alto. È ciò che
+  distingue un'interfaccia con volume da una piatta.
+*/
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --surface: 255 255 255;
+}
+
+* {
+  border-color: rgb(255 255 255 / 0.06);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: #07080d;
+  color: #e8eaf2;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Sorgenti luminose del fondo: restano fisse mentre il contenuto scorre,
+   così le superfici sembrano muoversi *sopra* la luce. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(52rem 34rem at 10% -12%, rgba(126, 116, 200, 0.13), transparent 62%),
+    radial-gradient(42rem 28rem at 94% 4%, rgba(160, 190, 90, 0.06), transparent 64%),
+    radial-gradient(40rem 40rem at 50% 112%, rgba(96, 86, 170, 0.09), transparent 62%);
+}
+
+/* Reticolo appena percettibile: dà una superficie di riferimento alla
+   profondità, altrimenti il fondo scuro sembra vuoto. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 100%);
+}
+
+@layer components {
+  /* Superficie in vetro: sfondo semitrasparente + sfocatura di ciò che sta
+     dietro + bordo luminoso solo in alto. */
+  .glass {
+    @apply relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-md;
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.07) inset,
+      0 -1px 0 0 rgb(0 0 0 / 0.35) inset,
+      0 24px 48px -28px rgb(0 0 0 / 0.9);
+  }
+
+  .glass-hover {
+    @apply transition-all duration-300;
+  }
+  .glass-hover:hover {
+    @apply border-white/[0.12] bg-white/[0.055];
+    transform: translateY(-2px);
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.1) inset,
+      0 28px 56px -26px rgb(0 0 0 / 0.95);
+  }
+
+  /* Riflesso diagonale: suggerisce una superficie fisica inclinata. */
+  .sheen::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0 rounded-[inherit];
+    background: linear-gradient(
+      130deg,
+      rgba(255, 255, 255, 0.05) 0%,
+      rgba(255, 255, 255, 0) 38%,
+      rgba(255, 255, 255, 0) 62%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wide;
+  }
+
+  .btn {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-semibold transition-all duration-200 disabled:opacity-40
+           disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn text-ink-900;
+    background: linear-gradient(180deg, #b8e04a 0%, #8fbf24 100%);
+    box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.32) inset;
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px -8px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.36) inset;
+  }
+  .btn-ghost {
+    @apply btn border border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08] hover:text-white;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-sm
+           text-white placeholder:text-white/25 outline-none transition
+           focus:border-lime-400/50 focus:ring-2 focus:ring-lime-400/15;
+  }
+
+  .label {
+    @apply mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-white/40;
+  }
+
+  /* Le avvertenze non sono decorazione: hanno un trattamento visivo distinto
+     per non essere scambiate per testo secondario. */
+  .notice {
+    @apply flex gap-2.5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3 text-[13px] leading-relaxed text-amber-100/90;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  background-clip: content-box;
+}
+
+/* I controlli nativi (menu a tendina, barre di scorrimento, selettori)
+   seguono il tema scuro invece di aprirsi grigio chiaro. */
+html {
+  color-scheme: dark;
+}
+
+/* Menu a tendina: stesso fondo scuro dell'interfaccia, testo nel lime del
+   tema, freccia disegnata invece di quella di sistema. */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.4rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aed44a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  background-size: 1rem;
+}
+select.input:hover {
+  border-color: rgb(174 212 74 / 0.3);
+}
+select option,
+select optgroup {
+  background-color: #12151f;
+  color: #cfe68a;
+}
+select option:checked {
+  background-color: #2b3517;
+  color: #aed44a;
+}
+
+/* Le freccette native dei campi numerici sono sostituite da NumberField. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="range"] {
+  accent-color: #aed44a;
+}
+
+/* Mascotte: sbatte le palpebre a riposo, ondeggia mentre pensa. */
+.mascot .mascot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-blink 5s infinite;
+}
+@keyframes mascot-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+.mascot-thinking .mascot-body {
+  transform-box: view-box;
+  transform-origin: 32px 58px;
+  animation: mascot-bob 0.8s ease-in-out infinite;
+}
+@keyframes mascot-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1.5px) rotate(-4deg);
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(4deg);
+  }
+}
+.mascot-happy .mascot-body {
+  transform-box: view-box;
+  transform-origin: 32px 58px;
+  animation: mascot-hop 0.7s ease-out;
+}
+@keyframes mascot-hop {
+  40% {
+    transform: translateY(-4px);
+  }
+}
+.coach-fab {
+  animation: coach-float 5.5s ease-in-out infinite;
+}
+@keyframes coach-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

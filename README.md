@@ -1,0 +1,306 @@
+# 🏋️ Kilo — allenamento e nutrizione
+
+Kilo è un coach personale che genera **schede di allenamento** e **target
+nutrizionali** su misura, ti segue nell'esecuzione e misura i progressi. La
+mascotte è un kettlebell verde lime e dà il nome all'agente, che in chat si
+presenta come Kilo.
+
+> **Principio fondamentale: i numeri non li inventa l'LLM.** Serie,
+> ripetizioni, RIR, recuperi, grammi di proteine e dosaggi sono calcolati in
+> modo deterministico dai documenti della [knowledge base](backend/app/knowledge_base/README.md),
+> che citano fonti ufficiali (ISSN, EFSA, WHO, IOC, Academy of Nutrition and
+> Dietetics). L'LLM **spiega e personalizza**. Se non è configurato, l'app
+> funziona lo stesso, solo senza testo discorsivo.
+>
+> Kilo propone e spiega, **non sostituisce un medico o un nutrizionista**.
+
+---
+
+## Cosa fa
+
+- **Account e profilo**: registrazione con email e password. Onboarding con
+  età, peso, stile di vita, obiettivo, giorni disponibili e attrezzatura.
+  Questionario di **screening** (PAR-Q+): se rispondi «sì» ad almeno una
+  domanda, il volume della scheda parte dal minimo e Kilo consiglia di far
+  valutare il piano da un medico.
+- **Scheda di allenamento**: split automatico o scelto dall'utente, volume
+  settimanale per gruppo muscolare, range di ripetizioni mirati (es. 2×6-8,
+  3×6-8), RIR e recuperi presi dalla letteratura. Nomi, descrizioni e
+  immagini dell'esecuzione sono **in italiano**.
+- **Sostituzione esercizi**: alternative con lo stesso muscolo primario e la
+  stessa tipologia (multi-articolare o isolamento), più le preferenze
+  personali salvate.
+- **Autoregolazione**: se riferisci DOMS che durano troppo o nessun
+  miglioramento, Kilo propone di **ridurre il volume** invece di aumentarlo.
+- **Target nutrizionali**: TDEE con Mifflin-St Jeor, calorie in base
+  all'obiettivo, proteine in g/kg (ISSN), poi grassi e carboidrati (EFSA).
+- **Diario alimentare** in stile contacalorie: cerchi un alimento (USDA per i
+  prodotti grezzi, Open Food Facts via wger per quelli confezionati), lo pesi
+  e lo aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
+  grammi per chiudere le proteine senza sforare le calorie. Non aggiunge nulla
+  senza la tua conferma.
+- **Ricette fit**: ricette da TheMealDB ordinate in base a quanto ti
+  avvicinano ai target rimasti. I macro sono calcolati sommando gli
+  ingredienti reali, e le ricette con dati insufficienti vengono scartate.
+- **Integratori (facoltativi)**: Kilo non li propone mai di sua iniziativa.
+  Se dichiari cosa assumi, ne valuta evidenze, dosaggio e rischi di qualità
+  del prodotto. Tra quelli trattati ci sono creatina, caffeina, beta-alanina,
+  HMB, BCAA, citrullina, glutammina, vitamina D, omega-3, moringa e
+  ashwagandha.
+- **Progressi**: peso corporeo confrontato su **medie mobili di 7 giorni**,
+  forza sul **massimale stimato**, aderenza e rilevamento dei plateau.
+- **Chat con Kilo**: risponde usando i tuoi dati reali e i documenti
+  pertinenti della knowledge base. **Non può modificare nulla**: se chiedi un
+  cambiamento, ti porta nella sezione giusta e decidi tu.
+
+---
+
+## Stack
+
+| Componente | Tecnologia |
+|---|---|
+| Backend | Python 3.11+, **FastAPI**, SQLAlchemy 2, **Alembic** |
+| Database | **PostgreSQL su [Neon](https://neon.tech)** (piano free), driver `psycopg` |
+| Autenticazione | Password con **Argon2** (`pwdlib`), sessioni **JWT** |
+| LLM | **Google Gemini** (piano gratuito), solo spiegazioni e traduzioni |
+| Esercizi | [free-exercise-db](https://github.com/yuhonas/free-exercise-db) / everkinetic (pubblico dominio), wger opzionale |
+| Alimenti | **USDA FoodData Central** (chiave gratuita), **wger / Open Food Facts** |
+| Ricette | **TheMealDB** (senza chiave) |
+| Frontend | **Next.js 15**, React 18, TypeScript, Tailwind, Framer Motion, Recharts |
+
+Tutte le integrazioni sono **gratuite**.
+
+---
+
+## Struttura del progetto
+
+```
+kilo/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # entry point FastAPI + /health
+│   │   ├── config.py            # lettura .env (pydantic-settings)
+│   │   ├── database.py          # engine/sessione SQLAlchemy (Neon)
+│   │   ├── models.py            # schema DB
+│   │   ├── schemas.py           # modelli Pydantic (I/O API)
+│   │   ├── knowledge_base/      # ⭐ documenti con fonti: la verità numerica
+│   │   ├── routers/             # auth · profile · workout · nutrition ·
+│   │   │                        # supplements · progress
+│   │   └── services/
+│   │       ├── workout_generator.py   # ⭐ schede deterministiche
+│   │       ├── autoregulation.py      # riduzione volume da feedback
+│   │       ├── exercise_library.py    # catalogo esercizi con immagini
+│   │       ├── exercise_swap.py       # alternative agli esercizi
+│   │       ├── nutrition_targets.py   # ⭐ TDEE, calorie, macro
+│   │       ├── food_diary.py · gap_filler.py
+│   │       ├── meal_suggestions.py · recipe_analyzer.py
+│   │       ├── supplements.py
+│   │       ├── progress_report.py
+│   │       ├── chat_agent.py          # la chat con Kilo
+│   │       ├── knowledge_base.py      # retrieval dei documenti per tag
+│   │       ├── llm_client.py · translation.py
+│   │       └── wger_client.py · usda_client.py · themealdb_client.py
+│   ├── alembic/                 # migrazioni schema
+│   ├── tests/                   # 266 test
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── app/                 # layout, pagina, icon.svg, apple-icon.png
+│   │   ├── components/
+│   │   │   ├── Shell.tsx        # barra laterale / navigazione mobile
+│   │   │   ├── Mascot.tsx · ChatBubble.tsx · ExerciseDetail.tsx
+│   │   │   └── sections/        # Auth · Onboarding · Today · Workout · Diary ·
+│   │   │                        # Recipes · Progress · Supplements · ProfileSection
+│   │   └── lib/                 # api.ts (client) · coach.ts (azioni del coach)
+│   ├── next.config.mjs          # proxy /api/* → backend
+│   └── package.json
+└── README.md
+```
+
+---
+
+## Prerequisiti
+
+- **Python 3.11+** e **Node 18.18+**
+- Un account gratuito su **Neon**. Consigliate, ma facoltative, le chiavi
+  gratuite di **Google Gemini** e **USDA**.
+
+## 1) Database gratuito su Neon
+
+1. Registrati su **https://neon.tech** (free tier, nessuna carta richiesta) e
+   crea un **Project**.
+2. In **Connection Details** copia la connection string *pooled*.
+3. Incollala in `DATABASE_URL`. Va bene anche il formato `postgresql://…`
+   fornito da Neon: il driver `psycopg` viene aggiunto automaticamente. Deve
+   finire con `?sslmode=require`.
+
+## 2) Chiavi gratuite (facoltative)
+
+| Chiave | Dove | A cosa serve | Senza |
+|---|---|---|---|
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey | Spiegazioni delle schede, chat con Kilo, traduzioni in italiano | Schede e target funzionano, ma senza testi e senza chat |
+| `USDA_API_KEY` | https://fdc.nal.usda.gov/api-key-signup | Alimenti grezzi precisi (pollo, uova, legumi…) | Il diario usa solo wger / Open Food Facts |
+
+wger e TheMealDB non richiedono alcuna registrazione.
+
+---
+
+## 3) Backend
+
+```bash
+cd backend
+
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+# apri .env e compila almeno DATABASE_URL e SECRET_KEY. Per generare SECRET_KEY:
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+```
+
+- Documentazione API interattiva: **http://localhost:8000/docs**
+- Health check: **http://localhost:8000/health**, che mostra quali
+  integrazioni sono configurate
+
+> Se sposti o rinomini la cartella del progetto, il `.venv` smette di
+> funzionare (`bad interpreter`): i suoi script contengono il percorso
+> assoluto. Il modo più semplice per sistemarlo è ricrearlo:
+> `rm -rf .venv` e poi ripetere i primi tre comandi.
+
+### Migrazioni Alembic
+
+- Applicare le migrazioni: `alembic upgrade head`
+- Tornare indietro di una: `alembic downgrade -1`
+- Nuova migrazione dopo aver cambiato `models.py`:
+  `alembic revision --autogenerate -m "descrizione"`
+
+L'URL del DB non è scritto in `alembic.ini`: viene letto da `.env`.
+
+## 4) Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Apri **http://localhost:3000**.
+
+Il browser chiama sempre `/api/*` e Next inoltra le richieste al backend
+(vedi `next.config.mjs`), quindi non servono CORS né URL assoluti. Se il
+backend non è su `127.0.0.1:8000`, avvia il frontend con
+`BACKEND_URL=http://host:porta npm run dev`.
+
+---
+
+## Primo avvio
+
+1. **Crea un account** e completa l'onboarding: nome, dati fisici, obiettivo,
+   giorni e attrezzatura.
+2. **Importa il catalogo esercizi**: in **Profilo** avvia la sincronizzazione
+   (`POST /catalog/sync-exercises`). Scarica la libreria con le immagini e
+   traduce nomi e descrizioni in italiano in background. Serve Gemini per le
+   traduzioni: finché non sono pronte, gli esercizi mostrano il nome
+   originale.
+3. In **Scheda** scegli il tipo di split e clicca **Genera scheda**.
+4. In **Diario** registra i pasti. In **Ricette** chiedi idee in base a ciò
+   che ti manca.
+5. Registra sessioni e pesate: **Progressi** si riempie col tempo.
+6. Scrivi a Kilo dal fumetto della chat, per esempio: *"i DOMS mi durano
+   troppo"*.
+
+Le sezioni sono **Oggi · Scheda · Diario · Ricette · Progressi · Integratori
+· Profilo**.
+
+---
+
+## Test
+
+```bash
+cd backend
+source .venv/bin/activate
+pytest -q
+```
+
+I test coprono generazione delle schede, autoregolazione, target
+nutrizionali e formule, diario, report di progressione, integratori,
+knowledge base e client esterni (con risposte simulate).
+
+---
+
+## Principali endpoint API
+
+| Metodo & path | Descrizione |
+|---|---|
+| `POST /auth/register` · `POST /auth/login` · `GET /auth/me` | Account e sessione |
+| `POST /profile` · `GET/PATCH /profile/{id}` | Profilo utente |
+| `POST/GET /profile/{id}/screening` | Screening PAR-Q+ |
+| `POST/GET /profile/{id}/weight` | Pesate |
+| `POST /workout/plans/generate` · `GET /workout/plans/active` | Generazione e scheda attiva |
+| `POST /workout/plan-exercises/{id}/swap` | Sostituisci un esercizio |
+| `POST/GET /workout/sessions` | Sessioni svolte e serie registrate |
+| `POST /workout/feedback` | Feedback (DOMS, progressi) → raccomandazione sul volume |
+| `GET /workout/exercises` · `GET/POST/DELETE /workout/preferences` | Catalogo e preferenze |
+| `POST /workout/chat` | Chat con Kilo |
+| `GET /nutrition/targets` · `POST /nutrition/targets/save` | Target nutrizionali |
+| `GET /nutrition/foods/search` | Ricerca alimenti (USDA + Open Food Facts) |
+| `GET /nutrition/diary` · `POST/PATCH/DELETE /nutrition/diary/items` | Diario alimentare |
+| `GET /nutrition/diary/fill-gap` | «Cosa mi manca oggi?» |
+| `GET /nutrition/recipes/suggest` | Ricette in base ai target rimasti |
+| `GET/POST/DELETE /supplements` · `GET /supplements/catalog` | Integratori dichiarati e schede informative |
+| `GET /progress/report` | Report di progressione |
+| `GET /catalog/status` · `POST /catalog/sync-exercises` | Stato e importazione del catalogo esercizi |
+
+---
+
+## Knowledge base e affidabilità
+
+La cartella [`backend/app/knowledge_base/`](backend/app/knowledge_base/README.md)
+contiene un documento per argomento: volume, RIR e cedimento, DOMS, scelta
+degli esercizi, proteine, macro e micronutrienti EFSA, timing dei pasti,
+idratazione, RED-S, dieta vegetariana e vegana, singoli integratori e
+screening. Ogni file dichiara **fonte, URL, data di pubblicazione, data di
+verifica e livello di affidabilità**.
+
+- **Retrieval per tag, non vettoriale**: ogni richiesta carica solo i
+  documenti pertinenti. Si può sempre dire da quali fonti è nato un
+  consiglio.
+- **Aggiornare la scienza significa modificare un file**, non riscrivere
+  codice.
+- `evidence_conduct.md` viene allegato **sempre**: impedisce all'agente di
+  validare acriticamente un integratore o inventare un dosaggio non coperto.
+- **Manutenzione**: rivedere ogni documento ogni 12-18 mesi, o quando esce
+  una nuova revisione della fonte.
+
+---
+
+## Guardrail e sicurezza
+
+- **Nessuna azione automatica**: la chat non modifica schede, target o
+  diario. Ogni cambiamento è un'azione esplicita dell'utente.
+- **Screening di sicurezza**: con almeno un «sì» al PAR-Q+ il volume viene
+  fissato al minimo del range e la scheda riporta l'avviso di consultare un
+  medico prima di aumentarlo.
+- **Integratori mai proposti di iniziativa**: la sezione è facoltativa, e
+  nessuna scheda o piano cambia perché non assumi qualcosa.
+- **Password**: solo hash Argon2, mai salvate né scritte nei log. Token JWT
+  con scadenza, firmati con `SECRET_KEY`.
+- **Nessun segreto nel repo**: chiavi e `DATABASE_URL` stanno solo in `.env`
+  (git-ignorato). Nel repo c'è solo `.env.example`.
+- **Errori esterni gestiti**: se Gemini, USDA, wger o TheMealDB non
+  rispondono, l'app degrada in modo controllato senza crashare. Traduzioni e
+  risposte LLM sono salvate in cache nel database.
+
+---
+
+## Origine del progetto
+
+Kilo nasce riutilizzando la base del precedente *"Cacciatore di Abbonamenti e
+Spese Fantasma"*: backend FastAPI, Neon, Alembic e il client Gemini con
+output JSON vincolato. Il dominio è stato poi completamente sostituito con
+allenamento e nutrizione.

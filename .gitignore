@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# --- Secrets / config ---
+.env
+*.env
+!.env.example
+
+# --- Node / frontend ---
+node_modules/
+dist/
+.vite/
+*.local
+.next/
+*.tsbuildinfo
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs / DB dumps ---
+*.log
+*.sqlite3
