@@ -135,6 +135,7 @@ mese, quindi rientra nelle 750.
 | Il frontend si apre ma accesso e dati non funzionano | `BACKEND_URL` mancante o aggiunta dopo il build | Impostala su Vercel e fai **Redeploy** |
 | Errore 500 su registrazione/accesso | `SECRET_KEY` assente o più corta di 32 caratteri | Controlla le variabili del servizio su Render |
 | Il deploy Render fallisce all'avvio | `DATABASE_URL` errata o migrazione fallita | Guarda i **Logs** del servizio: l'errore di Alembic o psycopg è lì |
+| `connection to server at "2a05:…" failed: Network is unreachable` | **Messaggio fuorviante.** psycopg prova prima gli indirizzi IPv4 di Neon e poi quelli IPv6, ma mostra solo l'ultimo errore. Render non ha IPv6, quindi il vero errore IPv4 resta nascosto. Il caso tipico è `sslmode=verify-full` copiato da Neon, che richiede un certificato che non c'è | Usa `?sslmode=require` nella `DATABASE_URL`, senza `verify-full` né `channel_binding` |
 | La prima richiesta dopo una pausa va in errore | Il servizio Render si stava riaccendendo | Riprova dopo un minuto, oppure attiva il ping |
 | `/health` mostra `gemini_configured: false` | Chiave non inserita | Aggiungi `GEMINI_API_KEY` su Render; il servizio si riavvia da solo |
 | Esercizi con nomi in inglese | Traduzioni ancora in corso o Gemini non configurato | Attendi qualche minuto o configura la chiave |
