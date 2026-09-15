@@ -226,8 +226,19 @@ export function ProfileSection({
                 </span>
               </div>
               <p className="text-[11.5px] leading-relaxed text-white/30">
-                Il catalogo esercizi viene da wger e sta in locale: le schede si generano
-                anche quando wger non è raggiungibile.
+                Il catalogo esercizi unisce Everkinetic (disegni, CC BY-SA 4.0), RepDB
+                (illustrazioni) e free-exercise-db (foto, pubblico dominio), senza doppioni,
+                più alcuni esercizi scritti da Kilo. Sta in locale: le schede si generano anche
+                quando le fonti non sono raggiungibili. Gli esercizi nuovi restano in inglese
+                finché la traduzione in background non è pronta.{" "}
+                <a
+                  href="https://repdb.co"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-white/20 underline-offset-2 hover:text-white/60"
+                >
+                  Exercise data by RepDB (repdb.co)
+                </a>
               </p>
               <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
                 {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}

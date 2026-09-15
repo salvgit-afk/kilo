@@ -50,7 +50,9 @@ def test_parse_entry_mappa_muscoli_fotogrammi_e_priorita():
     assert len(campi["demo_images"]) == 2
     assert campi["demo_images"][0].startswith(exercise_library.IMAGE_BASE_URL)
     assert campi["is_compound"] is True
-    assert campi["priority"] == 0  # primo fra gli esercizi di base del petto
+    # Nel catalogo unito gli esercizi di base del petto sono i disegni di
+    # Everkinetic: questa foto è un loro doppione, quindi priorità normale.
+    assert campi["priority"] == exercise_library.DEFAULT_PRIORITY
 
 
 @pytest.mark.parametrize(

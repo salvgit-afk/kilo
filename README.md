@@ -63,7 +63,7 @@ presenta come Kilo.
 | Database | **PostgreSQL su [Neon](https://neon.tech)** (piano free), driver `psycopg` |
 | Autenticazione | Password con **Argon2** (`pwdlib`), sessioni **JWT** |
 | LLM | **Google Gemini** (piano gratuito), solo spiegazioni e traduzioni |
-| Esercizi | [free-exercise-db](https://github.com/yuhonas/free-exercise-db) / everkinetic (pubblico dominio), wger opzionale |
+| Esercizi | [Everkinetic](https://github.com/everkinetic/data) (disegni, CC BY-SA 4.0), [RepDB](https://github.com/RepDB/exercise-dataset) (illustrazioni, free tier con attribuzione), [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (foto, pubblico dominio), più esercizi scritti a mano |
 | Alimenti | **USDA FoodData Central** (chiave gratuita), **wger / Open Food Facts** |
 | Ricette | **TheMealDB** (senza chiave) |
 | Frontend | **Next.js 15**, React 18, TypeScript, Tailwind, Framer Motion, Recharts |
@@ -203,10 +203,10 @@ backend non è su `127.0.0.1:8000`, avvia il frontend con
 1. **Crea un account** e completa l'onboarding: nome, dati fisici, obiettivo,
    giorni e attrezzatura.
 2. **Importa il catalogo esercizi**: in **Profilo** avvia la sincronizzazione
-   (`POST /catalog/sync-exercises`). Scarica la libreria con le immagini e
-   traduce nomi e descrizioni in italiano in background. Serve Gemini per le
-   traduzioni: finché non sono pronte, gli esercizi mostrano il nome
-   originale.
+   (`POST /catalog/sync-exercises`). Importa i tre cataloghi e gli esercizi
+   scritti a mano, toglie i doppioni e traduce nomi e descrizioni in italiano
+   in background. Serve Gemini per le traduzioni: finché non sono pronte, gli
+   esercizi mostrano il nome originale.
 3. In **Scheda** scegli il tipo di split e clicca **Genera scheda**.
 4. In **Diario** registra i pasti. In **Ricette** chiedi idee in base a ciò
    che ti manca.
@@ -303,6 +303,32 @@ verifica e livello di affidabilità**.
 - **Errori esterni gestiti**: se Gemini, USDA, wger o TheMealDB non
   rispondono, l'app degrada in modo controllato senza crashare. Traduzioni e
   risposte LLM sono salvate in cache nel database.
+
+---
+
+## Catalogo esercizi e crediti
+
+Il catalogo unisce tre fonti aperte e alcuni esercizi scritti a mano (circa
+1000 esercizi dopo aver tolto i doppioni):
+
+- **[Everkinetic](https://github.com/everkinetic/data)** — disegni al tratto,
+  licenza CC BY-SA 4.0.
+- **[RepDB](https://github.com/RepDB/exercise-dataset)** — illustrazioni flat.
+  **Exercise data by RepDB ([repdb.co](https://repdb.co))**. Il free tier
+  permette l'uso dentro l'app con attribuzione e vieta di ridistribuire il
+  dataset: nel repository non ci sono né i dati né le immagini RepDB, che
+  vengono importati nel database dell'app.
+- **[free-exercise-db](https://github.com/yuhonas/free-exercise-db)** — foto,
+  pubblico dominio.
+- **Kilo** (`backend/app/services/manual_exercises.py`) — varianti che nessuna
+  fonte contiene (Bayesian curl, alzate laterali al cavo dietro la schiena,
+  croci ai cavi dal basso, pendulum squat), senza immagini.
+
+Lo stesso esercizio compare spesso in più fonti con nomi diversi: i doppioni,
+verificati a mano, sono in `backend/app/data/exercise_duplicates.json`. Se ne
+tiene uno solo, preferendo disegni, poi illustrazioni, poi foto. La
+sincronizzazione da **Profilo** importa tutte le fonti e traduce in background
+gli esercizi nuovi, che nel frattempo compaiono in inglese.
 
 ---
 

@@ -307,26 +307,32 @@ def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
 def translate_library(
     *, source: str | None = None, max_failures: int = 4, pause_seconds: float = 4.0
 ) -> int:
-    """Traduce tutta la libreria esercizi, un blocco alla volta.
+    """Traduce la libreria esercizi, un blocco alla volta.
 
-    Pensata per girare in background o da riga di comando: apre una propria
-    sessione, fa una pausa fra i blocchi per restare nei limiti del piano
-    gratuito di Gemini e si ferma dopo alcuni errori consecutivi (quota
-    esaurita): rieseguendola riprende da dove si era interrotta.
+    Senza `source` traduce tutto il catalogo visibile (fonti del catalogo,
+    senza doppioni), prima gli esercizi di base. Pensata per girare in
+    background o da riga di comando: apre una propria sessione, fa una pausa
+    fra i blocchi per restare nei limiti del piano gratuito di Gemini e si
+    ferma dopo alcuni errori consecutivi (quota esaurita): rieseguendola
+    riprende da dove si era interrotta.
     """
     import time
 
     from app.database import SessionLocal
-    from app.services.exercise_library import SOURCE_EVERKINETIC
+    from app.services.exercise_library import CATALOG_SOURCES
 
-    source = source or SOURCE_EVERKINETIC
+    filtro_fonte = (
+        Exercise.source == source
+        if source
+        else Exercise.source.in_(CATALOG_SOURCES) & Exercise.duplicate_of_id.is_(None)
+    )
     totale = fallimenti = 0
     with SessionLocal() as db:
         while True:
             blocco = list(
                 db.scalars(
                     select(Exercise)
-                    .where(Exercise.source == source, Exercise.name_it.is_(None))
+                    .where(filtro_fonte, Exercise.name_it.is_(None))
                     .order_by(Exercise.priority, Exercise.id)
                     .limit(EXERCISE_BATCH_SIZE)
                 )

@@ -414,11 +414,17 @@ class Exercise(Base):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_compound: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Provenienza: "wger" oppure "free_exercise_db" (vedi exercise_library).
+    # Provenienza: "everkinetic", "repdb", "free_exercise_db", "kilo" (scritti
+    # a mano) oppure "wger" per le vecchie schede (vedi exercise_library).
     source: Mapped[str] = mapped_column(
         String(32), default="wger", server_default="wger", index=True
     )
     external_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    # Stesso esercizio già presente in un'altra fonte: resta nel database per le
+    # schede e le preferenze che lo usano, ma esce dal catalogo.
+    duplicate_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exercises.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Più basso = esercizio "di base" del distretto, proposto per primo.
     priority: Mapped[int] = mapped_column(Integer, default=100, server_default="100")

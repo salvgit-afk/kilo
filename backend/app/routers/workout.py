@@ -183,13 +183,18 @@ def delete_plan(plan_id: int, profile_id: int, db: Session = Depends(get_db)) ->
     response_model=list[AlternativeOut],
 )
 def list_alternatives(
-    plan_exercise_id: int, profile_id: int, limit: int = 6, db: Session = Depends(get_db)
+    plan_exercise_id: int,
+    profile_id: int,
+    limit: int = 6,
+    q: str | None = None,
+    db: Session = Depends(get_db),
 ) -> list[AlternativeOut]:
-    """Alternative per lo stesso gruppo muscolare.
+    """Alternative per lo stesso gruppo muscolare, filtrabili per nome.
 
     Serve all'aderenza: un esercizio scelto e gradito viene eseguito, uno
     imposto e noioso viene saltato.
     """
+    limit = max(1, min(limit, 40))
     profile = get_profile(profile_id, db)
     riga = db.get(WorkoutPlanExercise, plan_exercise_id)
     if riga is None:
@@ -197,7 +202,7 @@ def list_alternatives(
 
     try:
         alternative = exercise_swap.find_alternatives(
-            db, profile, riga.exercise, limit=limit
+            db, profile, riga.exercise, limit=limit, q=q
         )
     except exercise_swap.SwapError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

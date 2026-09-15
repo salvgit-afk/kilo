@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -100,7 +100,11 @@ def catalog_status(db: Session = Depends(get_db)) -> CatalogStatusOut:
     ).all()
 
     return CatalogStatusOut(
-        exercises_cached=db.scalar(select(func.count()).select_from(Exercise)) or 0,
+        # Solo il catalogo visibile: i doppioni restano nel database ma non
+        # sono esercizi in più fra cui scegliere.
+        exercises_cached=db.scalar(
+            select(func.count()).select_from(Exercise).where(exercise_library.catalog_condition(db))
+        ) or 0,
         ingredients_cached=db.scalar(select(func.count()).select_from(Ingredient)) or 0,
         muscles=list(muscoli),
     )
@@ -110,13 +114,17 @@ def catalog_status(db: Session = Depends(get_db)) -> CatalogStatusOut:
 def sync_exercises(
     background: BackgroundTasks, include_wger: bool = False, db: Session = Depends(get_db)
 ) -> SyncResultOut:
-    """Importa la libreria esercizi con animazioni (free-exercise-db).
+    """Importa il catalogo esercizi: Everkinetic, RepDB, free-exercise-db e
+    gli esercizi scritti a mano, senza doppioni.
 
-    La traduzione in italiano parte in background: richiede qualche decina di
-    chiamate all'LLM e non ha senso far aspettare la risposta. Gli esercizi
-    non ancora tradotti mostrano intanto il nome originale.
+    La traduzione in italiano parte in background: richiede molte chiamate
+    all'LLM e non ha senso far aspettare la risposta. Gli esercizi non ancora
+    tradotti mostrano intanto il nome originale.
     """
-    risultato = exercise_library.sync_library(db, source=exercise_library.SOURCE_EVERKINETIC)
+    try:
+        risultato = exercise_library.sync_catalog(db)
+    except exercise_library.LibraryError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
     if include_wger:
         catalog_sync.sync_exercises(db)
     background.add_task(translation.translate_library)

@@ -1,32 +1,38 @@
-"""Catalogo esercizi da free-exercise-db, con animazione dell'esecuzione.
+"""Catalogo esercizi: tre fonti aperte unite, più gli esercizi scritti a mano.
 
-Perché questa fonte si affianca a wger (verificato direttamente, 09/2026):
+Fonti (verificate direttamente, 09/2026):
 
-  - **free-exercise-db** (github.com/yuhonas/free-exercise-db) contiene 873
-    esercizi, e 873 di questi hanno **due fotogrammi** — posizione iniziale e
-    finale — più le istruzioni passo passo, il muscolo primario, i secondari,
-    l'attrezzatura e la meccanica (multi-articolare/isolamento). Licenza
-    *The Unlicense*: pubblico dominio, riutilizzabile senza vincoli.
-  - **wger** espone 78 video in tutto, in formato HEVC da 30-50 MB: Chrome
-    non li riproduce, quindi non sono utilizzabili in un'interfaccia web. Le
-    descrizioni e le immagini mancano per buona parte del catalogo.
+  - **Everkinetic** (github.com/everkinetic/data, CC BY-SA 4.0): disegni al
+    tratto nello stesso stile, posizione di partenza e di arrivo.
+  - **RepDB** (github.com/RepDB/exercise-dataset, free tier): illustrazioni
+    flat a colori, partenza e arrivo. La licenza chiede un'attribuzione
+    visibile ("Exercise data by RepDB (repdb.co)") e vieta di ridistribuire il
+    dataset: le voci stanno solo nel database dell'app, le immagini sono lette
+    dal repository ufficiale.
+  - **free-exercise-db** (github.com/yuhonas/free-exercise-db, pubblico
+    dominio): foto reali, partenza e arrivo.
+  - **Kilo** (`manual_exercises.py`): varianti che nessuna fonte contiene.
 
-Alternando i due fotogrammi si ottiene un'animazione del movimento: non è un
-video, ma mostra da dove si parte e dove si arriva, che è ciò che serve per
-capire l'esecuzione. L'interfaccia lo dichiara come tale.
+Nessuna fonte da sola copre tutte le varianti comuni in palestra, per questo
+sono unite. Lo stesso esercizio compare spesso in più fonti con nomi diversi:
+i doppioni verificati a mano stanno in `app/data/exercise_duplicates.json` e se
+ne tiene uno solo, preferendo i disegni alle illustrazioni e queste alle foto
+(`CATALOG_SOURCES`). I doppioni restano nel database, perché schede e
+preferenze salvate li referenziano, ma escono dal catalogo.
 
-Gli esercizi wger restano nel database: le schede già salvate li
-referenziano. Quando questa libreria è importata, però, generatore,
-alternative e preferenze attingono solo da qui, per non proporre lo stesso
-esercizio due volte con due nomi diversi.
+Gli esercizi wger restano nel database per le schede più vecchie e non fanno
+parte del catalogo.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+from pathlib import Path
 
 import httpx
-from sqlalchemy import and_, exists, select, true
+from sqlalchemy import and_, case, exists, select
 from sqlalchemy.orm import Session
 
 from app.models import Exercise
@@ -44,6 +50,15 @@ IMAGE_BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/mai
 # forza, e i movimenti olimpici richiedono una tecnica da apprendere con un
 # allenatore, non da un'animazione.
 INCLUDED_CATEGORIES = frozenset({"strength", "powerlifting"})
+
+# Esercizi a tempo o a distanza (plank, tenute, camminate con carico, slitta):
+# una prescrizione in serie e ripetizioni non ha senso. Gli affondi camminati
+# restano, perché si contano in ripetizioni.
+TIMED_EXERCISE_PATTERN = re.compile(
+    r"\b(plank|planks|hold|wall sit|carry|farmer'?s walk|lateral walk|sumo walk|"
+    r"monster walk|heel-to-toe walk|backward walk|sled|isometric|bosu)\b",
+    re.IGNORECASE,
+)
 
 # Muscoli del dataset -> gruppi usati dal generatore (gli stessi nomi di wger).
 # "middle back" confluisce nel dorso: rematori e pulley allenano gli stessi
@@ -76,88 +91,16 @@ SECONDARY_ONLY = {
 # Stesso valore usato da wger e dal generatore per il corpo libero.
 BODYWEIGHT = "none (bodyweight exercise)"
 
-# Gli esercizi "di base" di ogni distretto, in ordine di priorità.
-#
-# Non è una classifica di efficacia — `exercise_choice_and_focus.md` ricorda
-# che a parità di muscolo allenato conta l'aderenza. Serve a evitare il
-# problema già visto con wger: senza un criterio, il generatore sceglieva
-# esercizi marginali ("Alternating Renegade Row") al posto di quelli che si
-# trovano in qualsiasi palestra. Gli id sono verificati sul dataset.
-STAPLES: dict[str, list[str]] = {
-    "Chest": [
-        "Barbell_Bench_Press_-_Medium_Grip", "Leverage_Chest_Press",
-        "Dumbbell_Bench_Press", "Incline_Dumbbell_Press", "Butterfly",
-        "Cable_Crossover", "Machine_Bench_Press",
-        "Barbell_Incline_Bench_Press_-_Medium_Grip", "Dumbbell_Flyes",
-        "Incline_Cable_Flye", "Dips_-_Chest_Version", "Pushups",
-    ],
-    "Lats": [
-        "Wide-Grip_Lat_Pulldown", "Seated_Cable_Rows", "Pullups",
-        "One-Arm_Dumbbell_Row", "Bent_Over_Barbell_Row", "Straight-Arm_Pulldown",
-        "Close-Grip_Front_Lat_Pulldown", "T-Bar_Row_with_Handle", "Leverage_High_Row",
-        "Chin-Up", "V-Bar_Pulldown", "Bent_Over_Two-Dumbbell_Row",
-    ],
-    "Shoulders": [
-        "Dumbbell_Shoulder_Press", "Side_Lateral_Raise", "Leverage_Shoulder_Press",
-        "Cable_Seated_Lateral_Raise", "Reverse_Machine_Flyes", "Face_Pull",
-        "Machine_Shoulder_Military_Press", "Standing_Military_Press",
-        "Seated_Bent-Over_Rear_Delt_Raise", "Arnold_Dumbbell_Press",
-    ],
-    "Biceps": [
-        "Barbell_Curl", "Alternate_Incline_Dumbbell_Curl", "Hammer_Curls",
-        "Preacher_Curl", "Dumbbell_Bicep_Curl", "Standing_Biceps_Cable_Curl",
-        "EZ-Bar_Curl", "Machine_Bicep_Curl", "Cable_Preacher_Curl",
-        "Concentration_Curls",
-    ],
-    "Triceps": [
-        "Triceps_Pushdown_-_Rope_Attachment", "Close-Grip_Barbell_Bench_Press",
-        "Cable_Rope_Overhead_Triceps_Extension", "Triceps_Pushdown",
-        "EZ-Bar_Skullcrusher", "Dips_-_Triceps_Version", "Machine_Triceps_Extension",
-        "Dumbbell_One-Arm_Triceps_Extension",
-    ],
-    "Quads": [
-        "Barbell_Squat", "Leg_Press", "Leg_Extensions", "Hack_Squat",
-        "Split_Squat_with_Dumbbells", "Goblet_Squat", "Smith_Machine_Squat",
-        "Dumbbell_Lunges", "Front_Barbell_Squat",
-    ],
-    "Hamstrings": [
-        "Romanian_Deadlift", "Lying_Leg_Curls", "Seated_Leg_Curl",
-        "Stiff-Legged_Dumbbell_Deadlift", "Standing_Leg_Curl", "Glute_Ham_Raise",
-    ],
-    "Glutes": [
-        "Barbell_Hip_Thrust", "Barbell_Glute_Bridge", "One-Legged_Cable_Kickback",
-        "Thigh_Abductor", "Glute_Kickback", "Single_Leg_Glute_Bridge",
-    ],
-    "Calves": [
-        "Standing_Calf_Raises", "Seated_Calf_Raise",
-        "Calf_Press_On_The_Leg_Press_Machine", "Smith_Machine_Calf_Raise",
-        "Standing_Barbell_Calf_Raise",
-    ],
-    # Senza l'ab roller, che è l'unico "multi-articolare" del gruppo e come
-    # tale veniva scelto per primo anche per chi inizia, e senza il plank:
-    # è un esercizio a tempo, e una prescrizione in ripetizioni non ha senso.
-    "Abs": [
-        "Cable_Crunch", "Hanging_Leg_Raise", "Ab_Crunch_Machine",
-        "Crunches", "Flat_Bench_Lying_Leg_Raise",
-    ],
-    "Trapezius": ["Dumbbell_Shrug", "Barbell_Shrug", "Leverage_Shrug", "Cable_Shrugs"],
-}
-
 # Priorità di tutto ciò che non è fra gli esercizi di base: dopo di loro.
 DEFAULT_PRIORITY = 100
-
-_STAPLE_RANK = {
-    external_id: rank for ids in STAPLES.values() for rank, external_id in enumerate(ids)
-}
 
 
 # --- Everkinetic: disegni con un unico stile -------------------------------------
 #
 # Verificato il 13/09/2026 su github.com/everkinetic/data: licenza CC BY-SA
 # 4.0, 289 esercizi con due disegni a tratto nello stesso stile (posizione di
-# partenza e di arrivo) e i passaggi dell'esecuzione. È la fonte scelta per la
-# coerenza visiva: free-exercise-db ha foto reali, wger mescola foto e disegni
-# di stili diversi. Limite noto: il dataset non contiene l'hip thrust.
+# partenza e di arrivo) e i passaggi dell'esecuzione. Limite noto: il dataset
+# non contiene l'hip thrust (arriva da RepDB).
 
 SOURCE_EVERKINETIC = "everkinetic"
 EVERKINETIC_DATASET_URL = (
@@ -238,12 +181,6 @@ EVERKINETIC_STAPLES: dict[str, list[str]] = {
     "Trapezius": ["0005", "0030", "0009", "0041"],
 }
 
-_EK_RANK = {
-    external_id: rank
-    for ids in EVERKINETIC_STAPLES.values()
-    for rank, external_id in enumerate(ids)
-}
-
 # Gruppi per cui il generatore programma esercizi.
 _PLAN_GROUPS = frozenset(MUSCLE_MAP.values())
 
@@ -259,6 +196,112 @@ _ISOLATION_WORDS = (
     "shrug", "crossover",
 )
 _SINGLE_JOINT_GROUPS = frozenset({"Biceps", "Calves", "Abs", "Trapezius"})
+
+
+# --- RepDB: illustrazioni flat a colori --------------------------------------------
+
+SOURCE_REPDB = "repdb"
+REPDB_DATASET_URL = "https://raw.githubusercontent.com/RepDB/exercise-dataset/main/exercises.json"
+REPDB_IMAGE_BASE_URL = "https://raw.githubusercontent.com/RepDB/exercise-dataset/main/"
+REPDB_ATTRIBUTION = "Exercise data by RepDB (repdb.co)"
+
+# Muscoli anatomici del dataset -> gruppi della scheda. Romboidi nel dorso e i
+# tre fasci del deltoide nelle spalle, come fanno gli altri cataloghi.
+REPDB_MUSCLES = {
+    "gluteus_maximus": "Glutes", "gluteus_medius": "Glutes", "abductors": "Glutes",
+    "quadriceps": "Quads", "pectoralis_major": "Chest",
+    "latissimus_dorsi": "Lats", "rhomboids": "Lats",
+    "anterior_deltoid": "Shoulders", "lateral_deltoid": "Shoulders",
+    "posterior_deltoid": "Shoulders", "supraspinatus": "Shoulders",
+    "hamstrings": "Hamstrings",
+    "rectus_abdominis": "Abs", "obliques": "Abs", "transverse_abdominis": "Abs",
+    "triceps_brachii": "Triceps",
+    "biceps_brachii": "Biceps", "brachialis": "Biceps", "brachioradialis": "Biceps",
+    "trapezius": "Trapezius", "gastrocnemius": "Calves", "soleus": "Calves",
+}
+REPDB_SECONDARY_ONLY = {
+    "erector_spinae": "Lower back", "quadratus_lumborum": "Lower back",
+    "forearm_flexors": "Forearms", "forearm_extensors": "Forearms", "forearms": "Forearms",
+    "adductors": "Adductors",
+}
+
+REPDB_EQUIPMENT = {
+    "dumbbell": "dumbbell", "barbell": "barbell", "kettlebell": "kettlebell",
+    "cable": "cable", "lat_pulldown_machine": "cable", "pull_up_bar": "pull-up bar",
+    "ez_bar": "e-z curl bar", "smith_machine": "smith machine",
+    "loop_band": "bands", "resistance_band": "bands",
+    "suspension_trainer": "suspension trainer", "flat_bench": "bench",
+    "stability_ball": "exercise ball", "rings": "rings", "plates": "weight plate",
+    "dip_station": "parallel bars", "trap_bar": "trap bar", "ab_wheel": "ab wheel",
+    "slam_ball": "medicine ball",
+}
+_REPDB_MACHINES = frozenset({
+    "leg_press", "leg_curl", "hack_squat", "leg_extension", "pec_deck",
+    "glute_ham_developer",
+})
+
+
+def _repdb_equipment(value: str | None) -> str:
+    if not value:
+        return BODYWEIGHT
+    if value in REPDB_EQUIPMENT:
+        return REPDB_EQUIPMENT[value]
+    if value in _REPDB_MACHINES or value.endswith("_machine"):
+        return "machine"
+    return value.replace("_", " ")
+
+
+# --- Esercizi di base dell'intero catalogo ----------------------------------------
+#
+# Non è una classifica di efficacia — `exercise_choice_and_focus.md` ricorda
+# che a parità di muscolo allenato conta l'aderenza. Serve a proporre per primi
+# gli esercizi che si trovano in qualsiasi palestra. Base Everkinetic, più
+# quelli che mancano (macchine, cavi, hip thrust) dalle altre fonti. Gli id sono
+# verificati sui dataset; il formato è "sorgente:id".
+
+# Esercizi di base Everkinetic che nel dataset non hanno i disegni, e quindi non
+# vengono importati: al loro posto, nella stessa posizione, l'equivalente RepDB.
+_EVERKINETIC_WITHOUT_DRAWINGS = {
+    "0084": "repdb:chest-press-machine",       # Incline Chest Press (macchina)
+    "0047": "repdb:pec-deck",                  # Butterfly Machine
+    "0097": "repdb:lat-pulldown",              # Pull Down: Wide Bar (Wide Grip)
+    "0298": "repdb:barbell-row",               # Bent Over Row with Barbell
+    "0089": "repdb:chin-ups",                  # Chin Ups
+    "0012": "repdb:dumbbell-shoulder-press",   # Dumbbell Shoulder Press
+    "0003": "repdb:machine-shoulder-press",    # Seated Shoulder Press Machine
+    "0006": "repdb:arnold-press",              # Arnold Press
+    "0283": "repdb:dumbbell-calf-raise",       # Standing Calf Raise with Dumbbell
+}
+_STAPLES_BEFORE = {
+    # Everkinetic non ha l'hip thrust, che per i glutei è l'esercizio di base.
+    "Glutes": ["repdb:hip-thrust"],
+}
+_STAPLES_AFTER = {
+    "Chest": ["repdb:machine-chest-fly"],
+    "Lats": [
+        "free_exercise_db:Leverage_Iso_Row", "free_exercise_db:Leverage_High_Row",
+        "repdb:chest-supported-smith-machine-row",
+    ],
+    "Shoulders": [
+        "repdb:cable-lateral-raise", "repdb:face-pull", "free_exercise_db:Reverse_Machine_Flyes",
+    ],
+    "Triceps": ["free_exercise_db:Cable_Rope_Overhead_Triceps_Extension"],
+    "Glutes": ["repdb:barbell-glute-bridge", "repdb:smith-machine-hip-thrust", "repdb:glute-kickback"],
+    "Abs": ["repdb:cable-crunch", "repdb:hanging-leg-raise", "repdb:machine-seated-crunch"],
+}
+CATALOG_STAPLES: dict[str, list[str]] = {
+    gruppo: _STAPLES_BEFORE.get(gruppo, [])
+    + [_EVERKINETIC_WITHOUT_DRAWINGS.get(i, f"{SOURCE_EVERKINETIC}:{i}") for i in ids]
+    + _STAPLES_AFTER.get(gruppo, [])
+    for gruppo, ids in EVERKINETIC_STAPLES.items()
+}
+_CATALOG_RANK = {
+    voce: rank for voci in CATALOG_STAPLES.values() for rank, voce in enumerate(voci)
+}
+
+
+def staple_priority(source: str, external_id: str) -> int:
+    return _CATALOG_RANK.get(f"{source}:{external_id}", DEFAULT_PRIORITY)
 
 
 def everkinetic_is_compound(title: str, primary: str) -> bool:
@@ -322,7 +365,63 @@ def parse_everkinetic_entry(raw: dict) -> dict | None:
         demo_images=immagini,
         is_compound=everkinetic_is_compound(titolo, primario),
         level=None,
-        priority=_EK_RANK.get(external_id, DEFAULT_PRIORITY),
+        priority=staple_priority(SOURCE_EVERKINETIC, external_id),
+    )
+
+
+def parse_repdb_entry(raw: dict) -> dict | None:
+    """Converte una voce di RepDB nei campi di `Exercise`.
+
+    Restituisce `None` per ciò che non serve in una scheda da sala pesi:
+    stretching, cardio e olimpici, esercizi a tempo, muscolo primario che non
+    è un gruppo della scheda (avambracci, adduttori).
+    """
+    if raw.get("category") != "strength":
+        return None
+    nome = (raw.get("name_en") or "").strip()
+    external_id = str(raw.get("id") or "")
+    if not nome or not external_id or TIMED_EXERCISE_PATTERN.search(nome):
+        return None
+
+    primari = [REPDB_MUSCLES[m] for m in raw.get("primary_muscles") or [] if m in REPDB_MUSCLES]
+    if not primari:
+        return None
+    primario = primari[0]
+
+    secondari: list[str] = []
+    for muscolo in [*(raw.get("primary_muscles") or [])[1:], *(raw.get("secondary_muscles") or [])]:
+        gruppo = REPDB_MUSCLES.get(muscolo) or REPDB_SECONDARY_ONLY.get(muscolo)
+        if gruppo and gruppo != primario and gruppo not in secondari:
+            secondari.append(gruppo)
+
+    pose = (raw.get("images") or {}).get("flat") or {}
+    percorsi = [pose[k] for k in ("start", "peak") if pose.get(k)] or (
+        [pose["main"]] if pose.get("main") else []
+    )
+    immagini = [f"{REPDB_IMAGE_BASE_URL}{p}" for p in percorsi]
+    if not immagini:
+        return None
+
+    passi = [s.strip() for s in raw.get("instructions_en") or [] if s and s.strip()]
+    consigli = [s.strip() for s in raw.get("tips_en") or [] if s and s.strip()]
+
+    return dict(
+        external_id=external_id,
+        name=nome,
+        primary_muscle=primario,
+        secondary_muscles=", ".join(secondari) or None,
+        equipment=_repdb_equipment(raw.get("equipment")),
+        category="strength",
+        description="\n".join(passi) or None,
+        instructions=passi or None,
+        tips=consigli or None,
+        image_url=immagini[0],
+        demo_images=immagini,
+        # Come per Everkinetic, curl, polpacci, addominali e scrollate sono
+        # isolamenti anche quando il dataset li marca "compound".
+        is_compound=raw.get("mechanic") == "compound" and primario not in _SINGLE_JOINT_GROUPS,
+        level=raw.get("difficulty"),
+        priority=staple_priority(SOURCE_REPDB, external_id),
     )
 
 
@@ -337,6 +436,9 @@ def fetch_dataset(url: str = DATASET_URL, *, timeout: float = 60.0) -> list[dict
         data = resp.json()
     except Exception as e:
         raise LibraryError(f"Download del catalogo esercizi non riuscito ({url}): {e}") from e
+    # RepDB avvolge l'elenco in un oggetto con i metadati.
+    if isinstance(data, dict) and isinstance(data.get("exercises"), list):
+        data = data["exercises"]
     if not isinstance(data, list):
         raise LibraryError(f"Formato inatteso del catalogo esercizi ({url})")
     return data
@@ -352,12 +454,15 @@ def _map_muscles(names: list[str] | None) -> list[str]:
 
 
 def parse_entry(raw: dict) -> dict | None:
-    """Converte una voce del dataset nei campi di `Exercise`.
+    """Converte una voce di free-exercise-db nei campi di `Exercise`.
 
     Restituisce `None` per ciò che non è utilizzabile in una scheda: categoria
-    fuori dalla sala pesi, nessun fotogramma o muscolo primario non mappabile.
+    fuori dalla sala pesi, esercizio a tempo, nessun fotogramma o muscolo
+    primario non mappabile.
     """
     if raw.get("category") not in INCLUDED_CATEGORIES:
+        return None
+    if TIMED_EXERCISE_PATTERN.search(raw.get("name") or ""):
         return None
     immagini = [f"{IMAGE_BASE_URL}{path}" for path in raw.get("images") or []]
     if not immagini:
@@ -384,14 +489,26 @@ def parse_entry(raw: dict) -> dict | None:
         demo_images=immagini,
         is_compound=raw.get("mechanic") == "compound",
         level=raw.get("level"),
-        priority=_STAPLE_RANK.get(external_id, DEFAULT_PRIORITY),
+        priority=staple_priority(SOURCE, external_id),
     )
 
 
 _SOURCES = {
     SOURCE: (DATASET_URL, parse_entry),
     SOURCE_EVERKINETIC: (EVERKINETIC_DATASET_URL, parse_everkinetic_entry),
+    SOURCE_REPDB: (REPDB_DATASET_URL, parse_repdb_entry),
 }
+
+SOURCE_MANUAL = "kilo"
+
+# Fonti del catalogo, dalla preferita alla meno preferita quando lo stesso
+# esercizio compare in più di una: i disegni (e le schede già salvate, che li
+# usano) prima, poi le illustrazioni, gli esercizi scritti a mano e per ultime
+# le foto.
+CATALOG_SOURCES = (SOURCE_EVERKINETIC, SOURCE_REPDB, SOURCE_MANUAL, SOURCE)
+_SOURCE_RANK = {sorgente: i for i, sorgente in enumerate(CATALOG_SOURCES)}
+
+DUPLICATES_FILE = Path(__file__).resolve().parent.parent / "data" / "exercise_duplicates.json"
 
 
 def sync_library(db: Session, dataset: list[dict] | None = None, *, source: str = SOURCE):
@@ -427,11 +544,122 @@ def sync_library(db: Session, dataset: list[dict] | None = None, *, source: str 
 
     db.commit()
     logger.info(
-        "Libreria esercizi: %d voci, %d nuove, %d aggiornate, %d scartate",
-        len(dataset), created, updated, skipped,
+        "Libreria esercizi %s: %d voci, %d nuove, %d aggiornate, %d scartate",
+        source, len(dataset), created, updated, skipped,
     )
     return SyncResult(
         fetched=len(dataset), created=created, updated=updated, skipped_no_muscle=skipped
+    )
+
+
+def sync_manual(db: Session):
+    """Importa gli esercizi scritti a mano, testi italiani compresi."""
+    from app.services.catalog_sync import SyncResult
+    from app.services.manual_exercises import MANUAL_EXERCISES
+
+    existing = {
+        ex.external_id: ex
+        for ex in db.scalars(select(Exercise).where(Exercise.source == SOURCE_MANUAL))
+    }
+    created = updated = 0
+    for voce in MANUAL_EXERCISES:
+        campi = dict(
+            voce,
+            category="strength",
+            description="\n".join(voce["instructions"]),
+            image_url=None,
+            demo_images=None,
+            level=None,
+            priority=staple_priority(SOURCE_MANUAL, voce["external_id"]),
+        )
+        corrente = existing.get(voce["external_id"])
+        if corrente is None:
+            db.add(Exercise(source=SOURCE_MANUAL, **campi))
+            created += 1
+        else:
+            for chiave, valore in campi.items():
+                setattr(corrente, chiave, valore)
+            updated += 1
+    db.commit()
+    return SyncResult(
+        fetched=len(MANUAL_EXERCISES), created=created, updated=updated, skipped_no_muscle=0
+    )
+
+
+def load_duplicate_groups(path: Path = DUPLICATES_FILE) -> list[list[str]]:
+    return json.loads(path.read_text(encoding="utf-8"))["gruppi"]
+
+
+def apply_duplicates(db: Session, groups: list[list[str]] | None = None) -> int:
+    """Segna i doppioni verificati e restituisce quanti esercizi escono dal catalogo.
+
+    Per ogni gruppo resta visibile l'esercizio della fonte preferita
+    (`CATALOG_SOURCES`), a parità di fonte quello di base, poi il più vecchio.
+    Le voci del file non ancora importate (o escluse, come i plank) vengono
+    ignorate. Riapplicarla è sicura: ricalcola tutto da capo.
+    """
+    groups = load_duplicate_groups() if groups is None else groups
+    righe = list(
+        db.scalars(select(Exercise).where(Exercise.source.in_(CATALOG_SOURCES)))
+    )
+    per_chiave = {f"{ex.source}:{ex.external_id}": ex for ex in righe}
+
+    for ex in righe:
+        ex.duplicate_of_id = None
+
+    nascosti = 0
+    for gruppo in groups:
+        membri = [per_chiave[k] for k in gruppo if k in per_chiave]
+        if len(membri) < 2:
+            continue
+        principale = min(
+            membri,
+            key=lambda ex: (_SOURCE_RANK.get(ex.source, 99), ex.priority, ex.id),
+        )
+        for ex in membri:
+            if ex is not principale:
+                ex.duplicate_of_id = principale.id
+                nascosti += 1
+
+    db.commit()
+    logger.info("Catalogo esercizi: %d doppioni nascosti", nascosti)
+    return nascosti
+
+
+def sync_catalog(db: Session, datasets: dict[str, list[dict]] | None = None):
+    """Importa tutte le fonti, gli esercizi scritti a mano e applica i doppioni.
+
+    Se una fonte non è raggiungibile si prosegue con le altre: il catalogo già
+    importato resta valido. Fallisce solo se non si scarica nessuna fonte.
+    """
+    from app.services.catalog_sync import SyncResult
+
+    fetched = created = updated = skipped = 0
+    errori: list[str] = []
+    for sorgente in (SOURCE_EVERKINETIC, SOURCE_REPDB, SOURCE):
+        try:
+            esito = sync_library(
+                db, dataset=(datasets or {}).get(sorgente) if datasets else None, source=sorgente
+            )
+        except LibraryError as e:
+            logger.warning("%s", e)
+            errori.append(str(e))
+            continue
+        fetched += esito.fetched
+        created += esito.created
+        updated += esito.updated
+        skipped += esito.skipped_no_muscle
+
+    if len(errori) == 3:
+        raise LibraryError("; ".join(errori))
+
+    manuali = sync_manual(db)
+    apply_duplicates(db)
+    return SyncResult(
+        fetched=fetched + manuali.fetched,
+        created=created + manuali.created,
+        updated=updated + manuali.updated,
+        skipped_no_muscle=skipped,
     )
 
 
@@ -439,45 +667,32 @@ def has_library(db: Session, source: str = SOURCE) -> bool:
     return bool(db.scalar(select(exists().where(Exercise.source == source))))
 
 
-# Dalla fonte preferita alla meno preferita: i disegni coerenti prima delle foto.
-SOURCE_PRECEDENCE = (SOURCE_EVERKINETIC, SOURCE)
-
-
-def active_source(db: Session) -> str | None:
-    for sorgente in SOURCE_PRECEDENCE:
-        if has_library(db, sorgente):
-            return sorgente
-    return None
+def has_catalog(db: Session) -> bool:
+    return bool(db.scalar(select(exists().where(Exercise.source.in_(CATALOG_SOURCES)))))
 
 
 def catalog_condition(db: Session):
     """Filtro SQL sul catalogo da cui scegliere gli esercizi.
 
-    Si usa una sola fonte, la preferita fra quelle importate, così immagini e
-    nomi restano coerenti in tutta la scheda; senza librerie importate (per
-    esempio nei test) tutto il catalogo disponibile.
+    Tutte le fonti del catalogo, senza i doppioni. Gli esercizi non ancora
+    tradotti restano visibili con il nome originale: la traduzione arriva in
+    background. Senza nessuna fonte importata (per esempio nei test) tutto ciò
+    che c'è nel database, sempre senza doppioni.
     """
-    sorgente = active_source(db)
-    if not sorgente:
-        return true()
-    # Finché la traduzione non è completa (la quota gratuita di Gemini è
-    # giornaliera), gli esercizi ancora in inglese restano fuori: nella scheda
-    # e nelle alternative non deve comparire un nome non tradotto.
-    tradotti = db.scalar(
-        select(exists().where(Exercise.source == sorgente, Exercise.name_it.is_not(None)))
-    )
-    if tradotti:
-        return and_(Exercise.source == sorgente, Exercise.name_it.is_not(None))
-    return Exercise.source == sorgente
+    visibili = Exercise.duplicate_of_id.is_(None)
+    if not has_catalog(db):
+        return visibili
+    return and_(Exercise.source.in_(CATALOG_SOURCES), visibili)
 
 
 def catalog_order():
     """Ordinamento di "canonicità" condiviso da generatore, alternative e
-    ricerca: prima gli esercizi di base, poi quelli con animazione,
-    immagine e descrizione."""
+    ricerca: prima gli esercizi di base, poi quelli con animazione, a parità i
+    disegni e le illustrazioni prima delle foto, poi immagine e descrizione."""
     return (
         Exercise.priority,
         Exercise.demo_images.is_(None),
+        case(_SOURCE_RANK, value=Exercise.source, else_=len(CATALOG_SOURCES)),
         Exercise.image_url.is_(None),
         Exercise.description.is_(None),
         Exercise.name,
@@ -521,7 +736,7 @@ def lengthened_rank(exercise: Exercise) -> int:
 
 if __name__ == "__main__":
     # Import completo da riga di comando:
-    #   python -m app.services.exercise_library
+    #   python -m app.services.exercise_library [--no-translate]
     import sys
 
     from app.database import SessionLocal
@@ -529,10 +744,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    # Predefinita Everkinetic; `--fedb` per il vecchio catalogo con le foto.
-    sorgente = SOURCE if "--fedb" in sys.argv else SOURCE_EVERKINETIC
     with SessionLocal() as sessione:
-        esito = sync_library(sessione, source=sorgente)
-        print(f"Import {sorgente}: {esito.created} nuovi, {esito.updated} aggiornati, {esito.skipped_no_muscle} scartati")
+        esito = sync_catalog(sessione)
+        print(f"Catalogo: {esito.created} nuovi, {esito.updated} aggiornati, {esito.skipped_no_muscle} scartati")
     if "--no-translate" not in sys.argv:
-        print(f"Tradotti in italiano: {translation.translate_library(source=sorgente)}")
+        print(f"Tradotti in italiano: {translation.translate_library()}")

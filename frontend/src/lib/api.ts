@@ -446,6 +446,10 @@ const EQUIPMENT_LABELS: Record<string, string> = {
   "weight plate": "disco",
   "t-bar machine": "macchina T-bar",
   towel: "asciugamano",
+  "suspension trainer": "TRX",
+  rings: "anelli",
+  "trap bar": "trap bar",
+  "ab wheel": "ruota per addominali",
   other: "altro",
 };
 

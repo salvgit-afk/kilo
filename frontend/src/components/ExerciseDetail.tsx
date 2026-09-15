@@ -106,13 +106,29 @@ export function ExerciseDetail({
               className="aspect-[4/3] w-full rounded-2xl border border-white/10"
             />
             <p className="text-[11px] leading-snug text-white/30">
-              {fotogrammi.length > 1 && exercise.source === "everkinetic"
-                ? "Disegni di Everkinetic (licenza CC BY-SA 4.0): posizione di partenza e di arrivo. Metti in pausa per osservarle."
-                : fotogrammi.length > 1
-                ? "Animazione ricavata dai fotogrammi di partenza e arrivo (free-exercise-db, pubblico dominio). Metti in pausa per osservare le due posizioni."
-                : fotogrammi.length === 1
-                  ? "Immagine dal catalogo wger."
-                  : "Per questo esercizio la fonte non ha immagini."}
+              {exercise.source === "repdb" ? (
+                <>
+                  Illustrazioni di partenza e arrivo.{" "}
+                  <a
+                    href="https://repdb.co"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline decoration-white/20 underline-offset-2 hover:text-white/60"
+                  >
+                    Exercise data by RepDB (repdb.co)
+                  </a>
+                </>
+              ) : exercise.source === "kilo" ? (
+                "Esercizio aggiunto da Kilo: nessun catalogo aperto lo contiene, quindi per ora non ha immagini. L'esecuzione è descritta qui accanto."
+              ) : fotogrammi.length > 1 && exercise.source === "everkinetic" ? (
+                "Disegni di Everkinetic (licenza CC BY-SA 4.0): posizione di partenza e di arrivo. Metti in pausa per osservarle."
+              ) : fotogrammi.length > 1 ? (
+                "Foto di partenza e arrivo (free-exercise-db, pubblico dominio). Metti in pausa per osservare le due posizioni."
+              ) : fotogrammi.length === 1 ? (
+                "Immagine dal catalogo wger."
+              ) : (
+                "Per questo esercizio la fonte non ha immagini."
+              )}
             </p>
 
             <div className="flex flex-wrap gap-1.5">

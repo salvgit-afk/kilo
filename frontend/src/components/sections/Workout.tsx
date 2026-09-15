@@ -745,18 +745,28 @@ function AlternativesDialog({
   const [alts, setAlts] = useState<Alternative[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
-    api
-      .get<Alternative[]>(
-        `/workout/plan-exercises/${item.id}/alternatives?profile_id=${profileId}&limit=6`
-      )
-      .then(setAlts)
-      .catch((e) => {
-        setAlts([]);
-        setError(e instanceof Error ? e.message : "Alternative non disponibili");
-      });
-  }, [item.id, profileId]);
+    setAlts(null);
+    const q = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
+    // Durante la ricerca si aspetta che l'utente smetta di scrivere.
+    const timer = setTimeout(
+      () => {
+        api
+          .get<Alternative[]>(
+            `/workout/plan-exercises/${item.id}/alternatives?profile_id=${profileId}&limit=24${q}`
+          )
+          .then(setAlts)
+          .catch((e) => {
+            setAlts([]);
+            setError(e instanceof Error ? e.message : "Alternative non disponibili");
+          });
+      },
+      query ? 300 : 0
+    );
+    return () => clearTimeout(timer);
+  }, [item.id, profileId, query]);
 
   async function swap(exerciseId: number) {
     setBusy(exerciseId);
@@ -787,6 +797,15 @@ function AlternativesDialog({
         onClose={onClose}
       />
 
+      <div className="shrink-0 border-b border-white/[0.06] px-4 py-3">
+        <input
+          className="input py-2 text-[13px]"
+          placeholder="Cerca fra le alternative — es. cavi, manubri, macchina, hammer"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {error && (
           <div className="mb-3">
@@ -796,7 +815,15 @@ function AlternativesDialog({
         {!alts ? (
           <Spinner label="Cerco le alternative…" />
         ) : alts.length === 0 ? (
-          !error && <Empty title="Nessuna alternativa disponibile con la tua attrezzatura" />
+          !error && (
+            <Empty
+              title={
+                query.trim()
+                  ? "Nessuna alternativa con questo nome"
+                  : "Nessuna alternativa disponibile con la tua attrezzatura"
+              }
+            />
+          )
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {alts.map((a, i) => {

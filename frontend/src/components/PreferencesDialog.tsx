@@ -65,7 +65,7 @@ export function PreferencesDialog({
     setExercises(null);
     const q = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
     const timer = setTimeout(() => {
-      api.get<Exercise[]>(`/workout/exercises?muscle=${muscle}&limit=30${q}`).then(setExercises);
+      api.get<Exercise[]>(`/workout/exercises?muscle=${muscle}&limit=80${q}`).then(setExercises);
     }, 300);
     return () => clearTimeout(timer);
   }, [muscle, query]);

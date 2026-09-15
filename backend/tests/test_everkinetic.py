@@ -73,7 +73,7 @@ def test_corpo_libero():
     assert c["equipment"] == wg.BODYWEIGHT and c["is_compound"]
 
 
-def test_everkinetic_ha_la_precedenza_sulle_foto(db):
+def test_fonti_convivono_e_il_doppione_lascia_il_disegno(db):
     foto = {
         "id": "Barbell_Bench_Press_-_Medium_Grip", "name": "Barbell Bench Press",
         "category": "strength", "mechanic": "compound", "equipment": "barbell",
@@ -81,15 +81,18 @@ def test_everkinetic_ha_la_precedenza_sulle_foto(db):
         "images": ["x/0.jpg", "x/1.jpg"],
     }
     lib.sync_library(db, dataset=[foto])
-    assert lib.active_source(db) == lib.SOURCE
-
     lib.sync_library(db, dataset=[_voce("0042", "Bench Press: Barbell", "pectoralis major")],
                      source=lib.SOURCE_EVERKINETIC)
-    assert lib.active_source(db) == lib.SOURCE_EVERKINETIC
-    assert [e.source for e in wg._pick_exercises(db, "Chest", None, wanted=1)] == [lib.SOURCE_EVERKINETIC]
+    assert sorted(e.source for e in wg._pick_exercises(db, "Chest", None, wanted=2)) == [
+        lib.SOURCE_EVERKINETIC, lib.SOURCE,
+    ]
+
+    # Stesso esercizio in due fonti: resta il disegno.
+    lib.apply_duplicates(db, groups=[["everkinetic:0042", "free_exercise_db:Barbell_Bench_Press_-_Medium_Grip"]])
+    assert [e.source for e in wg._pick_exercises(db, "Chest", None, wanted=2)] == [lib.SOURCE_EVERKINETIC]
 
 
-def test_esercizi_non_tradotti_restano_fuori_dalla_scheda(db):
+def test_esercizi_non_tradotti_restano_visibili_in_inglese(db):
     lib.sync_library(
         db,
         dataset=[
@@ -102,8 +105,10 @@ def test_esercizi_non_tradotti_restano_fuori_dalla_scheda(db):
     panca.name_it = "Panca piana con bilanciere"
     db.commit()
 
+    # Anche la panca con manubri, non ancora tradotta, resta disponibile: il
+    # nome originale si vede finché la traduzione in background non arriva.
     scelti = wg._pick_exercises(db, "Chest", None, wanted=2)
-    assert [e.external_id for e in scelti] == ["0042"]
+    assert sorted(e.external_id for e in scelti) == ["0042", "0055"]
 
 
 @pytest.mark.parametrize(

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -61,6 +61,7 @@ def find_alternatives(
     exercise: Exercise,
     *,
     limit: int = 5,
+    q: str | None = None,
 ) -> list[Alternative]:
     """Alternative per lo stesso gruppo muscolare primario.
 
@@ -85,15 +86,16 @@ def find_alternatives(
         )
     }
 
-    candidati = db.scalars(
-        select(Exercise)
-        .where(
-            Exercise.primary_muscle == exercise.primary_muscle,
-            Exercise.id != exercise.id,
-            exercise_library.catalog_condition(db),
-        )
-        .order_by(*exercise_library.catalog_order())
+    query = select(Exercise).where(
+        Exercise.primary_muscle == exercise.primary_muscle,
+        Exercise.id != exercise.id,
+        exercise_library.catalog_condition(db),
     )
+    if q and q.strip():
+        # Nome italiano e originale: "cavo" e "cable" trovano lo stesso esercizio.
+        termine = f"%{q.strip()}%"
+        query = query.where(or_(Exercise.name_it.ilike(termine), Exercise.name.ilike(termine)))
+    candidati = db.scalars(query.order_by(*exercise_library.catalog_order()))
 
     alternative = [
         Alternative(
