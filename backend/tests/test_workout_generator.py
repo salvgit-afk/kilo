@@ -497,6 +497,25 @@ def test_rigenera_sostituisce_solo_la_scheda_indicata(catalogo):
     assert len(list(catalogo.scalars(select(WorkoutPlan)))) == 3
 
 
+def test_giorni_restano_nell_ordine_di_allenamento(catalogo):
+    """Riletta dal database, una push/pull/gambe non deve diventare
+    «Gambe, Pull, Push» in ordine alfabetico."""
+    profilo = _profilo(training_days_per_week=3)
+    catalogo.add(profilo)
+    catalogo.commit()
+    plan = wg.persist_plan(
+        catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="push_pull_legs")
+    )
+
+    catalogo.expire_all()
+    riletta = catalogo.get(WorkoutPlan, plan.id)
+    giorni = list(dict.fromkeys(e.day_label for e in riletta.exercises))
+    assert giorni == ["Push A", "Pull A", "Gambe A"]
+    for giorno in giorni:
+        ordini = [e.order_index for e in riletta.exercises if e.day_label == giorno]
+        assert ordini == sorted(ordini)
+
+
 def test_split_auto_viene_salvato_gia_risolto(catalogo):
     """Con 4 giorni `auto` diventa upper/lower: la scheda deve dire quale."""
     generata = wg.generate_plan(catalogo, _profilo(training_days_per_week=4), split_type="auto")
