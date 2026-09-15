@@ -158,6 +158,8 @@ export type WorkoutPlan = {
   name: string;
   goal: string;
   days_per_week: number;
+  /** Divisione usata (full_body, upper_lower…); null per le schede create prima. */
+  split_type: string | null;
   rationale: string | null;
   is_active: boolean;
   started_at: string;

@@ -50,12 +50,42 @@ logger = logging.getLogger("workout_generator")
 
 # --- Parametri dalla knowledge base -----------------------------------------
 
-# `training_volume.md`: serie settimanali per gruppo muscolare.
-WEEKLY_SETS_BY_EXPERIENCE = {
-    ExperienceLevel.BEGINNER: (4, 8),
-    ExperienceLevel.INTERMEDIATE: (8, 14),
-    ExperienceLevel.ADVANCED: (12, 20),
+# Serie settimanali per gruppo muscolare: (minimo, partenza, massimo).
+#
+# La partenza è il volume della scheda nuova; il minimo è il pavimento sotto
+# cui l'autoregolazione non scende, il massimo il tetto oltre cui non si
+# aggiungono serie.
+#
+# Obiettivi diversi dalla massa muscolare: range di `training_volume.md`,
+# partendo dalla parte bassa.
+WEEKLY_SETS_DEFAULT = {
+    ExperienceLevel.BEGINNER: (4, 5, 8),
+    ExperienceLevel.INTERMEDIATE: (8, 10, 14),
+    ExperienceLevel.ADVANCED: (12, 14, 20),
 }
+
+# Obiettivo massa muscolare: `hypertrophy_prescription.md` (IUSCA, ~10 serie a
+# settimana come minimo per ottimizzare) e `resistance_training_acsm.md`
+# (ACSM 2026, ≥10 serie, rendimenti decrescenti oltre ~18-20). Nessun livello
+# parte sotto 10. Il massimo sta a circa due aumenti del 20% dalla partenza
+# (il limite IUSCA per ciclo) e per gli avanzati coincide con la soglia dei
+# rendimenti decrescenti. Il minimo resta sotto 10 perché IUSCA riconosce
+# risposte buone anche a volumi più bassi: serve quando il recupero non regge.
+WEEKLY_SETS_HYPERTROPHY = {
+    ExperienceLevel.BEGINNER: (6, 10, 14),
+    ExperienceLevel.INTERMEDIATE: (8, 12, 16),
+    ExperienceLevel.ADVANCED: (10, 14, 20),
+}
+
+# `hypertrophy_prescription.md` (IUSCA): oltre ~10 serie per muscolo nella
+# stessa seduta conviene distribuire il volume su più giorni.
+MAX_SETS_PER_MUSCLE_PER_SESSION = 10
+
+
+def weekly_sets_range(profile: UserProfile) -> tuple[int, int, int]:
+    """(minimo, partenza, massimo) di serie settimanali per gruppo muscolare."""
+    table = WEEKLY_SETS_HYPERTROPHY if profile.goal == Goal.HYPERTROPHY else WEEKLY_SETS_DEFAULT
+    return table.get(profile.experience_level, table[ExperienceLevel.BEGINNER])
 
 # `rest_periods_and_rir.md`: nessun beneficio ipertrofico oltre i 90 secondi,
 # ma i multi-articolari ne richiedono di più per mantenere il carico.
@@ -167,6 +197,7 @@ class GeneratedPlan:
     rationale: str
     warnings: list[str] = field(default_factory=list)
     knowledge_tags: list[str] = field(default_factory=list)
+    split_type: str | None = None
 
 
 class GenerationError(RuntimeError):
@@ -248,17 +279,27 @@ def build_split(
     teoricamente ottimale (`exercise_choice_and_focus.md`).
     """
     days_per_week = max(days_per_week, 1)
+    return SPLIT_BUILDERS[resolve_split_type(days_per_week, split_type)](days_per_week)
 
-    if split_type != SplitType.AUTO:
-        builder = SPLIT_BUILDERS.get(split_type)
-        if builder is not None:
-            return builder(days_per_week)
 
+def resolve_split_type(days_per_week: int, split_type: str | None = SplitType.AUTO) -> str:
+    """La divisione effettiva: quella scelta, oppure quella di `auto`."""
+    if split_type in SPLIT_BUILDERS:
+        return split_type
     if days_per_week <= 3:
-        return _full_body(days_per_week)
+        return SplitType.FULL_BODY
     if days_per_week == 4:
-        return _upper_lower(days_per_week)
-    return _push_pull_legs(days_per_week)
+        return SplitType.UPPER_LOWER
+    return SplitType.PUSH_PULL_LEGS
+
+
+# Nomi leggibili delle divisioni: distinguono le schede quando ce n'è più d'una.
+SPLIT_NAMES = {
+    SplitType.FULL_BODY: "Full body",
+    SplitType.UPPER_LOWER: "Upper/Lower",
+    SplitType.PUSH_PULL_LEGS: "Push/Pull/Gambe",
+    SplitType.MUSCLE_GROUP: "Per gruppo muscolare",
+}
 
 
 # --- Selezione degli esercizi ------------------------------------------------
@@ -370,6 +411,11 @@ def _pick_exercises(
     if any((ex.priority if ex.priority is not None else 100) < exercise_library.DEFAULT_PRIORITY for ex in usable):
         compound = [ex for ex in compound if ex.priority < exercise_library.DEFAULT_PRIORITY]
     isolation = [ex for ex in usable if ex not in compound]
+    # Fra gli isolamenti, a parità di gradimento, prima le varianti che
+    # allenano il muscolo in allungamento (`biomechanics_technique.md`).
+    isolation.sort(
+        key=lambda ex: (preferences.get(ex.id) is not True, exercise_library.lengthened_rank(ex))
+    )
 
     if wanted <= 1:
         # Un solo esercizio: si preferisce il multi-articolare, che copre più
@@ -401,14 +447,7 @@ def _weekly_sets_target(
 ) -> tuple[int, list[str]]:
     """Serie settimanali per gruppo muscolare, con i correttivi di sicurezza."""
     warnings: list[str] = []
-    low, high = WEEKLY_SETS_BY_EXPERIENCE.get(
-        profile.experience_level, WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.BEGINNER]
-    )
-
-    # Punto di partenza nella parte bassa del range: `training_volume.md`
-    # ricorda che si può sempre salire in base al recupero, mentre partire
-    # troppo alto accumula fatica senza benefici aggiuntivi.
-    target = low + (high - low) // 3
+    low, target, _ = weekly_sets_range(profile)
 
     if screening is not None and screening.requires_medical_clearance:
         target = low
@@ -429,10 +468,11 @@ def generate_plan(
     split_type: str | None = None,
 ) -> GeneratedPlan:
     """Costruisce una scheda a partire dal profilo, in modo deterministico."""
-    split = build_split(
+    resolved_split = resolve_split_type(
         profile.training_days_per_week,
-        split_type or getattr(profile, "split_type", SplitType.AUTO),
+        split_type or getattr(profile, "split_type", None) or SplitType.AUTO,
     )
+    split = build_split(profile.training_days_per_week, resolved_split)
     if not split:
         raise GenerationError("Nessun giorno di allenamento configurato")
 
@@ -460,12 +500,18 @@ def generate_plan(
     # Giornate in cui il volume non sta in serie da 2-3 entro il tetto di
     # esercizi: lo si dichiara invece di tagliare in silenzio il volume.
     crowded_days: list[str] = []
+    # Muscoli che in una seduta superano il tetto IUSCA per seduta: come per
+    # le giornate affollate, si segnala invece di tagliare il volume.
+    overloaded_muscles: list[str] = []
 
     for day_label, muscles in split:
         order = 0
         sets_by_muscle = {
             m: max(1, round(weekly_target / frequency[m])) for m in muscles
         }
+        for muscle, sets in sets_by_muscle.items():
+            if sets > MAX_SETS_PER_MUSCLE_PER_SESSION and muscle not in overloaded_muscles:
+                overloaded_muscles.append(muscle)
         slots = _allocate_exercise_slots(
             [math.ceil(sets_by_muscle[m] / TARGET_SETS_PER_EXERCISE) for m in muscles],
             MAX_EXERCISES_PER_SESSION,
@@ -534,7 +580,21 @@ def generate_plan(
             "alleni ogni muscolo più volte a settimana."
         )
 
-    knowledge_tags = ["volume_allenamento", "recupero", "intensità"]
+    if overloaded_muscles:
+        warnings.append(
+            f"Con questo split {', '.join(overloaded_muscles)} ricevono più di "
+            f"{MAX_SETS_PER_MUSCLE_PER_SESSION} serie nella stessa seduta. Le "
+            "raccomandazioni IUSCA suggeriscono di non superare circa "
+            f"{MAX_SETS_PER_MUSCLE_PER_SESSION} serie per muscolo a seduta e di "
+            "distribuire il resto: valuta uno split che alleni ogni muscolo "
+            "almeno due volte a settimana."
+        )
+
+    knowledge_tags = ["volume_allenamento", "recupero", "intensità", "progressione"]
+    if profile.goal == Goal.HYPERTROPHY:
+        knowledge_tags.append("ipertrofia")
+    elif profile.goal == Goal.STRENGTH:
+        knowledge_tags.append("forza")
     if screening is not None:
         knowledge_tags.append("screening")
 
@@ -547,8 +607,9 @@ def generate_plan(
         knowledge_tags.append("attivita_generale")
 
     return GeneratedPlan(
-        name=f"{GOAL_NAMES.get(profile.goal, 'Scheda')} — "
+        name=f"{GOAL_NAMES.get(profile.goal, 'Scheda')} · {SPLIT_NAMES[resolved_split]} — "
              f"{profile.training_days_per_week} giorni",
+        split_type=resolved_split,
         goal=profile.goal,
         days_per_week=profile.training_days_per_week,
         exercises=planned,
@@ -586,16 +647,27 @@ def _allocate_exercise_slots(needs: list[int], budget: int) -> list[int]:
 def _deterministic_rationale(profile: UserProfile, weekly_target: int, rir: int) -> str:
     """Spiegazione generata senza LLM: sempre disponibile, sempre coerente
     con i parametri effettivamente applicati."""
-    low, high = WEEKLY_SETS_BY_EXPERIENCE.get(
-        profile.experience_level, WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.BEGINNER]
-    )
+    low, _, high = weekly_sets_range(profile)
     c_min, c_max = rep_range(profile.goal, True)
     i_min, i_max = rep_range(profile.goal, False)
+    if profile.goal == Goal.HYPERTROPHY:
+        volume = (
+            f"Volume di {weekly_target} serie settimanali per gruppo muscolare: "
+            f"le position stand IUSCA e ACSM indicano circa 10 serie a settimana "
+            f"come soglia per ottimizzare la crescita muscolare. Per un livello "
+            f"«{profile.experience_level}» il range va da {low} a {high}: si sale "
+            f"al massimo del 20% per volta, in base a come rispondi. "
+        )
+    else:
+        volume = (
+            f"Volume di {weekly_target} serie settimanali per gruppo muscolare, "
+            f"nella parte bassa del range {low}-{high} indicato per un livello "
+            f"«{profile.experience_level}»: si parte prudenti e si sale in base a "
+            f"come rispondi. "
+        )
     return (
-        f"Volume di {weekly_target} serie settimanali per gruppo muscolare, "
-        f"nella parte bassa del range {low}-{high} indicato per un livello "
-        f"«{profile.experience_level}»: si parte prudenti e si sale in base a "
-        f"come rispondi. Intensità espressa in RIR {rir} (ripetizioni che ti "
+        volume
+        + f"Intensità espressa in RIR {rir} (ripetizioni che ti "
         f"restano prima del cedimento) invece che in percentuale del massimale, "
         f"perché si adatta da sola a stanchezza, sonno e stress del giorno. "
         f"Ripetizioni {c_min}-{c_max} sui multi-articolari e {i_min}-{i_max} "
@@ -711,6 +783,64 @@ def explain_plan(generated: GeneratedPlan, profile: UserProfile) -> str:
 # --- Persistenza -------------------------------------------------------------
 
 
+def apply_manual_targets(
+    generated: GeneratedPlan,
+    *,
+    sets: int | None = None,
+    reps: tuple[int, int] | None = None,
+) -> None:
+    """Serie e/o ripetizioni scelte dall'utente al posto di quelle calcolate.
+
+    Valgono per tutti gli esercizi. RIR e recuperi restano quelli delle fonti,
+    e la scheda lo dichiara: da qui in poi i numeri non vengono più dalla
+    knowledge base, e l'utente deve saperlo.
+    """
+    if sets is None and reps is None:
+        return
+
+    for item in generated.exercises:
+        if sets is not None:
+            item.sets = sets
+        if reps is not None:
+            item.reps_min, item.reps_max = reps
+
+    if sets is not None:
+        settimanali: dict[str, int] = {}
+        for item in generated.exercises:
+            muscolo = item.exercise.primary_muscle or "?"
+            settimanali[muscolo] = settimanali.get(muscolo, 0) + item.sets
+        generated.weekly_sets_per_muscle = settimanali
+
+    parti = []
+    if sets is not None:
+        parti.append(f"{sets} serie per esercizio")
+    if reps is not None:
+        parti.append(f"{reps[0]}-{reps[1]} ripetizioni")
+    scelta = " e ".join(parti)
+    generated.warnings.append(
+        f"Hai scelto tu {scelta} per tutti gli esercizi: questi valori non seguono "
+        "i parametri delle fonti. RIR e recuperi restano quelli calcolati."
+    )
+    generated.rationale += f"\n\nModifica manuale dell'utente: {scelta} per tutti gli esercizi."
+
+
+def archive_plan(db: Session, profile: UserProfile, plan_id: int) -> WorkoutPlan | None:
+    """Toglie una scheda da quelle attive senza cancellarla.
+
+    Resta nello storico per i report di progressione. Restituisce `None` se
+    la scheda non esiste, non è del profilo o è già archiviata.
+    """
+    import datetime as dt
+
+    plan = db.get(WorkoutPlan, plan_id)
+    if plan is None or plan.profile_id != profile.id or not plan.is_active:
+        return None
+    plan.is_active = False
+    plan.ended_at = dt.date.today()
+    db.commit()
+    return plan
+
+
 def persist_plan(
     db: Session,
     profile: UserProfile,
@@ -718,11 +848,13 @@ def persist_plan(
     *,
     started_at=None,
     used_llm: bool = False,
+    replace_plan_id: int | None = None,
 ) -> WorkoutPlan:
-    """Salva la scheda, disattivando quella precedente.
+    """Salva la scheda accanto a quelle già attive.
 
-    Le schede vecchie non vengono cancellate: servono ai report per
-    confrontare inizio e fine di un percorso.
+    Con `replace_plan_id` (il pulsante «Rigenera») la scheda indicata viene
+    archiviata al posto di essere affiancata. Le schede vecchie non vengono
+    cancellate: servono ai report per confrontare inizio e fine di un percorso.
 
     Registra anche la raccomandazione in `agent_recommendation_log`, con i
     tag della knowledge base che l'hanno prodotta: deve essere sempre
@@ -730,19 +862,18 @@ def persist_plan(
     """
     import datetime as dt
 
-    for previous in db.scalars(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-        )
-    ):
-        previous.is_active = False
-        previous.ended_at = dt.date.today()
+    if replace_plan_id is not None:
+        previous = db.get(WorkoutPlan, replace_plan_id)
+        if previous is not None and previous.profile_id == profile.id and previous.is_active:
+            previous.is_active = False
+            previous.ended_at = dt.date.today()
 
     plan = WorkoutPlan(
         profile_id=profile.id,
         name=generated.name,
         goal=generated.goal,
         days_per_week=generated.days_per_week,
+        split_type=generated.split_type,
         rationale=generated.rationale,
         is_active=True,
         started_at=started_at or dt.date.today(),

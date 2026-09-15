@@ -41,7 +41,20 @@ TAG_TO_FILE: dict[str, str] = {
     "attivita_generale": "who_physical_activity.md",
     "calorie": "calorie_and_1rm_formulas.md",
     "1rm": "calorie_and_1rm_formulas.md",
+    "ipertrofia": "hypertrophy_prescription.md",
+    "tecniche_avanzate": "hypertrophy_prescription.md",
+    "cardio": "hypertrophy_prescription.md",
+    "biomeccanica": "biomechanics_technique.md",
+    "tecnica_esecuzione": "biomechanics_technique.md",
+    "ampiezza_movimento": "biomechanics_technique.md",
+    "progressione": "resistance_training_acsm.md",
+    "forza": "resistance_training_acsm.md",
+    "frequenza_allenamento": "resistance_training_acsm.md",
+    "periodizzazione": "resistance_training_acsm.md",
     # Nutrizione
+    "composizione_corporea": "diets_body_composition.md",
+    "surplus_calorico": "diets_body_composition.md",
+    "tipi_dieta": "diets_body_composition.md",
     "proteine": "protein_intake.md",
     "macronutrienti": "macronutrients_efsa.md",
     "zuccheri": "macronutrients_efsa.md",
@@ -62,6 +75,7 @@ TAG_TO_FILE: dict[str, str] = {
     "omega3": "vitamin_d_omega3_supplementation.md",
     "qualita_prodotto": "supplement_quality_safety.md",
     "integratori_oltre_muscolo": "supplements_beyond_muscle.md",
+    "categorie_integratori": "supplement_evidence_categories.md",
 }
 
 # Regole di condotta: vanno in **ogni** prompt di generazione, qualunque sia

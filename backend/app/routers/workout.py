@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -57,11 +57,23 @@ def _latest_screening(db: Session, profile_id: int) -> ScreeningRecord | None:
 
 
 def _active_plan(db: Session, profile_id: int) -> WorkoutPlan | None:
+    """La scheda attiva più recente (possono essercene più d'una)."""
     return db.scalar(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile_id, WorkoutPlan.is_active.is_(True)
-        )
+        select(WorkoutPlan)
+        .where(WorkoutPlan.profile_id == profile_id, WorkoutPlan.is_active.is_(True))
+        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
+        .limit(1)
     )
+
+
+def _plan_for(db: Session, profile_id: int, plan_id: int | None) -> WorkoutPlan | None:
+    """La scheda indicata, se è del profilo; senza indicazione la più recente."""
+    if plan_id is None:
+        return _active_plan(db, profile_id)
+    piano = db.get(WorkoutPlan, plan_id)
+    if piano is None or piano.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Scheda non trovata")
+    return piano
 
 
 @router.post("/plans/generate", response_model=PlanGenerationOut, status_code=201)
@@ -69,17 +81,36 @@ def generate_plan(
     profile_id: int,
     explain: bool = True,
     split_type: str | None = None,
+    replace_plan_id: int | None = None,
+    sets_per_exercise: int | None = Query(default=None, ge=1, le=10),
+    reps_min: int | None = Query(default=None, ge=1, le=50),
+    reps_max: int | None = Query(default=None, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> PlanGenerationOut:
-    """Genera una scheda e la rende attiva.
+    """Genera una scheda e la aggiunge a quelle attive.
 
     I parametri (serie, ripetizioni, RIR, recuperi) sono calcolati dai file
     della knowledge base. Con `explain=true` la motivazione viene riscritta
     in linguaggio naturale dall'LLM, che però non può modificare alcun
     numero: se non è disponibile resta la spiegazione deterministica.
+
+    `replace_plan_id` sostituisce una scheda esistente («Rigenera») invece di
+    affiancarla. `sets_per_exercise` e `reps_min`/`reps_max` sono una scelta
+    manuale dell'utente e la scheda dichiara che non seguono le fonti.
     """
     profile = get_profile(profile_id, db)
     screening = _latest_screening(db, profile.id)
+
+    if (reps_min is None) != (reps_max is None):
+        raise HTTPException(status_code=422, detail="Indica sia le ripetizioni minime sia le massime")
+    if reps_min is not None and reps_max is not None and reps_min > reps_max:
+        raise HTTPException(
+            status_code=422, detail="Le ripetizioni minime non possono superare le massime"
+        )
+    if replace_plan_id is not None:
+        da_sostituire = _plan_for(db, profile.id, replace_plan_id)
+        if da_sostituire is None or not da_sostituire.is_active:
+            raise HTTPException(status_code=404, detail="Scheda da sostituire non trovata")
 
     try:
         # La scelta esplicita dell'utente ha la precedenza su quella salvata
@@ -93,13 +124,21 @@ def generate_plan(
     except workout_generator.GenerationError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
+    workout_generator.apply_manual_targets(
+        generated,
+        sets=sets_per_exercise,
+        reps=(reps_min, reps_max) if reps_min is not None and reps_max is not None else None,
+    )
+
     used_llm = False
     if explain:
         spiegazione = workout_generator.explain_plan(generated, profile)
         used_llm = spiegazione != generated.rationale
         generated.rationale = spiegazione
 
-    plan = workout_generator.persist_plan(db, profile, generated, used_llm=used_llm)
+    plan = workout_generator.persist_plan(
+        db, profile, generated, used_llm=used_llm, replace_plan_id=replace_plan_id
+    )
     translation.ensure_translated(db, [riga.exercise for riga in plan.exercises])
 
     return PlanGenerationOut(
@@ -117,15 +156,26 @@ def read_active_plan(profile_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/plans", response_model=list[WorkoutPlanOut])
-def list_plans(profile_id: int, db: Session = Depends(get_db)) -> list[WorkoutPlan]:
+def list_plans(
+    profile_id: int, active_only: bool = False, db: Session = Depends(get_db)
+) -> list[WorkoutPlan]:
     get_profile(profile_id, db)
-    return list(
-        db.scalars(
-            select(WorkoutPlan)
-            .where(WorkoutPlan.profile_id == profile_id)
-            .order_by(WorkoutPlan.started_at.desc())
-        )
-    )
+    query = select(WorkoutPlan).where(WorkoutPlan.profile_id == profile_id)
+    if active_only:
+        query = query.where(WorkoutPlan.is_active.is_(True))
+    return list(db.scalars(query.order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())))
+
+
+@router.delete("/plans/{plan_id}", status_code=204, response_model=None)
+def delete_plan(plan_id: int, profile_id: int, db: Session = Depends(get_db)) -> None:
+    """Toglie la scheda da quelle attive.
+
+    Non la cancella dal database: sessioni e report di progressione continuano
+    a riferirsi a ciò che era in programma in quel periodo.
+    """
+    profile = get_profile(profile_id, db)
+    if workout_generator.archive_plan(db, profile, plan_id) is None:
+        raise HTTPException(status_code=404, detail="Scheda non trovata")
 
 
 @router.get(
@@ -248,10 +298,11 @@ def submit_feedback(
 
     È qui che «non vedo progressi e i DOMS durano troppo» diventa una
     riduzione del volume, invece dell'istinto opposto di allenarsi di più.
-    Con `apply_to_plan=true` la modifica viene applicata alla scheda attiva.
+    Con `apply_to_plan=true` la modifica viene applicata alla scheda indicata
+    in `plan_id`, oppure alla più recente.
     """
     profile = get_profile(profile_id, db)
-    piano = _active_plan(db, profile.id)
+    piano = _plan_for(db, profile.id, payload.plan_id)
 
     feedback = TrainingFeedback(
         profile_id=profile.id,

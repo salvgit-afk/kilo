@@ -173,6 +173,7 @@ class WorkoutPlanOut(BaseModel):
     name: str
     goal: str
     days_per_week: int
+    split_type: str | None = None
     rationale: str | None
     is_active: bool
     started_at: dt.date
@@ -277,6 +278,9 @@ class FeedbackIn(BaseModel):
     sleep_quality: int | None = Field(default=None, ge=1, le=5)
     note: str | None = None
     apply_to_plan: bool = False
+    # Con più schede attive: quella a cui si riferisce il feedback. Se manca,
+    # la più recente.
+    plan_id: int | None = None
 
 
 class VolumeRecommendationOut(BaseModel):

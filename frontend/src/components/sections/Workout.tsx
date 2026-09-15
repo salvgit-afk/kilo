@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Scheda di allenamento: giornate, esercizi, alternative e feedback.
+ * Schede di allenamento: più schede attive, giornate, esercizi, alternative
+ * e feedback.
  *
  * Tre elementi non sono decorativi:
  *  - le **avvertenze** e le **fonti** stanno accanto alla scheda, non
@@ -35,10 +36,40 @@ import { Card, CardHeader, Empty, Notice, SourceTags, Spinner } from "@/componen
 import { PageHeader } from "@/components/Shell";
 import { ExerciseDetailHost } from "@/components/ExerciseDetail";
 import { PreferencesDialog } from "@/components/PreferencesDialog";
-import { AskCoachButton, DemoAnimation, Modal, ModalHeader } from "@/components/controls";
+import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 
 export { formatEquipment } from "@/lib/api";
+
+type PlanMeta = Omit<PlanGeneration, "plan">;
+
+type PlanOptions = {
+  split: string;
+  replacePlanId?: number;
+  sets?: number | null;
+  repsMin?: number | null;
+  repsMax?: number | null;
+};
+
+/** Nome breve della scheda per le linguette: la divisione e i giorni. */
+function planLabel(plan: WorkoutPlan) {
+  const divisione = plan.split_type ? SPLIT_LABELS[plan.split_type] : null;
+  return `${divisione ?? plan.name.split(" — ")[0]} · ${plan.days_per_week} g`;
+}
+
+/** Linguette distinguibili anche con due schede della stessa divisione. */
+function planTabLabels(plans: WorkoutPlan[]) {
+  const totali: Record<string, number> = {};
+  plans.forEach((p) => (totali[planLabel(p)] = (totali[planLabel(p)] ?? 0) + 1));
+  const visti: Record<string, number> = {};
+  return Object.fromEntries(
+    [...plans].reverse().map((p) => {
+      const base = planLabel(p);
+      visti[base] = (visti[base] ?? 0) + 1;
+      return [p.id, totali[base] > 1 ? `${base} (${visti[base]})` : base];
+    })
+  ) as Record<number, string>;
+}
 
 export function Workout({
   profile,
@@ -49,9 +80,9 @@ export function Workout({
   intent?: Intent | null;
   onIntentHandled?: () => void;
 }) {
-  const [plan, setPlan] = useState<WorkoutPlan | null>(null);
-  const [meta, setMeta] = useState<Omit<PlanGeneration, "plan"> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<WorkoutPlan[] | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [metaById, setMetaById] = useState<Record<number, PlanMeta>>({});
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState<string | null>(null);
@@ -59,54 +90,91 @@ export function Workout({
   const [detailId, setDetailId] = useState<number | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
-  const [splitType, setSplitType] = useState(profile.split_type ?? "auto");
+  // Overlay di creazione: `replace` è la scheda da rigenerare, null per una nuova.
+  const [dialog, setDialog] = useState<{ replace: WorkoutPlan | null } | null>(null);
+  const [deleting, setDeleting] = useState<WorkoutPlan | null>(null);
+
+  const selectPlan = useCallback((p: WorkoutPlan | null) => {
+    setSelectedId(p?.id ?? null);
+    setActiveDay(p?.exercises[0]?.day_label ?? null);
+  }, []);
 
   useEffect(() => {
     api
-      .get<WorkoutPlan | null>(`/workout/plans/active?profile_id=${profile.id}`)
-      .then((p) => {
+      .get<WorkoutPlan[]>(`/workout/plans?profile_id=${profile.id}&active_only=true`)
+      .then((lista) => {
         // Se nel frattempo è arrivata una scheda appena generata, vince quella.
-        setPlan((corrente) => corrente ?? p);
-        if (p?.exercises.length) setActiveDay((d) => d ?? p.exercises[0].day_label);
+        setPlans((correnti) => {
+          if (correnti) return correnti;
+          selectPlan(lista[0] ?? null);
+          return lista;
+        });
       })
-      .finally(() => setLoading(false));
-  }, [profile.id]);
+      .catch(() => setPlans((correnti) => correnti ?? []));
+  }, [profile.id, selectPlan]);
 
   const generate = useCallback(
-    async (split: string) => {
+    async (opts: PlanOptions) => {
+      setDialog(null);
       setGenerating(true);
       setError(null);
+      const params = new URLSearchParams({
+        profile_id: String(profile.id),
+        explain: "true",
+        split_type: opts.split,
+      });
+      if (opts.replacePlanId) params.set("replace_plan_id", String(opts.replacePlanId));
+      if (opts.sets) params.set("sets_per_exercise", String(opts.sets));
+      if (opts.repsMin && opts.repsMax) {
+        params.set("reps_min", String(opts.repsMin));
+        params.set("reps_max", String(opts.repsMax));
+      }
       try {
-        const res = await api.post<PlanGeneration>(
-          `/workout/plans/generate?profile_id=${profile.id}&explain=true&split_type=${split}`
-        );
-        setPlan(res.plan);
-        setMeta({
-          weekly_sets_per_muscle: res.weekly_sets_per_muscle,
-          warnings: res.warnings,
-          knowledge_tags: res.knowledge_tags,
-        });
-        if (res.plan.exercises.length) setActiveDay(res.plan.exercises[0].day_label);
+        const res = await api.post<PlanGeneration>(`/workout/plans/generate?${params}`);
+        // La più recente in testa, come la ordina il backend.
+        setPlans((correnti) => [
+          res.plan,
+          ...(correnti ?? []).filter((p) => p.id !== opts.replacePlanId),
+        ]);
+        setMetaById((m) => ({
+          ...m,
+          [res.plan.id]: {
+            weekly_sets_per_muscle: res.weekly_sets_per_muscle,
+            warnings: res.warnings,
+            knowledge_tags: res.knowledge_tags,
+          },
+        }));
+        selectPlan(res.plan);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Non sono riuscito a generare la scheda");
       } finally {
         setGenerating(false);
       }
     },
-    [profile.id]
+    [profile.id, selectPlan]
   );
 
   // Il coach ha proposto una scheda e l'utente ha confermato con un clic.
   useEffect(() => {
     if (intent?.section === "scheda" && intent.generateSplit) {
-      setSplitType(intent.generateSplit);
-      generate(intent.generateSplit);
+      generate({ split: intent.generateSplit });
       onIntentHandled?.();
     }
   }, [intent, generate, onIntentHandled]);
 
-  if (loading) return <Spinner label="Carico la scheda…" />;
+  async function removePlan(target: WorkoutPlan) {
+    await api.del(`/workout/plans/${target.id}?profile_id=${profile.id}`);
+    const rimaste = (plans ?? []).filter((p) => p.id !== target.id);
+    setPlans(rimaste);
+    if (target.id === selectedId) selectPlan(rimaste[0] ?? null);
+    setDeleting(null);
+  }
 
+  if (plans === null) return <Spinner label="Carico le schede…" />;
+
+  const plan = plans.find((p) => p.id === selectedId) ?? null;
+  const meta = plan ? metaById[plan.id] : undefined;
+  const labels = planTabLabels(plans);
   const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
   const dayExercises = plan?.exercises.filter((e) => e.day_label === activeDay) ?? [];
 
@@ -129,45 +197,62 @@ export function Workout({
                 Come sta andando?
               </button>
             )}
+            {plan && (
+              <button
+                className="btn-ghost"
+                onClick={() => setDialog({ replace: null })}
+                disabled={generating}
+              >
+                + Nuova scheda
+              </button>
+            )}
             <button
               className="btn-primary"
-              onClick={() => generate(splitType)}
+              onClick={() => setDialog({ replace: plan })}
               disabled={generating}
             >
-              {generating ? "Genero…" : plan ? "Rigenera" : "Genera scheda"}
+              {generating ? "Genero…" : plan ? "Rigenera" : "Crea scheda"}
             </button>
           </div>
         }
       />
 
-      <Card className="mb-4">
-        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-end">
-          <div className="min-w-0 flex-1">
-            <label className="label">Come vuoi dividere gli allenamenti</label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(SPLIT_LABELS).map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() => setSplitType(value)}
-                  className={`rounded-xl border px-3 py-2 text-[12.5px] font-medium transition ${
-                    splitType === value
-                      ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
-                      : "border-white/[0.08] bg-white/[0.025] text-white/55 hover:bg-white/[0.06] hover:text-white/85"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-white/35">
-              {SPLIT_HINTS[splitType]}
-            </p>
+      {plans.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex max-w-full flex-wrap rounded-xl border border-white/10 bg-white/[0.03] p-1">
+            {plans.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => selectPlan(p)}
+                className={`relative rounded-lg px-3.5 py-2 text-[12.5px] font-medium transition ${
+                  p.id === selectedId ? "text-ink-900" : "text-white/55 hover:text-white"
+                }`}
+              >
+                {p.id === selectedId && (
+                  <motion.span
+                    layoutId="plan-tab"
+                    className="absolute inset-0 rounded-lg bg-gradient-to-b from-lime-400 to-lime-500"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <span className="relative">{labels[p.id]}</span>
+              </button>
+            ))}
           </div>
-          <button className="btn-ghost shrink-0" onClick={() => setPrefsOpen(true)}>
-            Esercizi preferiti
-          </button>
+          {plan && (
+            <button
+              onClick={() => setDeleting(plan)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] font-medium text-white/50 transition hover:border-rose-400/30 hover:bg-rose-400/[0.08] hover:text-rose-200"
+              title="Elimina questa scheda"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h2v-8h-2Zm4 0v8h2v-8h-2Z" />
+              </svg>
+              Elimina scheda
+            </button>
+          )}
         </div>
-      </Card>
+      )}
 
       {error && (
         <div className="mb-4">
@@ -193,10 +278,18 @@ export function Workout({
       {!plan ? (
         !generating && (
           <Card>
-            <Empty
-              title="Non hai ancora una scheda"
-              hint="Serie, ripetizioni, RIR e recuperi vengono calcolati dai parametri delle fonti, non inventati dal modello."
-            />
+            <div className="grid place-items-center px-6 py-12 text-center">
+              <Mascot size={58} />
+              <p className="mt-3 text-[14px] text-white/75">Non hai ancora una scheda</p>
+              <p className="mt-1 max-w-sm text-[12.5px] leading-relaxed text-white/40">
+                Serie, ripetizioni, RIR e recuperi vengono calcolati dai parametri delle fonti,
+                non inventati dal modello. Puoi tenere più schede, per esempio una full body e
+                una push, pull, gambe.
+              </p>
+              <button className="btn-primary mt-5" onClick={() => setDialog({ replace: null })}>
+                Crea la tua scheda
+              </button>
+            </div>
           </Card>
         )
       ) : (
@@ -291,11 +384,33 @@ export function Workout({
       )}
 
       <AnimatePresence>
-        {feedbackOpen && (
-          <FeedbackDialog profileId={profile.id} onClose={() => setFeedbackOpen(false)} />
+        {feedbackOpen && plan && (
+          <FeedbackDialog
+            profileId={profile.id}
+            planId={plan.id}
+            onClose={() => setFeedbackOpen(false)}
+          />
+        )}
+        {dialog && (
+          <PlanDialog
+            key="plan-dialog"
+            replacing={dialog.replace}
+            defaultSplit={profile.split_type ?? "auto"}
+            onClose={() => setDialog(null)}
+            onGenerate={generate}
+            onOpenPrefs={() => setPrefsOpen(true)}
+          />
         )}
         {prefsOpen && (
           <PreferencesDialog profileId={profile.id} onClose={() => setPrefsOpen(false)} />
+        )}
+        {deleting && (
+          <DeletePlanDialog
+            key="delete-dialog"
+            plan={deleting}
+            onClose={() => setDeleting(null)}
+            onConfirm={() => removePlan(deleting)}
+          />
         )}
         {swapping && (
           <AlternativesDialog
@@ -303,7 +418,11 @@ export function Workout({
             item={swapping}
             profileId={profile.id}
             onClose={() => setSwapping(null)}
-            onSwapped={setPlan}
+            onSwapped={(aggiornata) =>
+              setPlans((correnti) =>
+                (correnti ?? []).map((p) => (p.id === aggiornata.id ? aggiornata : p))
+              )
+            }
             onOpenDetail={setDetailId}
           />
         )}
@@ -315,6 +434,194 @@ export function Workout({
         onClose={() => setDetailId(null)}
       />
     </>
+  );
+}
+
+/**
+ * Creazione o rigenerazione di una scheda.
+ *
+ * La scelta della divisione serve solo in questo momento: una volta creata,
+ * la pagina lascia tutto lo spazio alla scheda. Serie e ripetizioni manuali
+ * sono possibili, ma dichiarate come scelta dell'utente e non delle fonti.
+ */
+function PlanDialog({
+  replacing,
+  defaultSplit,
+  onClose,
+  onGenerate,
+  onOpenPrefs,
+}: {
+  replacing: WorkoutPlan | null;
+  defaultSplit: string;
+  onClose: () => void;
+  onGenerate: (opts: PlanOptions) => void;
+  onOpenPrefs: () => void;
+}) {
+  const [split, setSplit] = useState(replacing?.split_type ?? defaultSplit);
+  const [manual, setManual] = useState(false);
+  const [sets, setSets] = useState<number | null>(3);
+  const [repsMin, setRepsMin] = useState<number | null>(6);
+  const [repsMax, setRepsMax] = useState<number | null>(8);
+
+  const rangeInvalido = repsMin !== null && repsMax !== null && repsMin > repsMax;
+  const invalido = manual && (!sets || !repsMin || !repsMax || rangeInvalido);
+
+  return (
+    <Modal onClose={onClose} className="max-w-lg">
+      <ModalHeader
+        eyebrow={replacing ? "Rigenera scheda" : "Nuova scheda"}
+        title={replacing ? `Rigenera «${planLabel(replacing)}»` : "Crea una scheda"}
+        subtitle={
+          replacing
+            ? "La nuova scheda prende il posto di questa. Quella attuale resta nello storico dei progressi."
+            : "Si aggiunge a quelle che hai già: puoi tenerne più di una, per esempio una full body e una push, pull, gambe."
+        }
+        onClose={onClose}
+      />
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
+        <div>
+          <label className="label">Come vuoi dividere gli allenamenti</label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {Object.entries(SPLIT_LABELS).map(([value, label]) => (
+              <Choice
+                key={value}
+                active={split === value}
+                onClick={() => setSplit(value)}
+                label={label}
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-white/35">{SPLIT_HINTS[split]}</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-white/85">Esercizi preferiti</p>
+            <p className="text-[11.5px] leading-snug text-white/40">
+              Quelli che scegli entrano per primi nella scheda
+            </p>
+          </div>
+          <button className="btn-ghost shrink-0 px-3 py-2 text-[12.5px]" onClick={onOpenPrefs}>
+            Scegli
+          </button>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3">
+          <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-white/85">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-lime-400"
+              checked={manual}
+              onChange={(e) => setManual(e.target.checked)}
+            />
+            Decido io serie e ripetizioni
+          </label>
+          {manual ? (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="label">Serie</label>
+                  <NumberField value={sets} onChange={setSets} min={1} max={10} ariaLabel="Serie per esercizio" />
+                </div>
+                <div>
+                  <label className="label">Rip. min</label>
+                  <NumberField value={repsMin} onChange={setRepsMin} min={1} max={50} ariaLabel="Ripetizioni minime" />
+                </div>
+                <div>
+                  <label className="label">Rip. max</label>
+                  <NumberField value={repsMax} onChange={setRepsMax} min={1} max={50} ariaLabel="Ripetizioni massime" />
+                </div>
+              </div>
+              {rangeInvalido && (
+                <p className="text-[11.5px] text-amber-200">
+                  Le ripetizioni minime non possono superare le massime
+                </p>
+              )}
+              <p className="text-[11.5px] leading-snug text-white/40">
+                Valgono per tutti gli esercizi e non seguono più i parametri delle fonti: la
+                scheda lo segnalerà. RIR e recuperi restano quelli calcolati.
+              </p>
+            </>
+          ) : (
+            <p className="text-[11.5px] leading-snug text-white/40">
+              Altrimenti le calcolo dai parametri delle fonti in base al tuo obiettivo e livello.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex shrink-0 gap-2 border-t border-white/[0.06] px-5 py-4">
+        <button className="btn-ghost flex-1" onClick={onClose}>
+          Annulla
+        </button>
+        <button
+          className="btn-primary flex-1"
+          disabled={invalido}
+          onClick={() =>
+            onGenerate({
+              split,
+              replacePlanId: replacing?.id,
+              sets: manual ? sets : null,
+              repsMin: manual ? repsMin : null,
+              repsMax: manual ? repsMax : null,
+            })
+          }
+        >
+          {replacing ? "Rigenera" : "Genera scheda"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DeletePlanDialog({
+  plan,
+  onClose,
+  onConfirm,
+}: {
+  plan: WorkoutPlan;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Eliminazione non riuscita");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} className="max-w-md">
+      <ModalHeader
+        eyebrow="Elimina scheda"
+        title={`Eliminare «${planLabel(plan)}»?`}
+        subtitle="Sparisce dalle tue schede. Le sessioni già registrate restano nei progressi."
+        onClose={onClose}
+      />
+      <div className="space-y-3 p-5">
+        {error && <Notice>{error}</Notice>}
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1" onClick={onClose}>
+            Annulla
+          </button>
+          <button
+            className="flex-1 rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-[13px] font-semibold text-rose-200 transition hover:bg-rose-400/20 disabled:opacity-50"
+            disabled={busy}
+            onClick={confirm}
+          >
+            {busy ? "Elimino…" : "Elimina"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -575,7 +882,15 @@ function AlternativesDialog({
  * La stessa lamentela porta a conclusioni opposte a seconda del recupero, ed
  * è esattamente il motivo per cui vengono chieste due cose separate.
  */
-function FeedbackDialog({ profileId, onClose }: { profileId: number; onClose: () => void }) {
+function FeedbackDialog({
+  profileId,
+  planId,
+  onClose,
+}: {
+  profileId: number;
+  planId: number;
+  onClose: () => void;
+}) {
   const [progress, setProgress] = useState("none");
   const [recovery, setRecovery] = useState("good");
   const [domsHours, setDomsHours] = useState(48);
@@ -594,6 +909,7 @@ function FeedbackDialog({ profileId, onClose }: { profileId: number; onClose: ()
           doms_duration_hours: domsHours,
           affects_performance: affects,
           apply_to_plan: apply,
+          plan_id: planId,
         })
       );
     } finally {

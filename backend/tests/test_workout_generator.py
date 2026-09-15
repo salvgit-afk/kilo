@@ -85,19 +85,41 @@ def _profilo(**overrides) -> UserProfile:
     return UserProfile(**defaults)
 
 
-# --- Volume settimanale (training_volume.md) --------------------------------
+# --- Volume settimanale (training_volume.md, IUSCA, ACSM 2026) --------------
 
 
-@pytest.mark.parametrize("livello", list(wg.WEEKLY_SETS_BY_EXPERIENCE))
-def test_volume_settimanale_dentro_il_range_della_fonte(catalogo, livello):
+@pytest.mark.parametrize("goal", [Goal.HYPERTROPHY, Goal.FAT_LOSS])
+@pytest.mark.parametrize("livello", list(wg.WEEKLY_SETS_DEFAULT))
+def test_volume_settimanale_dentro_il_range_della_fonte(catalogo, livello, goal):
     """Il totale settimanale per gruppo muscolare deve cadere nel range
-    indicato da `training_volume.md` per quel livello di esperienza."""
-    profilo = _profilo(experience_level=livello)
+    previsto per quell'obiettivo e livello di esperienza."""
+    profilo = _profilo(experience_level=livello, goal=goal)
     plan = wg.generate_plan(catalogo, profilo)
 
-    minimo, massimo = wg.WEEKLY_SETS_BY_EXPERIENCE[livello]
+    minimo, _, massimo = wg.weekly_sets_range(profilo)
     for muscolo, serie in plan.weekly_sets_per_muscle.items():
         assert minimo <= serie <= massimo, f"{muscolo}: {serie} fuori da {minimo}-{massimo}"
+
+
+@pytest.mark.parametrize("livello", list(wg.WEEKLY_SETS_HYPERTROPHY))
+def test_scheda_massa_parte_da_almeno_10_serie(catalogo, livello):
+    """IUSCA e ACSM 2026: ~10 serie a settimana per muscolo come soglia per
+    ottimizzare l'ipertrofia. Nessun livello deve partire sotto."""
+    plan = wg.generate_plan(catalogo, _profilo(experience_level=livello))
+    assert min(plan.weekly_sets_per_muscle.values()) >= 10
+
+
+def test_massimo_ipertrofia_entro_i_rendimenti_decrescenti():
+    """ACSM 2026: rendimenti decrescenti oltre ~18-20 serie settimanali."""
+    assert all(massimo <= 20 for _, _, massimo in wg.WEEKLY_SETS_HYPERTROPHY.values())
+
+
+def test_troppe_serie_in_una_seduta_producono_un_avviso(catalogo):
+    """IUSCA: oltre ~10 serie per muscolo nella stessa seduta conviene
+    distribuire. Con uno split per gruppi muscolari un avanzato ne avrebbe 14."""
+    profilo = _profilo(experience_level=ExperienceLevel.ADVANCED, split_type="muscle_group")
+    plan = wg.generate_plan(catalogo, profilo, split_type="muscle_group")
+    assert any("stessa seduta" in w for w in plan.warnings)
 
 
 def test_volume_non_si_moltiplica_con_la_frequenza(catalogo):
@@ -107,7 +129,7 @@ def test_volume_non_si_moltiplica_con_la_frequenza(catalogo):
     tre = wg.generate_plan(catalogo, _profilo(training_days_per_week=3))
     sei = wg.generate_plan(catalogo, _profilo(training_days_per_week=6))
 
-    minimo, massimo = wg.WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.INTERMEDIATE]
+    minimo, _, massimo = wg.weekly_sets_range(_profilo())
     for plan in (tre, sei):
         assert all(minimo <= v <= massimo for v in plan.weekly_sets_per_muscle.values())
 
@@ -242,7 +264,7 @@ def test_screening_positivo_riduce_il_volume_al_minimo(catalogo):
     con_gate = wg.generate_plan(catalogo, profilo, screening=screening)
     senza_gate = wg.generate_plan(catalogo, profilo)
 
-    minimo, _ = wg.WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.ADVANCED]
+    minimo, _, _ = wg.weekly_sets_range(profilo)
     assert all(v <= minimo for v in con_gate.weekly_sets_per_muscle.values())
     assert max(con_gate.weekly_sets_per_muscle.values()) < max(
         senza_gate.weekly_sets_per_muscle.values()
@@ -265,6 +287,94 @@ def test_screening_negativo_non_limita_nulla(catalogo):
     # (che può averne di proprie, per esempio sulla distribuzione delle serie).
     assert senza_si.warnings == normale.warnings
     assert not any("screening" in w for w in senza_si.warnings)
+
+
+# --- Esercizi in allungamento (biomechanics_technique.md) -------------------
+
+
+def _aggiungi(db, *esercizi: tuple[str, str]) -> dict[str, Exercise]:
+    creati = {
+        nome: Exercise(name=nome, primary_muscle=muscolo, equipment="Machine", is_compound=False)
+        for nome, muscolo in esercizi
+    }
+    db.add_all(creati.values())
+    db.commit()
+    return creati
+
+
+def test_femorali_preferiscono_il_leg_curl_da_seduti(catalogo):
+    """Maeo 2021: +14% contro +9% di volume dei femorali rispetto al leg curl
+    da sdraiati."""
+    _aggiungi(catalogo, ("Lying Leg Curl", "Hamstrings"), ("Seated Leg Curl", "Hamstrings"))
+    allowed = wg._available_equipment_filter(_profilo())
+
+    scelti = wg._pick_exercises(catalogo, "Hamstrings", allowed, wanted=2)
+
+    isolamenti = [e.name for e in scelti if not e.is_compound]
+    assert isolamenti == ["Seated Leg Curl"]
+
+
+def test_tricipiti_preferiscono_le_estensioni_sopra_la_testa(catalogo):
+    """Maeo 2023: tricipite intero +19,9% contro +13,9% con il braccio lungo
+    il corpo."""
+    _aggiungi(
+        catalogo,
+        ("Cable Triceps Pushdown", "Triceps"),
+        ("Cable Overhead Triceps Extension", "Triceps"),
+    )
+    allowed = wg._available_equipment_filter(_profilo())
+
+    scelti = wg._pick_exercises(catalogo, "Triceps", allowed, wanted=2)
+
+    assert [e.name for e in scelti if not e.is_compound] == ["Cable Overhead Triceps Extension"]
+
+
+def test_esercizio_gradito_resta_davanti_alla_variante_in_allungamento(catalogo):
+    """Aderenza prima dell'ottimizzazione: se l'utente ha scelto il leg curl da
+    sdraiati, non viene scavalcato."""
+    creati = _aggiungi(catalogo, ("Lying Leg Curl", "Hamstrings"), ("Seated Leg Curl", "Hamstrings"))
+    allowed = wg._available_equipment_filter(_profilo())
+
+    scelti = wg._pick_exercises(
+        catalogo, "Hamstrings", allowed, wanted=2,
+        preferences={creati["Lying Leg Curl"].id: True},
+    )
+
+    assert "Lying Leg Curl" in [e.name for e in scelti]
+    assert "Seated Leg Curl" not in [e.name for e in scelti]
+
+
+def test_nessuna_preferenza_dove_mancano_confronti_diretti():
+    """Petto, dorsali e spalle: nessuno studio confronta direttamente gli
+    esercizi, quindi nessuna variante viene privilegiata."""
+    for muscolo, nome in (("Chest", "Incline Dumbbell Fly"), ("Lats", "Straight Arm Pulldown"), ("Shoulders", "Overhead Press")):
+        assert wg.exercise_library.lengthened_rank(Exercise(name=nome, primary_muscle=muscolo)) == 1
+
+
+def test_estensioni_everkinetic_riconosciute_anche_senza_overhead_nel_nome():
+    """Nel catalogo reale l'estensione con manubrio in piedi è sopra la testa
+    ma il nome non lo dice; quella da sdraiati, con la spalla a 90°, resta
+    fuori perché lo studio non l'ha confrontata."""
+    in_piedi = Exercise(
+        name="Triceps Extension: Dumbbell (Standing)", primary_muscle="Triceps",
+        source="everkinetic", external_id="0198",
+    )
+    sdraiati = Exercise(
+        name="Triceps Extension: Dumbbell (Lying)", primary_muscle="Triceps",
+        source="everkinetic", external_id="0181",
+    )
+    assert wg.exercise_library.lengthened_rank(in_piedi) == 0
+    assert wg.exercise_library.lengthened_rank(sdraiati) == 1
+
+
+def test_sostituzione_propone_prima_la_variante_in_allungamento(catalogo):
+    from app.services import exercise_swap as sw
+
+    creati = _aggiungi(catalogo, ("Lying Leg Curl", "Hamstrings"), ("Seated Leg Curl", "Hamstrings"))
+
+    alternative = sw.find_alternatives(catalogo, _profilo(), creati["Lying Leg Curl"])
+
+    assert alternative[0].exercise.name == "Seated Leg Curl"
 
 
 # --- Linee guida per età (who_physical_activity.md) -------------------------
@@ -352,20 +462,80 @@ def test_tetto_di_esercizi_per_sessione_rispettato(catalogo):
 # --- Persistenza -------------------------------------------------------------
 
 
-def test_persist_disattiva_la_scheda_precedente(catalogo):
+def test_piu_schede_restano_attive_insieme(catalogo):
+    """Una full body e una push/pull/gambe possono convivere."""
     profilo = _profilo()
     catalogo.add(profilo)
     catalogo.commit()
 
-    prima = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo))
-    seconda = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo))
+    full = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="full_body"))
+    ppl = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="push_pull_legs"))
 
-    catalogo.refresh(prima)
-    assert prima.is_active is False and prima.ended_at is not None
-    assert seconda.is_active is True
+    catalogo.refresh(full)
+    assert full.is_active and ppl.is_active
+    assert (full.split_type, ppl.split_type) == ("full_body", "push_pull_legs")
+    assert "Full body" in full.name and "Push/Pull/Gambe" in ppl.name
 
+
+def test_rigenera_sostituisce_solo_la_scheda_indicata(catalogo):
+    profilo = _profilo()
+    catalogo.add(profilo)
+    catalogo.commit()
+
+    tenuta = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="full_body"))
+    vecchia = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="upper_lower"))
+    nuova = wg.persist_plan(
+        catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="upper_lower"),
+        replace_plan_id=vecchia.id,
+    )
+
+    catalogo.refresh(tenuta)
+    catalogo.refresh(vecchia)
+    assert tenuta.is_active and nuova.is_active
+    assert vecchia.is_active is False and vecchia.ended_at is not None
     # La vecchia resta nello storico: serve ai report di progressione.
-    assert len(list(catalogo.scalars(select(WorkoutPlan)))) == 2
+    assert len(list(catalogo.scalars(select(WorkoutPlan)))) == 3
+
+
+def test_split_auto_viene_salvato_gia_risolto(catalogo):
+    """Con 4 giorni `auto` diventa upper/lower: la scheda deve dire quale."""
+    generata = wg.generate_plan(catalogo, _profilo(training_days_per_week=4), split_type="auto")
+    assert generata.split_type == "upper_lower"
+
+
+def test_eliminare_archivia_senza_cancellare(catalogo):
+    profilo = _profilo()
+    catalogo.add(profilo)
+    catalogo.commit()
+    plan = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo))
+
+    assert wg.archive_plan(catalogo, profilo, plan.id) is plan
+    assert plan.is_active is False and plan.ended_at is not None
+    assert wg.archive_plan(catalogo, profilo, plan.id) is None, "già archiviata"
+    assert catalogo.get(WorkoutPlan, plan.id) is not None
+
+
+def test_serie_e_ripetizioni_manuali_valgono_per_tutti_e_vengono_dichiarate(catalogo):
+    generata = wg.generate_plan(catalogo, _profilo())
+    rir_prima = [i.rir for i in generata.exercises]
+
+    wg.apply_manual_targets(generata, sets=4, reps=(10, 12))
+
+    assert all(i.sets == 4 and (i.reps_min, i.reps_max) == (10, 12) for i in generata.exercises)
+    assert [i.rir for i in generata.exercises] == rir_prima, "il RIR resta quello delle fonti"
+    conteggio: dict[str, int] = {}
+    for i in generata.exercises:
+        conteggio[i.exercise.primary_muscle] = conteggio.get(i.exercise.primary_muscle, 0) + 4
+    assert generata.weekly_sets_per_muscle == conteggio
+    assert any("non seguono i parametri delle fonti" in w for w in generata.warnings)
+
+
+def test_senza_scelte_manuali_la_scheda_non_cambia(catalogo):
+    generata = wg.generate_plan(catalogo, _profilo())
+    prima = [(i.sets, i.reps_min, i.reps_max) for i in generata.exercises]
+    wg.apply_manual_targets(generata)
+    assert [(i.sets, i.reps_min, i.reps_max) for i in generata.exercises] == prima
+    assert not any("fonti" in w for w in generata.warnings)
 
 
 def test_persist_registra_le_fonti_usate(catalogo):

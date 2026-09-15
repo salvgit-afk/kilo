@@ -46,6 +46,32 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "indolenz": ("doms", "autoregolazione"),
     "plateau": ("autoregolazione", "volume_allenamento"),
     "fermo": ("autoregolazione",),
+    "ipertrofi": ("ipertrofia",),
+    "crescita muscolare": ("ipertrofia",),
+    "ripetizioni": ("ipertrofia", "progressione"),
+    "carico": ("progressione",),
+    "progressione": ("progressione",),
+    "principiante": ("progressione",),
+    "forza": ("forza",),
+    "frequenza": ("frequenza_allenamento",),
+    "quante volte": ("frequenza_allenamento",),
+    "periodizz": ("periodizzazione",),
+    "drop set": ("tecniche_avanzate",),
+    "superseri": ("tecniche_avanzate",),
+    "superset": ("tecniche_avanzate",),
+    "pre-affaticamento": ("tecniche_avanzate",),
+    "biomeccanic": ("biomeccanica",),
+    "tecnica": ("tecnica_esecuzione",),
+    "esecuzione": ("tecnica_esecuzione",),
+    "cadenza": ("tecnica_esecuzione",),
+    "eccentric": ("tecnica_esecuzione",),
+    "allungamento": ("ampiezza_movimento",),
+    "ampiezza": ("ampiezza_movimento",),
+    "parziali": ("ampiezza_movimento",),
+    "stretching": ("ampiezza_movimento",),
+    "leg curl": ("biomeccanica",),
+    "cardio": ("cardio",),
+    "corsa": ("cardio",),
     "proteine": ("proteine",),
     "proteic": ("proteine",),
     "carboidrat": ("macronutrienti",),
@@ -54,10 +80,18 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "zuccheri": ("zuccheri",),
     "fibra": ("macronutrienti",),
     "calorie": ("calorie", "macronutrienti"),
-    "dimagri": ("calorie", "deficit_calorico"),
-    "definizione": ("calorie", "deficit_calorico"),
+    "dimagri": ("calorie", "deficit_calorico", "composizione_corporea"),
+    "definizione": ("calorie", "deficit_calorico", "composizione_corporea"),
     "deficit": ("deficit_calorico", "reds"),
-    "massa": ("calorie", "proteine"),
+    "massa": ("calorie", "proteine", "surplus_calorico"),
+    "surplus": ("surplus_calorico",),
+    "bulk": ("surplus_calorico",),
+    "grasso corporeo": ("composizione_corporea",),
+    "dieta": ("tipi_dieta",),
+    "chetogen": ("tipi_dieta",),
+    "keto": ("tipi_dieta",),
+    "low carb": ("tipi_dieta",),
+    "digiuno": ("tipi_dieta",),
     "acqua": ("idratazione",),
     "idrataz": ("idratazione",),
     "vegan": ("vegano", "micronutrienti"),
@@ -76,7 +110,15 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "moringa": ("integratori_oltre_muscolo",),
     "sonno": ("doms", "integratori_oltre_muscolo"),
     "stress": ("integratori_oltre_muscolo",),
-    "integrator": ("qualita_prodotto",),
+    "integrator": ("qualita_prodotto", "categorie_integratori"),
+    "tribulus": ("categorie_integratori",),
+    "arginina": ("categorie_integratori",),
+    "carnitina": ("categorie_integratori",),
+    "bicarbonato": ("categorie_integratori",),
+    "nitrati": ("categorie_integratori",),
+    "barbabietola": ("categorie_integratori",),
+    "zma": ("categorie_integratori",),
+    "booster": ("categorie_integratori",),
     "esercizi": ("scelta_esercizi",),
     "cambiare": ("scelta_esercizi",),
     "noia": ("scelta_esercizi",),
@@ -138,18 +180,18 @@ def _user_context(db: Session, profile: UserProfile) -> str:
         f"{totali.fat_g:.0f} g grassi"
     )
 
-    piano = db.scalar(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-        )
-    )
-    if piano:
+    piani = db.scalars(
+        select(WorkoutPlan)
+        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
+        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
+    ).all()
+    for piano in piani:
         giorni = sorted({e.day_label for e in piano.exercises})
         righe.append(
             f"- Scheda attiva: «{piano.name}», {piano.days_per_week} giorni "
             f"({', '.join(giorni)}), {len(piano.exercises)} esercizi in totale"
         )
-    else:
+    if not piani:
         righe.append("- Nessuna scheda attiva al momento")
 
     integratori = db.scalars(

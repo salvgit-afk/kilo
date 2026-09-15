@@ -39,7 +39,7 @@ TDEE = BMR × fattore_attività
 |---|---|
 | Mantenimento | TDEE |
 | Definizione (perdita grasso) | TDEE − 15/20% (deficit moderato, non aggressivo) |
-| Ipertrofia/aumento massa | TDEE + 10/15% (surplus moderato) |
+| Ipertrofia/aumento massa | TDEE + 10/15% (surplus moderato): +15% principiante, +12% intermedio, +10% avanzato, perché l'ISSN indica surplus più ampi per chi inizia e più contenuti per chi è già allenato (`diets_body_composition.md`) |
 
 Un deficit/surplus moderato è preferibile a uno aggressivo: preserva massa
 magra in deficit e limita l'accumulo di grasso in surplus. Deficit molto

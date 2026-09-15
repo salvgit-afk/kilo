@@ -46,8 +46,12 @@ seguito dal contenuto in prosa che l'agente usa come contesto.
 | `proximity_to_failure.md` | `cedimento` | Domande su cedimento/RIR, volume già al massimo |
 | `doms_and_autoregulation.md` | `doms`, `autoregolazione` | L'utente riferisce dolori o assenza di progressi |
 | `exercise_choice_and_focus.md` | `scelta_esercizi`, `focus_attentivo` | Sostituzione esercizi, preferenze dell'utente |
+| `hypertrophy_prescription.md` | `ipertrofia`, `tecniche_avanzate`, `cardio` | Scheda con obiettivo massa muscolare; domande su ripetizioni, drop set/superserie, cardio insieme ai pesi |
+| `biomechanics_technique.md` | `biomeccanica`, `tecnica_esecuzione`, `ampiezza_movimento` | Domande su tecnica, ampiezza di movimento, allungamento, cadenza, stretching; motiva la preferenza di generatore e sostituzioni per leg curl da seduti ed estensioni dei tricipiti sopra la testa |
+| `resistance_training_acsm.md` | `progressione`, `forza`, `frequenza_allenamento`, `periodizzazione` | **Ogni** generazione scheda; domande su carichi, frequenza, progressione, livello di esperienza |
 | `calorie_and_1rm_formulas.md` | `calorie`, `1rm` | Calcolo target calorico, report progressione |
 | `protein_intake.md` | `proteine` | Piano alimentare, valutazione integratore proteico |
+| `diets_body_composition.md` | `composizione_corporea`, `surplus_calorico`, `tipi_dieta` | Target con obiettivo massa o definizione; domande su surplus, keto/low-carb, digiuno intermittente |
 | `macronutrients_efsa.md` | `macronutrienti`, `zuccheri` | Piano alimentare, generazione/valutazione ricette |
 | `micronutrients_efsa.md` | `micronutrienti` | Piano alimentare, in particolare per utenti vegetariani/vegani |
 | `nutrient_timing.md` | `timing_pasti` | Piano alimentare attorno alle sessioni di allenamento |
@@ -60,6 +64,7 @@ seguito dal contenuto in prosa che l'agente usa come contesto.
 | `bcaa.md` | `bcaa` | Utente dichiara uso BCAA |
 | `citrulline_malate.md` | `citrullina` | Utente dichiara uso citrullina malato |
 | `vitamin_d_omega3_supplementation.md` | `vitamina_d`, `omega3` | Utente dichiara integrazione vitamina D o omega-3/olio di pesce/alghe |
+| `supplement_evidence_categories.md` | `categorie_integratori` | Domande generiche sugli integratori o su integratori senza file dedicato (tribulus, arginina, carnitina, bicarbonato, nitrati…) |
 | `supplement_quality_safety.md` | `qualita_prodotto` | **Sempre insieme** a qualunque integratore dichiarato (creatina, proteine, ecc.) — rischio da contaminazione/etichettatura, non da dosaggio |
 | `vegetarian_vegan_nutrition.md` | `vegetariano`, `vegano` | Piano alimentare/ricette per utenti che dichiarano dieta vegetariana o vegana |
 | `evidence_conduct.md` | *(nessuno — regola trasversale)* | **Sempre** in ogni prompt di generazione, indipendentemente dal topic |
@@ -74,9 +79,10 @@ Non serve un vero motore RAG/vettoriale per iniziare: l'insieme di argomenti
 2. Il backend carica il/i file corrispondenti e li inietta nel prompt come
    contesto, insieme al profilo utente.
 3. L'LLM genera output vincolato a quei numeri, non a piacere.
-4. `screening_and_red_flags.md` è un caso speciale: non è "contesto per
-   generare meglio", è un **gate** che può disattivare la generazione
-   automatica di piani aggressivi finché non è stato completato.
+4. `screening_and_red_flags.md` è un caso speciale: non è solo "contesto
+   per generare meglio". Se lo screening ha almeno un «sì», il generatore
+   fissa il volume al minimo del range e avvisa di consultare un medico
+   prima di aumentarlo.
 
 Se in futuro la knowledge base cresce molto, questo stesso schema regge
 un passaggio a un vero store con embedding — ma non serve adesso.
@@ -114,8 +120,32 @@ alta` (testo primario verificato)**:
   Olympic Committee (mirror alternativo, il dominio ufficiale
   `stillmed.olympics.com` non era raggiungibile dall'ambiente).
 
-I restanti file (creatina, proteine ISSN, caffeina, timing pasti, recupero,
-idratazione, beta-alanina, HMB, BCAA) restano a `affidabilità: media`:
+**Aggiornamento 2026-09-15**: il testo integrale degli articoli open access
+su PubMed Central si recupera senza pagine anti-bot dall'API di Europe PMC
+(`ebi.ac.uk/europepmc/webservices/rest/<PMCID>/fullTextXML`). Letti sul
+testo integrale:
+
+- `hypertrophy_prescription.md` (nuovo) — position stand IUSCA 2021
+  sull'ipertrofia. La "NSCA Position Statement" sull'ipertrofia richiesta
+  non esiste con quel titolo: vedi le note del file.
+- `resistance_training_acsm.md` (nuovo) — ACSM Position Stand 2026, che
+  aggiorna il "Progression Models" 2009 (riportato anch'esso).
+- `diets_body_composition.md` (nuovo) — ISSN Position Stand 2017.
+- `supplement_evidence_categories.md` (nuovo) — ISSN Exercise & Sports
+  Nutrition Review Update 2018.
+- `biomechanics_technique.md` (nuovo) — revisioni 2023-2026 su tecnica,
+  ampiezza di movimento e allenamento in allungamento, studi di Maeo sui
+  femorali e tricipiti, sezioni OpenStax sull'anatomia del muscolo.
+- `training_volume.md` — **da `media` ad `alta`**: dall'abstract del
+  preprint alla versione pubblicata di Pelland et al. (Sports Medicine 2026).
+- `creatine.md` e `nutrient_timing.md` — **da `media` ad `alta`**, con due
+  correzioni: lo "0,03 g/kg" di mantenimento della creatina e la finestra
+  "1 ora prima / 1-4 ore dopo" del timing non comparivano nelle fonti.
+
+I restanti file (proteine ISSN, caffeina, recupero, idratazione,
+beta-alanina, HMB, BCAA) restano a `affidabilità: media`. Molti sono open
+access e ora recuperabili con Europe PMC: sono i prossimi candidati da
+rileggere sul testo integrale. Nota storica:
 il testo integrale su PubMed Central, Springer e Taylor&Francis blocca
 ancora il recupero automatico con pagine anti-bot/reCAPTCHA (un problema
 diverso da quello risolto con poppler-utils, che serviva solo per

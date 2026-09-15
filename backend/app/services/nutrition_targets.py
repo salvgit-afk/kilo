@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     DietType,
+    ExperienceLevel,
     Goal,
     NutritionPlan,
     Sex,
@@ -50,8 +51,18 @@ CALORIE_ADJUSTMENT_BY_GOAL = {
     Goal.MAINTENANCE: 0.0,
     Goal.GENERAL_HEALTH: 0.0,
     Goal.FAT_LOSS: -0.18,      # deficit moderato (range indicato: -15/-20%)
-    Goal.HYPERTROPHY: 0.12,    # surplus moderato (range indicato: +10/+15%)
+    Goal.HYPERTROPHY: 0.12,    # valore medio: vedi HYPERTROPHY_SURPLUS_BY_EXPERIENCE
     Goal.STRENGTH: 0.08,
+}
+
+# `diets_body_composition.md` (ISSN): surplus più ampi per chi è all'inizio,
+# più predisposto a guadagnare massa magra; più contenuti per gli avanzati,
+# più a rischio di accumulare grasso. La fonte non dà numeri: i valori
+# restano nel range +10/+15% di `calorie_and_1rm_formulas.md`.
+HYPERTROPHY_SURPLUS_BY_EXPERIENCE = {
+    ExperienceLevel.BEGINNER: 0.15,
+    ExperienceLevel.INTERMEDIATE: 0.12,
+    ExperienceLevel.ADVANCED: 0.10,
 }
 
 # `protein_intake.md` (ISSN): g per kg di peso corporeo.
@@ -133,6 +144,15 @@ def _protein_target(profile: UserProfile) -> tuple[float, list[str]]:
     return g_per_kg, warnings
 
 
+def calorie_adjustment(profile: UserProfile) -> float:
+    """Scostamento dal TDEE per l'obiettivo e, in massa, per l'esperienza."""
+    if profile.goal == Goal.HYPERTROPHY:
+        return HYPERTROPHY_SURPLUS_BY_EXPERIENCE.get(
+            profile.experience_level, CALORIE_ADJUSTMENT_BY_GOAL[Goal.HYPERTROPHY]
+        )
+    return CALORIE_ADJUSTMENT_BY_GOAL.get(profile.goal, 0.0)
+
+
 def compute_targets(profile: UserProfile, *, training_days: int | None = None) -> NutritionTargets:
     """Calcola i target giornalieri a partire dal profilo."""
     tdee = profile.tdee
@@ -141,11 +161,13 @@ def compute_targets(profile: UserProfile, *, training_days: int | None = None) -
             "Impossibile calcolare il TDEE: servono peso, altezza e data di nascita."
         )
 
-    adjustment = CALORIE_ADJUSTMENT_BY_GOAL.get(profile.goal, 0.0)
+    adjustment = calorie_adjustment(profile)
     target_kcal = round(tdee * (1 + adjustment))
 
     g_per_kg, warnings = _protein_target(profile)
     tags = ["calorie", "proteine", "macronutrienti"]
+    if profile.goal in (Goal.HYPERTROPHY, Goal.FAT_LOSS):
+        tags.append("composizione_corporea")
     if profile.diet_type in (DietType.VEGAN, DietType.VEGETARIAN):
         tags.extend(["vegano" if profile.diet_type == DietType.VEGAN else "vegetariano",
                      "micronutrienti"])
@@ -215,6 +237,19 @@ def compute_targets(profile: UserProfile, *, training_days: int | None = None) -
     return targets
 
 
+def _surplus_note(profile: UserProfile) -> str:
+    if profile.goal != Goal.HYPERTROPHY:
+        return ""
+    return (
+        "Il surplus dipende dalla tua esperienza: chi inizia costruisce massa "
+        "magra più in fretta e regge un surplus più ampio, chi è già allenato "
+        "rischia di accumulare più grasso e ne usa uno più contenuto (ISSN). Il "
+        "fabbisogno reale varia molto da persona a persona, anche per quanto ti "
+        "muovi durante il giorno: se dopo qualche settimana il peso non sale, o "
+        "sale troppo in fretta, va aggiustato. "
+    )
+
+
 def _build_rationale(profile: UserProfile, t: NutritionTargets) -> str:
     verso = (
         "in deficit" if t.calorie_adjustment_pct < 0
@@ -226,6 +261,7 @@ def _build_rationale(profile: UserProfile, t: NutritionTargets) -> str:
         f"(formula di Mifflin-St Jeor con il tuo livello di attività). "
         f"Per l'obiettivo «{profile.goal}» il target è {t.target_kcal:.0f} kcal, "
         f"cioè {abs(t.calorie_adjustment_pct):.0%} {verso}. "
+        f"{_surplus_note(profile)}"
         f"Le proteine sono calcolate sul peso corporeo — {t.protein_g_per_kg} g/kg, "
         f"cioè {t.protein_g:.0f} g — e non come percentuale delle calorie, perché "
         f"il fabbisogno dipende dalla massa da mantenere, non da quanto mangi. "

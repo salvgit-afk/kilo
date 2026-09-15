@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AgentRecommendationLog,
-    ExperienceLevel,
     ProgressPerception,
     RecommendationType,
     RecoveryQuality,
@@ -34,14 +33,16 @@ from app.models import (
     WorkoutPlan,
     WorkoutPlanExercise,
 )
-from app.services.workout_generator import WEEKLY_SETS_BY_EXPERIENCE
+from app.services.workout_generator import weekly_sets_range
 
 logger = logging.getLogger("autoregulation")
 
 # `doms_and_autoregulation.md`: si modifica di un passo per volta, circa il
 # 20-25% del volume. Cambiare troppo insieme rende impossibile capire quale
-# variazione abbia prodotto l'effetto.
-ADJUSTMENT_RATIO = 0.22
+# variazione abbia prodotto l'effetto. Si usa l'estremo basso perché
+# `hypertrophy_prescription.md` (IUSCA) consiglia aumenti non oltre il 20%
+# del volume precedente per ciclo di circa 4 settimane.
+ADJUSTMENT_RATIO = 0.20
 
 # Oltre questa soglia il dolore non è più "indolenzimento normale" ma segnale
 # di recupero insufficiente.
@@ -107,9 +108,7 @@ def evaluate_feedback(
     plan: WorkoutPlan | None = None,
 ) -> VolumeRecommendation:
     """Applica la matrice decisionale di `doms_and_autoregulation.md`."""
-    minimo, massimo = WEEKLY_SETS_BY_EXPERIENCE.get(
-        profile.experience_level, WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.BEGINNER]
-    )
+    minimo, _, massimo = weekly_sets_range(profile)
 
     corrente = _current_weekly_sets(db, plan) if plan is not None else 0
     if corrente <= 0:
@@ -157,7 +156,10 @@ def evaluate_feedback(
             )
 
     elif nessun_progresso and not recupero_limitante:
-        suggerito = min(massimo, round(corrente * (1 + ADJUSTMENT_RATIO)) or corrente + 1)
+        # Per difetto e non arrotondato: l'aumento non deve superare il limite
+        # IUSCA del 20%. Almeno una serie in più, altrimenti sotto le 5 serie
+        # l'arrotondamento non aumenterebbe mai.
+        suggerito = min(massimo, max(corrente + 1, int(corrente * (1 + ADJUSTMENT_RATIO))))
         adjustment = (
             VolumeAdjustment.INCREASE if suggerito > corrente else VolumeAdjustment.MAINTAIN
         )

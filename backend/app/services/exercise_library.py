@@ -484,6 +484,41 @@ def catalog_order():
     )
 
 
+# Varianti che allenano il muscolo in allungamento, preferite a parità di
+# gradimento, gruppo muscolare e tipologia (`biomechanics_technique.md`).
+# Solo dove un confronto diretto fra esercizi lo sostiene: leg curl da seduti
+# contro da sdraiati (Maeo 2021) ed estensioni dei tricipiti sopra la testa
+# contro il braccio lungo il corpo (Maeo 2023). Per petto, dorsali e spalle
+# mancano confronti diretti, quindi nessuna preferenza.
+LENGTHENED_VARIANTS: dict[str, tuple[str, ...]] = {
+    "Hamstrings": ("seated leg curl", "sitting leg curl", "seated hamstring curl"),
+    "Triceps": ("overhead",),
+}
+
+# Everkinetic: il nome non sempre dice "overhead". Id verificati sui passaggi
+# del dataset: busto eretto (in piedi o seduti) e braccia sopra la testa, come
+# nello studio. Esclusi di proposito gli esercizi da sdraiati o su panca
+# inclinata che portano il peso "dietro la testa": la spalla è a circa 90°,
+# una posizione intermedia che lo studio non ha confrontato.
+LENGTHENED_EVERKINETIC_IDS = frozenset({
+    "0119",                                   # Seated Leg Curl
+    "0173",                                   # Triceps Extension: Dumbbell (One Arm)
+    "0193", "0194",                           # estensioni seduti sopra la testa
+    "0198", "0200", "0201",                   # estensioni in piedi sopra la testa
+})
+
+
+def lengthened_rank(exercise: Exercise) -> int:
+    """0 per le varianti in allungamento del muscolo primario, 1 per le altre."""
+    parole = LENGTHENED_VARIANTS.get(exercise.primary_muscle or "")
+    if not parole:
+        return 1
+    if exercise.source == SOURCE_EVERKINETIC and exercise.external_id in LENGTHENED_EVERKINETIC_IDS:
+        return 0
+    nome = (exercise.name or "").lower().replace("-", " ").replace("_", " ")
+    return 0 if any(parola in nome for parola in parole) else 1
+
+
 if __name__ == "__main__":
     # Import completo da riga di comando:
     #   python -m app.services.exercise_library

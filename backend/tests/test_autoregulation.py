@@ -170,7 +170,7 @@ def test_volume_non_scende_sotto_il_minimo_del_livello(scenario):
     """Il range di `training_volume.md` resta il vincolo: sotto il minimo non
     si va, si guarda altrove (alimentazione, sonno)."""
     db, profilo, plan = scenario
-    minimo, _ = wg.WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.INTERMEDIATE]
+    minimo, _, _ = wg.weekly_sets_range(profilo)
 
     for _ in range(5):
         feedback = _feedback(
@@ -185,13 +185,24 @@ def test_volume_non_scende_sotto_il_minimo_del_livello(scenario):
 
 def test_volume_non_supera_il_massimo_del_livello(scenario):
     db, profilo, plan = scenario
-    _, massimo = wg.WEEKLY_SETS_BY_EXPERIENCE[ExperienceLevel.INTERMEDIATE]
+    _, _, massimo = wg.weekly_sets_range(profilo)
 
     for _ in range(5):
         feedback = _feedback(profilo, plan, progress_perception=ProgressPerception.NONE)
         rec = ar.evaluate_feedback(db, profilo, feedback, plan=plan)
         ar.apply_volume_change(db, plan, rec)
         assert rec.suggested_weekly_sets <= massimo
+
+
+def test_aumento_non_supera_il_20_percento(scenario):
+    """IUSCA: aumenti di serie non oltre il 20% del volume precedente per
+    ciclo di circa 4 settimane."""
+    db, profilo, plan = scenario
+    feedback = _feedback(profilo, plan, progress_perception=ProgressPerception.NONE)
+    rec = ar.evaluate_feedback(db, profilo, feedback, plan=plan)
+
+    assert rec.suggested_weekly_sets > rec.current_weekly_sets
+    assert rec.suggested_weekly_sets <= rec.current_weekly_sets * 1.2
 
 
 def test_al_massimo_del_range_suggerisce_di_guardare_altrove(scenario):

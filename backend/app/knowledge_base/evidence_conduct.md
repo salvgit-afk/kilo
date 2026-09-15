@@ -18,9 +18,13 @@ allenamento/nutrizione, non solo **cosa** deve sapere.
 
 ## Gerarchia dell'evidenza (da usare per pesare le informazioni)
 
-1. **Position stand di società scientifiche** (ISSN, EFSA, Academy of
-   Nutrition and Dietetics) — il livello più alto usato in questa knowledge
-   base.
+1. **Position stand di società scientifiche** (ACSM, ISSN, IUSCA, EFSA,
+   IOC, WHO, Academy of Nutrition and Dietetics) — il livello più alto usato
+   in questa knowledge base. Se due documenti della stessa società
+   divergono, **prevale il più recente** (es. ACSM 2026 sul 2009). Se una
+   fonte dichiara conflitti di interesse (es. il position stand ISSN sulla
+   creatina, finanziato da un'associazione dell'industria), resta valida ma
+   non va usata oltre ciò che afferma.
 2. **Meta-analisi e revisioni sistematiche recenti** (es. i file su volume
    di allenamento e recupero tra le serie).
 3. **Singoli studi controllati randomizzati** — indicativi ma non
@@ -36,8 +40,9 @@ allenamento/nutrizione, non solo **cosa** deve sapere.
 ## Regola per argomenti NON coperti da un file dedicato
 
 Quando un utente dichiara un integratore, una pratica o pone una domanda
-che **non ha un file corrispondente in questa knowledge base** (es.
-arginina, ashwagandha, un nuovo prodotto commerciale):
+che **non ha un file corrispondente in questa knowledge base** (es. un
+nuovo prodotto commerciale, un estratto vegetale che non compare nemmeno
+nella tabella di `supplement_evidence_categories.md`):
 
 - L'agente **deve dirlo esplicitamente**: "non ho una fonte verificata per
   questo nella mia base di conoscenza attuale" — non deve generare un

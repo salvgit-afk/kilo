@@ -458,9 +458,12 @@ class LlmCache(Base):
 
 
 class WorkoutPlan(Base):
-    """Una scheda generata. Non viene mai cancellata quando se ne genera una
-    nuova: si disattiva, così i report possono confrontare inizio e fine di un
-    percorso."""
+    """Una scheda generata.
+
+    Più schede possono essere attive insieme (es. una full body e una push,
+    pull, gambe). Non viene mai cancellata: quando la si rigenera o la si
+    elimina dall'interfaccia si archivia (`is_active=False`), così i report
+    possono confrontare inizio e fine di un percorso."""
 
     __tablename__ = "workout_plans"
 
@@ -471,6 +474,9 @@ class WorkoutPlan(Base):
     name: Mapped[str] = mapped_column(String(255))
     goal: Mapped[str] = mapped_column(String(32))
     days_per_week: Mapped[int] = mapped_column(Integer)
+    # Divisione effettivamente usata (vedi SplitType; mai "auto", già risolto).
+    # Serve a distinguere le schede attive nelle schede dell'interfaccia.
+    split_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Motivazione testuale generata dall'agente (perché questa scheda, per te).
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 

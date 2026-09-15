@@ -68,6 +68,32 @@ def test_deficit_alza_le_proteine_per_kg():
     assert definizione.target_kcal < massa.target_kcal
 
 
+def test_surplus_massa_si_riduce_con_l_esperienza():
+    """`diets_body_composition.md` (ISSN): surplus più ampio per chi inizia,
+    più contenuto per chi è già allenato, dentro il range +10/+15%."""
+    surplus = [
+        nt.compute_targets(_profilo(experience_level=livello)).calorie_adjustment_pct
+        for livello in (ExperienceLevel.BEGINNER, ExperienceLevel.INTERMEDIATE, ExperienceLevel.ADVANCED)
+    ]
+    assert surplus[0] > surplus[1] > surplus[2]
+    assert all(0.10 <= s <= 0.15 for s in surplus)
+
+
+def test_surplus_legato_all_esperienza_solo_in_massa():
+    """Gli altri obiettivi non cambiano con il livello di esperienza."""
+    for obiettivo in (Goal.FAT_LOSS, Goal.MAINTENANCE, Goal.STRENGTH):
+        valori = {
+            nt.compute_targets(_profilo(goal=obiettivo, experience_level=livello)).calorie_adjustment_pct
+            for livello in (ExperienceLevel.BEGINNER, ExperienceLevel.ADVANCED)
+        }
+        assert len(valori) == 1
+
+
+def test_spiegazione_del_surplus_invita_ad_aggiustarlo():
+    t = nt.compute_targets(_profilo(experience_level=ExperienceLevel.BEGINNER))
+    assert "esperienza" in t.rationale and "aggiustato" in t.rationale
+
+
 def test_proteine_dentro_il_range_issn():
     """Range ISSN per persone attive: 1,4-2,4 g/kg."""
     for obiettivo in (Goal.HYPERTROPHY, Goal.FAT_LOSS, Goal.MAINTENANCE, Goal.GENERAL_HEALTH):

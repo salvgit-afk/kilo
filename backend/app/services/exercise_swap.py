@@ -112,6 +112,9 @@ def find_alternatives(
         key=lambda a: (
             not a.already_preferred,
             not a.same_type,
+            # A parità di tipologia, prima le varianti in allungamento
+            # (`biomechanics_technique.md`).
+            exercise_library.lengthened_rank(a.exercise),
             a.exercise.priority if a.exercise.priority is not None else 100,
             a.exercise.name,
         )

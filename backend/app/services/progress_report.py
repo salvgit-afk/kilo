@@ -287,9 +287,10 @@ def build_report(
     )
 
     piano_attivo = db.scalar(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-        )
+        select(WorkoutPlan)
+        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
+        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
+        .limit(1)
     )
 
     settimane = max((until - since).days / 7, 1e-9)
@@ -402,9 +403,10 @@ def explain_plateau(db: Session, profile: UserProfile, report: ProgressReport) -
         )
 
     piano = db.scalar(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-        )
+        select(WorkoutPlan)
+        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
+        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
+        .limit(1)
     )
     raccomandazione = autoregulation.evaluate_feedback(db, profile, recente, plan=piano)
     return f"Sei fermo su {nomi}. {raccomandazione.reason}"
