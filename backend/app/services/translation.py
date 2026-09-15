@@ -324,7 +324,9 @@ def translate_library(
     filtro_fonte = (
         Exercise.source == source
         if source
-        else Exercise.source.in_(CATALOG_SOURCES) & Exercise.duplicate_of_id.is_(None)
+        else Exercise.source.in_(CATALOG_SOURCES)
+        & Exercise.duplicate_of_id.is_(None)
+        & Exercise.in_catalog.is_(True)
     )
     totale = fallimenti = 0
     with SessionLocal() as db:

@@ -124,6 +124,30 @@ def test_free_exercise_db_scarta_il_plank():
     assert lib.parse_entry(voce) is None
 
 
+def test_voci_non_piu_valide_escono_dal_catalogo_e_possono_tornare(db):
+    """Esercizi importati con regole vecchie (come i plank di free-exercise-db)
+    non devono restare visibili, ma nemmeno sparire dal database."""
+    riga = _rep("renegade", "Renegade Row", ["latissimus_dorsi"], equipment="dumbbell")
+    resta = _rep("keep", "Cable Row", ["latissimus_dorsi"])
+    lib.sync_library(db, dataset=[riga, resta], source=lib.SOURCE_REPDB)
+
+    # Ora la voce ricade nelle esclusioni (esercizio a tempo).
+    lib.sync_library(db, dataset=[{**riga, "name_en": "Renegade Row Hold"}, resta], source=lib.SOURCE_REPDB)
+    visibili = {e.external_id for e in db.query(Exercise).filter(lib.catalog_condition(db))}
+    assert visibili == {"keep"}
+    assert db.query(Exercise).filter_by(external_id="renegade").one().in_catalog is False
+
+    lib.sync_library(db, dataset=[riga, resta], source=lib.SOURCE_REPDB)
+    visibili = {e.external_id for e in db.query(Exercise).filter(lib.catalog_condition(db))}
+    assert visibili == {"renegade", "keep"}
+
+
+def test_download_senza_voci_valide_non_svuota_il_catalogo(db):
+    lib.sync_library(db, dataset=[_rep("keep", "Cable Row", ["latissimus_dorsi"])], source=lib.SOURCE_REPDB)
+    lib.sync_library(db, dataset=[], source=lib.SOURCE_REPDB)
+    assert db.query(Exercise).filter(lib.catalog_condition(db)).count() == 1
+
+
 def test_download_repdb_estrae_l_elenco(monkeypatch):
     class Risposta:
         def raise_for_status(self):

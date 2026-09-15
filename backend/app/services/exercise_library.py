@@ -528,11 +528,14 @@ def sync_library(db: Session, dataset: list[dict] | None = None, *, source: str 
     }
 
     created = updated = skipped = 0
+    importati: set[str] = set()
     for raw in dataset:
         campi = parser(raw)
         if campi is None:
             skipped += 1
             continue
+        campi["in_catalog"] = True
+        importati.add(campi["external_id"])
         corrente = existing.get(campi["external_id"])
         if corrente is None:
             db.add(Exercise(source=source, **campi))
@@ -542,10 +545,21 @@ def sync_library(db: Session, dataset: list[dict] | None = None, *, source: str 
                 setattr(corrente, chiave, valore)
             updated += 1
 
+    # Ciò che la fonte non fornisce più, o che le regole ora escludono, esce
+    # dal catalogo senza essere cancellato. Con un download senza voci valide
+    # non si tocca nulla: è più probabile un problema della fonte che un
+    # catalogo davvero vuoto.
+    ritirati = 0
+    if importati:
+        for external_id, esercizio in existing.items():
+            if external_id not in importati and esercizio.in_catalog:
+                esercizio.in_catalog = False
+                ritirati += 1
+
     db.commit()
     logger.info(
-        "Libreria esercizi %s: %d voci, %d nuove, %d aggiornate, %d scartate",
-        source, len(dataset), created, updated, skipped,
+        "Libreria esercizi %s: %d voci, %d nuove, %d aggiornate, %d scartate, %d uscite dal catalogo",
+        source, len(dataset), created, updated, skipped, ritirati,
     )
     return SyncResult(
         fetched=len(dataset), created=created, updated=updated, skipped_no_muscle=skipped
@@ -571,6 +585,7 @@ def sync_manual(db: Session):
             demo_images=None,
             level=None,
             priority=staple_priority(SOURCE_MANUAL, voce["external_id"]),
+            in_catalog=True,
         )
         corrente = existing.get(voce["external_id"])
         if corrente is None:
@@ -580,6 +595,10 @@ def sync_manual(db: Session):
             for chiave, valore in campi.items():
                 setattr(corrente, chiave, valore)
             updated += 1
+    attuali = {voce["external_id"] for voce in MANUAL_EXERCISES}
+    for external_id, esercizio in existing.items():
+        if external_id not in attuali:
+            esercizio.in_catalog = False
     db.commit()
     return SyncResult(
         fetched=len(MANUAL_EXERCISES), created=created, updated=updated, skipped_no_muscle=0
@@ -599,8 +618,14 @@ def apply_duplicates(db: Session, groups: list[list[str]] | None = None) -> int:
     ignorate. Riapplicarla è sicura: ricalcola tutto da capo.
     """
     groups = load_duplicate_groups() if groups is None else groups
+    # Solo ciò che è nel catalogo: un esercizio ritirato non deve restare il
+    # rappresentante di un gruppo e nascondere gli altri.
     righe = list(
-        db.scalars(select(Exercise).where(Exercise.source.in_(CATALOG_SOURCES)))
+        db.scalars(
+            select(Exercise).where(
+                Exercise.source.in_(CATALOG_SOURCES), Exercise.in_catalog.is_(True)
+            )
+        )
     )
     per_chiave = {f"{ex.source}:{ex.external_id}": ex for ex in righe}
 
@@ -674,12 +699,12 @@ def has_catalog(db: Session) -> bool:
 def catalog_condition(db: Session):
     """Filtro SQL sul catalogo da cui scegliere gli esercizi.
 
-    Tutte le fonti del catalogo, senza i doppioni. Gli esercizi non ancora
-    tradotti restano visibili con il nome originale: la traduzione arriva in
-    background. Senza nessuna fonte importata (per esempio nei test) tutto ciò
-    che c'è nel database, sempre senza doppioni.
+    Tutte le fonti del catalogo, senza i doppioni e senza le voci ritirate.
+    Gli esercizi non ancora tradotti restano visibili con il nome originale: la
+    traduzione arriva in background. Senza nessuna fonte importata (per esempio
+    nei test) tutto ciò che c'è nel database, con le stesse esclusioni.
     """
-    visibili = Exercise.duplicate_of_id.is_(None)
+    visibili = and_(Exercise.duplicate_of_id.is_(None), Exercise.in_catalog.is_(True))
     if not has_catalog(db):
         return visibili
     return and_(Exercise.source.in_(CATALOG_SOURCES), visibili)

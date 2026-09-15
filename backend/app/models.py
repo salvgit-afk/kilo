@@ -425,6 +425,10 @@ class Exercise(Base):
     duplicate_of_id: Mapped[int | None] = mapped_column(
         ForeignKey("exercises.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Falso quando la fonte non fornisce più l'esercizio o le regole di import
+    # lo escludono (es. esercizi a tempo). Come per i doppioni, resta nel
+    # database per le schede che lo usano ma esce dal catalogo.
+    in_catalog: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Più basso = esercizio "di base" del distretto, proposto per primo.
     priority: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
