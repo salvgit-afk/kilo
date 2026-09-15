@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,6 +13,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="it">
       <body>
         <div className="relative z-10">{children}</div>
+        {/* Vercel Web Analytics: statistiche di visita senza cookie. In locale non invia nulla. */}
+        <Analytics />
       </body>
     </html>
   );
