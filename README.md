@@ -257,7 +257,18 @@ pytest -q
 
 I test coprono generazione delle schede, autoregolazione, target
 nutrizionali e formule, diario, report di progressione, integratori,
-knowledge base e client esterni (con risposte simulate).
+knowledge base, client esterni (con risposte simulate) e sicurezza: ogni
+rotta senza accesso deve rispondere 401, e i dati di un utente non devono
+essere raggiungibili da un altro.
+
+Controllo delle dipendenze (in un ambiente separato, per non aggiungere lo
+strumento al progetto):
+
+```bash
+python3 -m venv /tmp/audit && /tmp/audit/bin/pip install pip-audit
+/tmp/audit/bin/pip-audit -r backend/requirements.txt
+cd frontend && npm audit
+```
 
 ---
 
@@ -335,6 +346,18 @@ verifica e livello di affidabilità**.
   stanno fra tag nel prompt, con l'istruzione di non eseguirli; lo storico ha
   ruoli ammessi e lunghezze massime.
 - **Documentazione dell'API spenta in produzione** (`DOCS_ENABLED`).
+- **Intestazioni di sicurezza**: il frontend invia una Content-Security-Policy
+  (script, connessioni e immagini solo dai domini previsti), blocca
+  l'inserimento in iframe e forza HTTPS; le risposte dell'API non vengono
+  memorizzate da browser o proxy (`Cache-Control: no-store`).
+- **Dipendenze controllate**: `npm audit` e `pip-audit` senza vulnerabilità
+  note al momento dell'ultimo aggiornamento.
+- **Chiamate a Gemini robuste e misurate**: nuovi tentativi sugli errori
+  temporanei, regole della chat nel prompt di sistema separate dal testo
+  dell'utente, token consumati registrati nei log per ogni chiamata. Al
+  modello non arrivano nome né email dell'utente.
+- **Trasparenza**: nella chat è indicato che le risposte sono scritte da un
+  modello di intelligenza artificiale e possono contenere errori.
 - **Nessun segreto nel repo**: chiavi e `DATABASE_URL` stanno solo in `.env`
   (git-ignorato). Nel repo c'è solo `.env.example`.
 - **Errori esterni gestiti**: se Gemini, USDA, wger o TheMealDB non

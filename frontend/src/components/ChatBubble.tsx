@@ -23,7 +23,12 @@ import { CloseButton, useEscape } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { useNotes } from "@/lib/notes";
 
-type Message = ChatMessage & { tags?: string[]; actions?: ChatAction[] };
+type Message = ChatMessage & {
+  tags?: string[];
+  actions?: ChatAction[];
+  /** Testo scritto dal modello (e non una nota calcolata o un messaggio fisso). */
+  ai?: boolean;
+};
 
 const SUGGERIMENTI: Record<SectionId, string[]> = {
   oggi: [
@@ -146,6 +151,7 @@ export function ChatBubble({
           content: reply.answer,
           tags: reply.knowledge_tags,
           actions: reply.actions,
+          ai: reply.used_llm,
         });
       } catch (e) {
         push({
@@ -387,6 +393,9 @@ export function ChatBubble({
                       </div>
                     )}
 
+                    {m.ai && (
+                      <p className="px-1 text-[10.5px] text-white/30">Scritta con l'AI sulle fonti indicate</p>
+                    )}
                     {m.tags && m.tags.length > 0 && <SourceTags tags={m.tags} />}
                   </div>
                 </motion.div>
@@ -436,6 +445,10 @@ export function ChatBubble({
                   </svg>
                 </button>
               </div>
+              <p className="mt-2 px-1 text-[10.5px] leading-snug text-white/30">
+                Le risposte sono scritte da un modello di intelligenza artificiale a partire
+                dalle fonti di Kilo: possono contenere errori e non sostituiscono un medico.
+              </p>
             </form>
           </motion.div>
         )}

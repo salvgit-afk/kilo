@@ -296,3 +296,10 @@ def test_testo_utente_non_chiude_i_propri_tag(db, monkeypatch):
 
 def test_documentazione_spenta_di_default():
     assert Settings.model_fields["docs_enabled"].default is False
+
+
+def test_intestazioni_di_sicurezza_dell_api(client):
+    utente, pid = _account(client, "utente@example.com")
+    r = client.get(f"/nutrition/diary?profile_id={pid}", headers=utente)
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["x-content-type-options"] == "nosniff"

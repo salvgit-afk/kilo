@@ -37,6 +37,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Intestazioni per le risposte dell'API.
+
+    `no-store`: le risposte contengono dati personali (peso, diario,
+    integratori) e nessun proxy o browser deve tenerne una copia.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 from app.routers import auth, nutrition, profile, progress, supplements, workout
 
 app.include_router(auth.router)
