@@ -26,7 +26,11 @@ presenta come Kilo.
 - **Scheda di allenamento**: split automatico o scelto dall'utente, volume
   settimanale per gruppo muscolare, range di ripetizioni mirati (es. 2×6-8,
   3×6-8), RIR e recuperi presi dalla letteratura. Nomi, descrizioni e
-  immagini dell'esecuzione sono **in italiano**.
+  immagini dell'esecuzione sono **in italiano**. L'overlay di ogni esercizio
+  spiega **come si muove il corpo** (articolazioni, movimento articolare,
+  piano di movimento, indicazioni di forma) e dà un suggerimento sul focus
+  coerente con il muscolo: sui bicipiti il beneficio è misurato, sulle gambe
+  no.
 - **Sostituzione esercizi**: alternative con lo stesso muscolo primario e la
   stessa tipologia (multi-articolare o isolamento), più le preferenze
   personali salvate.
@@ -34,14 +38,18 @@ presenta come Kilo.
   miglioramento, Kilo propone di **ridurre il volume** invece di aumentarlo.
 - **Target nutrizionali**: TDEE con Mifflin-St Jeor, calorie in base
   all'obiettivo, proteine in g/kg (ISSN), poi grassi e carboidrati (EFSA).
-- **Diario alimentare** in stile contacalorie: cerchi un alimento (USDA per i
-  prodotti grezzi, Open Food Facts via wger per quelli confezionati), lo pesi
-  e lo aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
+- **Diario alimentare** in stile contacalorie: per i prodotti confezionati
+  **scansioni il codice a barre** (valori per 100 g da Open Food Facts, in
+  cache dopo la prima lettura; se il prodotto manca lo inserisci
+  dall'etichetta), per gli alimenti sfusi cerchi per nome (USDA per i generici,
+  Open Food Facts via wger per i confezionati). Poi pesi e aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
   grammi per chiudere le proteine senza sforare le calorie. Non aggiunge nulla
   senza la tua conferma.
 - **Ricette fit**: ricette da TheMealDB ordinate in base a quanto ti
   avvicinano ai target rimasti. I macro sono calcolati sommando gli
   ingredienti reali, e le ricette con dati insufficienti vengono scartate.
+  Le ricette che ti piacciono si salvano e si ritrovano nella scheda
+  **Salvate**.
 - **Integratori (facoltativi)**: Kilo non li propone mai di sua iniziativa.
   Se dichiari cosa assumi, ne valuta evidenze, dosaggio e rischi di qualità
   del prodotto. Tra quelli trattati ci sono creatina, caffeina, beta-alanina,
