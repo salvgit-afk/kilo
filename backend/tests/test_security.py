@@ -8,7 +8,6 @@ scoperta fa fallire questo test, invece di esporre i dati in silenzio.
 from __future__ import annotations
 
 import pytest
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -76,15 +75,28 @@ def _account(client, email: str) -> tuple[dict, int]:
 # --- Accesso obbligatorio ---------------------------------------------------------
 
 
-def _routes():
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            for method in route.methods:
-                if (method, route.path) not in PUBLIC_ROUTES:
-                    yield method, route.path
+def _routes() -> list[tuple[str, str]]:
+    """Tutte le operazioni dell'API, dallo schema OpenAPI.
+
+    Non si scorre `app.routes`: da FastAPI 0.14x i router inclusi sono
+    oggetti annidati, e il test si ritrovava senza rotte da controllare e
+    veniva saltato in silenzio. Lo schema resta l'elenco pubblico e stabile.
+    """
+    rotte = [
+        (method.upper(), path)
+        for path, operazioni in app.openapi()["paths"].items()
+        for method in operazioni
+    ]
+    return sorted(r for r in rotte if r not in PUBLIC_ROUTES)
 
 
-@pytest.mark.parametrize("method,path", sorted(_routes()))
+def test_il_controllo_copre_davvero_le_rotte():
+    """Se l'elenco si svuota (cambio di FastAPI, rotte nascoste allo schema),
+    il test sulle rotte non deve passare per il solo fatto di non girare."""
+    assert len(_routes()) >= 45
+
+
+@pytest.mark.parametrize("method,path", _routes())
 def test_ogni_rotta_richiede_l_accesso(client, method, path):
     url = path
     for segmento in [s for s in path.split("/") if s.startswith("{")]:
