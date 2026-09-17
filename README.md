@@ -50,6 +50,12 @@ presenta come Kilo.
   ingredienti reali, e le ricette con dati insufficienti vengono scartate.
   Le ricette che ti piacciono si salvano e si ritrovano nella scheda
   **Salvate**.
+- **Importa una ricetta tua**: incolli il testo di una ricetta gia' scritta —
+  appunti, un messaggio, la lista ingredienti di un sito — e torna
+  strutturata, con gli ingredienti collegati al catalogo alimenti. I grammi
+  li confermi tu prima di salvare, quindi i valori smettono di essere una
+  stima. Dal diario, il pulsante **Ricetta** versa in un pasto tutti gli
+  ingredienti di una ricetta salvata, scalati sulle porzioni mangiate.
 - **Integratori (facoltativi)**: Kilo non li propone mai di sua iniziativa.
   Se dichiari cosa assumi, ne valuta evidenze, dosaggio e rischi di qualità
   del prodotto. Tra quelli trattati ci sono creatina, caffeina, beta-alanina,
@@ -327,6 +333,9 @@ cd frontend && npm audit
 | `GET /nutrition/diary` · `POST/PATCH/DELETE /nutrition/diary/items` | Diario alimentare |
 | `GET /nutrition/diary/fill-gap` | «Cosa mi manca oggi?» |
 | `GET /nutrition/recipes/suggest` | Ricette in base ai target rimasti |
+| `POST /nutrition/recipes/import` | Legge una ricetta incollata come testo |
+| `GET/POST/DELETE /nutrition/recipes/saved` | Ricette salvate |
+| `POST /nutrition/diary/recipe` | Aggiunge una ricetta intera a un pasto |
 | `GET/POST/DELETE /supplements` · `GET /supplements/catalog` | Integratori dichiarati e schede informative |
 | `GET /supplements/intake` · `PUT /supplements/{id}/intake` | Diario delle assunzioni |
 | `GET /profile/{id}/reminders` | Cosa non è ancora segnato oggi |
