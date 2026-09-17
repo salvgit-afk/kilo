@@ -191,7 +191,7 @@ export function ExerciseDetail({
                     }`}
                   >
                     <span
-                      className={`mt-[3px] shrink-0 rounded px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide ${FOCUS_BADGE[guida.focus_evidence].className}`}
+                      className={`mt-[3px] shrink-0 self-start whitespace-nowrap rounded px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide ${FOCUS_BADGE[guida.focus_evidence].className}`}
                     >
                       {FOCUS_BADGE[guida.focus_evidence].label}
                     </span>
