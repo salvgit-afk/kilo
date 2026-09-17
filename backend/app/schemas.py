@@ -455,6 +455,54 @@ class SupplementOut(BaseModel):
     knowledge_tags: list[str]
 
 
+class IntakeIn(BaseModel):
+    date: dt.date
+    doses: int = Field(ge=0, le=20)
+
+
+class IntakeDayOut(BaseModel):
+    date: dt.date
+    doses: int
+
+
+class IntakeMilestoneOut(BaseModel):
+    days: int
+    note: str
+    knowledge_tag: str
+
+
+class SupplementIntakeOut(BaseModel):
+    """Diario di un integratore: storico recente, totali e serie."""
+
+    supplement_id: int
+    kind: str
+    product_name: str | None
+    dose_amount: float | None
+    dose_unit: str | None
+    doses_required: int
+    since: dt.date
+    days_taken: int
+    current_streak: int
+    missed_days: int
+    history_days: int
+    history: list[IntakeDayOut]
+    milestone: IntakeMilestoneOut | None
+
+
+class PendingSupplementOut(BaseModel):
+    supplement_id: int
+    kind: str
+    product_name: str | None
+    doses_taken: int
+    doses_required: int
+
+
+class DailyRemindersOut(BaseModel):
+    date: dt.date
+    supplements: list[PendingSupplementOut]
+    meals_missing: bool
+
+
 # --- Progressione ---------------------------------------------------------------
 
 

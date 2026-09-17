@@ -3,8 +3,10 @@
 /**
  * Sezione integratori — facoltativa.
  *
- * L'agente non propone integratori. Qui fa due cose, separate anche
+ * L'agente non propone integratori. Qui fa tre cose, separate anche
  * visivamente:
+ *  - **Diario**: l'utente segna le assunzioni di ogni giorno e vede da
+ *    quanti giorni prende ciascun integratore e se ne ha saltato qualcuno;
  *  - **I tuoi**: valuta ciò che l'utente dichiara, e la valutazione si
  *    aggiorna *mentre* si scrive la dose, senza dover salvare per scoprire
  *    che è fuori range;
@@ -19,11 +21,18 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SUPPLEMENT_LABELS, api, type Supplement, type SupplementInfo } from "@/lib/api";
+import {
+  SUPPLEMENT_LABELS,
+  api,
+  notifyLogged,
+  type Supplement,
+  type SupplementInfo,
+} from "@/lib/api";
 import { Card, EvidenceBadge, Notice, SourceTags, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import { AskCoachButton, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { SupplementDiary } from "@/components/SupplementDiary";
 
 const EVIDENCE_DOT: Record<string, string> = {
   strong: "bg-lime-400",
@@ -41,10 +50,11 @@ function doseText(s: Supplement) {
 }
 
 export function Supplements({ profileId }: { profileId: number }) {
-  const [tab, setTab] = useState<"mine" | "explore">("mine");
+  const [tab, setTab] = useState<"diary" | "mine" | "explore">("diary");
   const [items, setItems] = useState<Supplement[] | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const [coffee, setCoffee] = useState<number | null>(0);
+  const [removing, setRemoving] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setItems(
@@ -75,6 +85,7 @@ export function Supplements({ profileId }: { profileId: number }) {
       <div className="mb-4 inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
         {(
           [
+            ["diary", "Diario"],
             ["mine", `I tuoi${items ? ` · ${items.length}` : ""}`],
             ["explore", "Cosa dicono le fonti"],
           ] as const
@@ -122,6 +133,8 @@ export function Supplements({ profileId }: { profileId: number }) {
             </div>
           </div>
         </Card>
+      ) : tab === "diary" ? (
+        <SupplementDiary profileId={profileId} />
       ) : (
         <div className="space-y-4">
           <Card>
@@ -175,10 +188,7 @@ export function Supplements({ profileId }: { profileId: number }) {
                   </p>
                 </div>
                 <button
-                  onClick={async () => {
-                    await api.del(`/supplements/${s.id}`);
-                    load();
-                  }}
+                  onClick={() => setRemoving(s.id)}
                   aria-label="Rimuovi"
                   className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/30 transition hover:bg-rose-400/10 hover:text-rose-300"
                 >
@@ -187,6 +197,29 @@ export function Supplements({ profileId }: { profileId: number }) {
                   </svg>
                 </button>
               </div>
+
+              {/* Rimuovere cancella anche lo storico del diario: si chiede conferma. */}
+              {removing === s.id && (
+                <div className="flex flex-wrap items-center gap-2.5 border-b border-rose-400/15 bg-rose-400/[0.05] px-5 py-3">
+                  <p className="flex-1 text-[12.5px] text-rose-100/80">
+                    Rimuovo {label(s.kind)} e i giorni segnati nel diario?
+                  </p>
+                  <button className="btn-ghost px-3 py-1.5 text-[12px]" onClick={() => setRemoving(null)}>
+                    Annulla
+                  </button>
+                  <button
+                    className="rounded-lg border border-rose-400/30 bg-rose-400/15 px-3 py-1.5 text-[12px] font-medium text-rose-100 transition hover:bg-rose-400/25"
+                    onClick={async () => {
+                      await api.del(`/supplements/${s.id}`);
+                      setRemoving(null);
+                      notifyLogged();
+                      load();
+                    }}
+                  >
+                    Rimuovi
+                  </button>
+                </div>
+              )}
 
               <div className="space-y-3.5 px-5 py-4">
                 {s.safety_flag && <Notice>Attenzione: {s.safety_flag}.</Notice>}
@@ -216,6 +249,7 @@ export function Supplements({ profileId }: { profileId: number }) {
             onAdded={() => {
               setAdding(null);
               setTab("mine");
+              notifyLogged();
               load();
             }}
           />

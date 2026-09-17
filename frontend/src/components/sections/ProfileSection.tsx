@@ -21,6 +21,7 @@ import {
 import { Card, CardHeader, Notice } from "@/components/ui";
 import { NumberField } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
+import { REMINDER_HOUR, reminderSettings } from "@/components/ReminderBanner";
 
 export function ProfileSection({
   profile,
@@ -45,9 +46,11 @@ export function ProfileSection({
   const [saving, setSaving] = useState(false);
   const [catalog, setCatalog] = useState<CatalogStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [reminders, setReminders] = useState(true);
 
   useEffect(() => {
     api.get<CatalogStatus>("/catalog/status").then(setCatalog);
+    setReminders(reminderSettings.enabled());
   }, []);
 
   const dirty =
@@ -243,6 +246,37 @@ export function ProfileSection({
               <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
                 {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
               </button>
+            </div>
+          </Card>
+
+          <Card delay={0.08}>
+            <CardHeader title="Promemoria" subtitle="Banner in cima alla pagina" />
+            <div className="space-y-3 px-5 py-4">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <span className="text-[13px] text-white/75">Ricordami cosa non ho segnato</span>
+                <button
+                  role="switch"
+                  aria-checked={reminders}
+                  onClick={() => {
+                    reminderSettings.setEnabled(!reminders);
+                    setReminders(!reminders);
+                  }}
+                  className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
+                    reminders ? "border-lime-400/60 bg-lime-400/80" : "border-white/15 bg-white/[0.08]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${
+                      reminders ? "left-[22px]" : "left-0.5"
+                    }`}
+                  />
+                </button>
+              </label>
+              <p className="text-[11.5px] leading-relaxed text-white/30">
+                Dalle {REMINDER_HOUR}, se non hai ancora segnato gli integratori dichiarati o i
+                pasti (solo se usi il diario). La X lo nasconde fino al giorno dopo. La scelta
+                vale per questo browser.
+              </p>
             </div>
           </Card>
 

@@ -46,7 +46,14 @@ presenta come Kilo.
   Se dichiari cosa assumi, ne valuta evidenze, dosaggio e rischi di qualità
   del prodotto. Tra quelli trattati ci sono creatina, caffeina, beta-alanina,
   HMB, BCAA, citrullina, glutammina, vitamina D, omega-3, moringa e
-  ashwagandha.
+  ashwagandha. Nel **diario delle assunzioni** segni ogni giorno cosa hai
+  preso (anche dose per dose, per esempio in una fase di carico) e vedi i
+  giorni totali, la serie in corso e i giorni saltati nelle ultime 4
+  settimane.
+- **Promemoria**: dalle 12 un banner discreto ricorda cosa non hai ancora
+  segnato oggi: gli integratori dichiarati, che si segnano direttamente da
+  lì, e i pasti, ma solo se usi il diario. Si chiude con un clic fino al
+  giorno dopo, e dal Profilo si spegne del tutto.
 - **Progressi**: peso corporeo confrontato su **medie mobili di 7 giorni**,
   forza sul **massimale stimato**, aderenza e rilevamento dei plateau.
 - **Chat con Kilo**: risponde usando i tuoi dati reali e i documenti
@@ -261,6 +268,8 @@ knowledge base e client esterni (con risposte simulate).
 | `GET /nutrition/diary/fill-gap` | «Cosa mi manca oggi?» |
 | `GET /nutrition/recipes/suggest` | Ricette in base ai target rimasti |
 | `GET/POST/DELETE /supplements` · `GET /supplements/catalog` | Integratori dichiarati e schede informative |
+| `GET /supplements/intake` · `PUT /supplements/{id}/intake` | Diario delle assunzioni |
+| `GET /profile/{id}/reminders` | Cosa non è ancora segnato oggi |
 | `GET /progress/report` | Report di progressione |
 | `GET /catalog/status` · `POST /catalog/sync-exercises` | Stato e importazione del catalogo esercizi |
 

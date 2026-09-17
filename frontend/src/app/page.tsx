@@ -21,6 +21,7 @@ import type { Intent } from "@/lib/coach";
 import { Shell, type SectionId } from "@/components/Shell";
 import { Spinner } from "@/components/ui";
 import { ChatBubble } from "@/components/ChatBubble";
+import { ReminderBanner } from "@/components/ReminderBanner";
 import { Auth } from "@/components/sections/Auth";
 import { Onboarding } from "@/components/sections/Onboarding";
 import { Today } from "@/components/sections/Today";
@@ -85,6 +86,7 @@ export default function Page() {
   return (
     <>
       <Shell active={section} onNavigate={setSection} profileName={profile.display_name}>
+        <ReminderBanner profileId={profile.id} section={section} onNavigate={setSection} />
         {/* Solo animazione d'entrata. Con un'uscita in modalità "wait", la
             sezione Integratori (schede animate dell'esploratore) restava
             bloccata a opacità 0 e da lì ogni sezione appariva vuota. */}

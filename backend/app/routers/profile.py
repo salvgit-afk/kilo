@@ -12,6 +12,8 @@ from app.database import get_db
 from app.models import ScreeningRecord, User, UserProfile, WeightLog
 from app.routers.auth import current_user
 from app.schemas import (
+    DailyRemindersOut,
+    PendingSupplementOut,
     ProfileIn,
     ProfileOut,
     ProfileUpdate,
@@ -20,6 +22,7 @@ from app.schemas import (
     WeightLogIn,
     WeightLogOut,
 )
+from app.services import daily_reminders, supplement_intake
 
 router = APIRouter(prefix="/profile", tags=["profilo"])
 
@@ -158,4 +161,34 @@ def list_weights(
             .order_by(WeightLog.date.desc())
             .limit(limit)
         )
+    )
+
+
+@router.get("/{profile_id}/reminders", response_model=DailyRemindersOut)
+def reminders(
+    profile_id: int,
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> DailyRemindersOut:
+    """Cosa non è ancora segnato oggi: integratori dichiarati e diario, se in uso.
+
+    `today` è la data locale del client.
+    """
+    profile = get_profile(profile_id, db, user)
+    oggi = today or dt.date.today()
+    promemoria = daily_reminders.build(db, profile, today=oggi)
+    return DailyRemindersOut(
+        date=oggi,
+        supplements=[
+            PendingSupplementOut(
+                supplement_id=d.id,
+                kind=d.kind,
+                product_name=d.product_name,
+                doses_taken=prese,
+                doses_required=supplement_intake.required_doses(d),
+            )
+            for d, prese in promemoria.supplements
+        ],
+        meals_missing=promemoria.meals_missing,
     )

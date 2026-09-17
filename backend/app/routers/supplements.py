@@ -7,6 +7,8 @@ vuota, ed è un esito normale, non qualcosa da colmare con suggerimenti.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,8 +16,17 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import SupplementDeclaration
 from app.routers.profile import get_profile
-from app.schemas import BenefitOut, SupplementIn, SupplementInfoOut, SupplementOut
-from app.services import food_diary, supplements
+from app.schemas import (
+    BenefitOut,
+    IntakeDayOut,
+    IntakeIn,
+    IntakeMilestoneOut,
+    SupplementIn,
+    SupplementInfoOut,
+    SupplementIntakeOut,
+    SupplementOut,
+)
+from app.services import food_diary, supplement_intake, supplements
 
 router = APIRouter(prefix="/supplements", tags=["integratori"])
 
@@ -83,6 +94,69 @@ def declare_supplement(
     db.commit()
 
     return _to_out(valutazione)
+
+
+def _intake_out(riepilogo: supplement_intake.IntakeSummary) -> SupplementIntakeOut:
+    d = riepilogo.declaration
+    return SupplementIntakeOut(
+        supplement_id=d.id,
+        kind=d.kind,
+        product_name=d.product_name,
+        dose_amount=d.dose_amount,
+        dose_unit=d.dose_unit,
+        doses_required=riepilogo.doses_required,
+        since=riepilogo.since,
+        days_taken=riepilogo.days_taken,
+        current_streak=riepilogo.current_streak,
+        missed_days=riepilogo.missed_days,
+        history_days=supplement_intake.HISTORY_DAYS,
+        history=[
+            IntakeDayOut(date=giorno, doses=dosi)
+            for giorno, dosi in sorted(riepilogo.history.items())
+        ],
+        milestone=IntakeMilestoneOut(**vars(riepilogo.milestone)) if riepilogo.milestone else None,
+    )
+
+
+@router.get("/intake", response_model=list[SupplementIntakeOut])
+def intake_diary(
+    profile_id: int, today: dt.date | None = None, db: Session = Depends(get_db)
+) -> list[SupplementIntakeOut]:
+    """Diario delle assunzioni degli integratori dichiarati.
+
+    `today` è la data locale del client: i conteggi (serie, giorni saltati)
+    si calcolano rispetto al suo giorno, non a quello UTC del server.
+    """
+    profile = get_profile(profile_id, db)
+    oggi = today or dt.date.today()
+    return [
+        _intake_out(supplement_intake.summarize(db, d, today=oggi))
+        for d in supplement_intake.active_declarations(db, profile)
+    ]
+
+
+@router.put("/{supplement_id}/intake", response_model=SupplementIntakeOut)
+def log_intake(
+    supplement_id: int,
+    profile_id: int,
+    payload: IntakeIn,
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+) -> SupplementIntakeOut:
+    """Segna quante assunzioni ci sono state in un giorno (0 = nessuna)."""
+    profile = get_profile(profile_id, db)
+    dichiarazione = db.get(SupplementDeclaration, supplement_id)
+    if dichiarazione is None or dichiarazione.profile_id != profile.id:
+        raise HTTPException(status_code=404, detail="Integratore non trovato")
+
+    oggi = today or dt.date.today()
+    # Il giorno del client può essere avanti di uno rispetto al server (UTC),
+    # non di più.
+    if payload.date > min(oggi, dt.date.today() + dt.timedelta(days=1)):
+        raise HTTPException(status_code=422, detail="Non si segnano assunzioni future")
+
+    supplement_intake.set_doses(db, dichiarazione, payload.date, payload.doses)
+    return _intake_out(supplement_intake.summarize(db, dichiarazione, today=oggi))
 
 
 @router.delete("/{supplement_id}", status_code=204, response_model=None)

@@ -64,6 +64,8 @@ export const api = {
   get: <T,>(path: string) => request<T>(path),
   post: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T,>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: (path: string) => request<void>(path, { method: "DELETE" }),
@@ -305,6 +307,37 @@ export type Supplement = {
   knowledge_tags: string[];
 };
 
+export type IntakeDay = { date: string; doses: number };
+
+/** Diario delle assunzioni di un integratore dichiarato. */
+export type SupplementIntake = {
+  supplement_id: number;
+  kind: string;
+  product_name: string | null;
+  dose_amount: number | null;
+  dose_unit: string | null;
+  doses_required: number;
+  since: string;
+  days_taken: number;
+  current_streak: number;
+  missed_days: number;
+  history_days: number;
+  history: IntakeDay[];
+  milestone: { days: number; note: string; knowledge_tag: string } | null;
+};
+
+export type DailyReminders = {
+  date: string;
+  supplements: {
+    supplement_id: number;
+    kind: string;
+    product_name: string | null;
+    doses_taken: number;
+    doses_required: number;
+  }[];
+  meals_missing: boolean;
+};
+
 export type VolumeRecommendation = {
   adjustment: string;
   current_weekly_sets: number;
@@ -351,6 +384,26 @@ export type CatalogStatus = {
   ingredients_cached: number;
   muscles: string[];
 };
+
+// --- Date locali --------------------------------------------------------------
+
+/** Data locale in formato YYYY-MM-DD: il server è in UTC, l'utente no. */
+export function localDate(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Sposta una data YYYY-MM-DD di `days` giorni, senza passare dall'UTC. */
+export function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return localDate(new Date(y, m - 1, d + days));
+}
+
+/** Avvisa il banner dei promemoria che qualcosa è stato appena segnato. */
+export const REMINDERS_EVENT = "kilo:promemoria";
+export function notifyLogged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(REMINDERS_EVENT));
+}
 
 // --- Etichette in italiano ---------------------------------------------------
 

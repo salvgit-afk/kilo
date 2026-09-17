@@ -942,6 +942,34 @@ class SupplementDeclaration(Base):
     )
 
 
+class SupplementIntake(Base):
+    """Assunzioni segnate in un giorno, per un integratore dichiarato.
+
+    Una riga per giorno: `doses` conta le assunzioni, così una fase di carico
+    da 4 dosi al giorno si segna dose per dose. Nessuna riga = giorno senza
+    assunzioni.
+    """
+
+    __tablename__ = "supplement_intakes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    supplement_id: Mapped[int] = mapped_column(
+        ForeignKey("supplement_declarations.id", ondelete="CASCADE"), index=True
+    )
+    date: Mapped[dt.date] = mapped_column(Date)
+    doses: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("supplement_id", "date", name="uq_supplement_intake_day"),
+    )
+
+
 # --- Tracciabilità delle raccomandazioni ------------------------------------
 
 

@@ -18,6 +18,7 @@ dosaggio per qualcosa che la knowledge base non copre.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import re
 from dataclasses import dataclass, field
@@ -26,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SupplementDeclaration, UserProfile, WorkoutPlan
-from app.services import food_diary, knowledge_base, nutrition_targets
+from app.services import food_diary, knowledge_base, nutrition_targets, supplement_intake
 
 logger = logging.getLogger("chat_agent")
 
@@ -206,6 +207,7 @@ def _user_context(db: Session, profile: UserProfile) -> str:
             + ", ".join(
                 f"{i.kind}"
                 + (f" {i.dose_amount:g}{i.dose_unit or ''}" if i.dose_amount else "")
+                + _intake_note(db, i)
                 for i in integratori
             )
         )
@@ -213,6 +215,19 @@ def _user_context(db: Session, profile: UserProfile) -> str:
         righe.append("- Nessun integratore dichiarato (e non gliene vanno proposti)")
 
     return "\n".join(righe)
+
+
+def _intake_note(db: Session, declaration: SupplementDeclaration) -> str:
+    """Quanto l'utente ha segnato nel diario delle assunzioni, se lo usa."""
+    riepilogo = supplement_intake.summarize(db, declaration, today=dt.date.today())
+    if not riepilogo.days_taken:
+        return ""
+    return (
+        f" (diario: assunto in {riepilogo.days_taken} giorni dal "
+        f"{riepilogo.since:%d/%m}, serie attuale {riepilogo.current_streak}, "
+        f"{riepilogo.missed_days} giorni saltati nelle ultime "
+        f"{supplement_intake.HISTORY_DAYS})"
+    )
 
 
 _SYSTEM_PROMPT = """Sei Kilo, il coach dell'app di allenamento e nutrizione Kilo (la mascotte
