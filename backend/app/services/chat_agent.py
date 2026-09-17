@@ -39,6 +39,11 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "serie": ("volume_allenamento",),
     "quante serie": ("volume_allenamento",),
     "recuper": ("recupero",),
+    # "Recuperare tra gli allenamenti" è sonno, DOMS e volume, non il riposo
+    # fra una serie e l'altra.
+    "tra gli allenamenti": ("doms", "autoregolazione"),
+    "tra un allenamento": ("doms", "autoregolazione"),
+    "recuperare meglio": ("doms", "autoregolazione"),
     "riposo": ("recupero",),
     "rir": ("intensità", "cedimento"),
     "cedimento": ("cedimento",),
@@ -126,6 +131,43 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "timing": ("timing_pasti",),
     "post allenamento": ("timing_pasti",),
     "massimale": ("1rm",),
+    # Muscoli: le domande "qual è l'esercizio migliore per i tricipiti" vanno
+    # sulla biomeccanica (allungamento, esercizi confrontati negli studi).
+    "tricipit": ("biomeccanica", "ampiezza_movimento"),
+    "bicipit": ("biomeccanica", "ampiezza_movimento"),
+    "femoral": ("biomeccanica", "ampiezza_movimento"),
+    "polpacc": ("biomeccanica", "ampiezza_movimento"),
+    "quadricip": ("biomeccanica", "ampiezza_movimento"),
+    "pettoral": ("biomeccanica",),
+    "dopo l'allenamento": ("timing_pasti",),
+    "prima di dormire": ("timing_pasti",),
+    # Sicurezza: sintomi che richiedono un medico. Senza queste chiavi "mi fa
+    # male il petto quando corro" richiamava solo il documento sui DOMS.
+    "dolore al petto": ("screening",),
+    "male al petto": ("screening",),
+    "male il petto": ("screening",),
+    "dolori al petto": ("screening",),
+    "palpitaz": ("screening",),
+    "svenim": ("screening",),
+    "vertigin": ("screening",),
+    "fiato corto": ("screening",),
+    "pressione alta": ("screening",),
+    "ipertens": ("screening",),
+    "cardiac": ("screening",),
+    "gravidanz": ("screening", "attivita_generale"),
+    "incinta": ("screening", "attivita_generale"),
+    # Carenza energetica (RED-S): segnali che l'utente descrive a parole sue.
+    "ciclo mestruale": ("reds", "deficit_calorico"),
+    "ciclo è saltato": ("reds", "deficit_calorico"),
+    "mestruazion": ("reds", "deficit_calorico"),
+    "amenorrea": ("reds", "deficit_calorico"),
+    "sempre stanc": ("reds", "deficit_calorico"),
+    "stanchezza": ("reds", "deficit_calorico"),
+    # Attività fisica per la salute (linee guida OMS).
+    "aerobic": ("attivita_generale", "cardio"),
+    "salute generale": ("attivita_generale",),
+    "sedentar": ("attivita_generale",),
+    "camminare": ("attivita_generale",),
 }
 
 MAX_HISTORY_TURNS = 8
@@ -148,6 +190,16 @@ def _tags_for(question: str) -> list[str]:
                 if t not in tags:
                     tags.append(t)
     return tags
+
+
+def sources_for(question: str, context: str = "") -> str:
+    """Il testo delle fonti che la chat manda a Gemini per la domanda.
+
+    Documenti interi: inviare solo le sezioni "pertinenti" è stato provato
+    sul set di prova (`evals/`), e con la ricerca per parole chiave risparmia
+    circa il 13% dei token ma fa perdere dati essenziali a qualche domanda.
+    """
+    return knowledge_base.build_context(_tags_for(f"{question} {context}"))
 
 
 def _user_context(db: Session, profile: UserProfile) -> str:
@@ -399,7 +451,7 @@ def answer(
     context = (context or "").strip()[:500]
     tags = _tags_for(f"{question} {context}")
     contesto = _user_context(db, profile)
-    fonti = knowledge_base.build_context(tags)
+    fonti = sources_for(question, context)
 
     conversazione = ""
     for turno in (history or [])[-MAX_HISTORY_TURNS:]:

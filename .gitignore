@@ -36,3 +36,6 @@ Thumbs.db
 
 # Script locali di verifica UI
 frontend/probe.mjs
+
+# Risultati delle valutazioni della chat (il riferimento è evals/baseline.json)
+backend/evals/results/

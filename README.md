@@ -261,6 +261,34 @@ knowledge base, client esterni (con risposte simulate) e sicurezza: ogni
 rotta senza accesso deve rispondere 401, e i dati di un utente non devono
 essere raggiungibili da un altro.
 
+### Set di prova della chat
+
+`backend/evals/chat_golden_set.json` raccoglie 40 domande reali (allenamento,
+alimentazione, integratori, sicurezza, tentativi di manipolazione), ognuna
+con i documenti che deve richiamare, le frasi con i dati che devono arrivare
+al modello e i controlli sulla risposta. Ogni errore trovato in produzione
+diventa un caso nuovo.
+
+- **Senza rete, in `pytest`** (`tests/test_chat_golden_set.py`): per ogni
+  domanda verifica che vengano scelti i documenti giusti e che i dati
+  essenziali siano nel prompt. Alla prima esecuzione ha trovato 5 buchi reali,
+  fra cui «mi fa male il petto quando corro», che non richiamava il documento
+  sui segnali d'allarme.
+- **Con Gemini reale, a mano** (consuma circa 40 richieste di quota):
+
+  ```bash
+  cd backend
+  .venv/bin/python -m evals.run_chat_eval
+  ```
+
+  Controlla ogni risposta e la confronta con `evals/baseline.json`; esce con
+  errore se una domanda che prima passava ora fallisce. Da lanciare prima e
+  dopo ogni cambio di prompt, modello o documenti.
+
+Inviare a Gemini solo le sezioni "pertinenti" dei documenti è stato provato
+su questo set e scartato: con la ricerca per parole chiave risparmiava circa
+il 13% dei token, ma a due domande toglieva proprio il dato per rispondere.
+
 Controllo delle dipendenze (in un ambiente separato, per non aggiungere lo
 strumento al progetto):
 
