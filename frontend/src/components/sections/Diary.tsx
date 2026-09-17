@@ -28,6 +28,7 @@ import { PageHeader } from "@/components/Shell";
 import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { RecipeToDiaryDialog } from "@/components/RecipeToDiary";
 import { ApiError } from "@/lib/api";
 import { KiloNote } from "@/components/KiloNote";
 
@@ -46,6 +47,8 @@ export function Diary({
   const [gap, setGap] = useState<GapSuggestions | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<{ meal: string; query?: string } | null>(null);
+  // Aggiunta di una ricetta intera: porta dentro tutti i suoi ingredienti.
+  const [addingRecipe, setAddingRecipe] = useState<string | null>(null);
 
   const loadGap = useCallback(() => {
     api
@@ -102,15 +105,27 @@ export function Diary({
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setAdding({ meal: type })}
-                    className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                      <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
-                    </svg>
-                    Aggiungi
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      onClick={() => setAddingRecipe(type)}
+                      title="Aggiungi una ricetta salvata con tutti i suoi ingredienti"
+                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-iris-400/40 hover:bg-iris-400/[0.09] hover:text-iris-200"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                        <path d="M4 3h13a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3V3Zm2 2v13a1 1 0 0 0 1 1h11V6a1 1 0 0 0-1-1H6Zm3 3h7v2H9V8Zm0 4h7v2H9v-2Z" />
+                      </svg>
+                      <span className="hidden sm:inline">Ricetta</span>
+                    </button>
+                    <button
+                      onClick={() => setAdding({ meal: type })}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                        <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
+                      </svg>
+                      Aggiungi
+                    </button>
+                  </div>
                 </div>
 
                 {meal && meal.items.length > 0 && (
@@ -186,6 +201,18 @@ export function Diary({
       </div>
 
       <AnimatePresence>
+        {addingRecipe && (
+          <RecipeToDiaryDialog
+            profileId={profileId}
+            mealType={addingRecipe}
+            mealOrder={MEAL_ORDER}
+            onClose={() => setAddingRecipe(null)}
+            onAdded={() => {
+              setAddingRecipe(null);
+              load();
+            }}
+          />
+        )}
         {adding && (
           <FoodSearchDialog
             profileId={profileId}
