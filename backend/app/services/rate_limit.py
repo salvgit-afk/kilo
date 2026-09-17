@@ -81,6 +81,8 @@ DAILY_LIMITS = {
     "plan_generation": 25,
     # Solo le letture che chiamano davvero Open Food Facts (non la cache).
     "barcode_lookup": 150,
+    # Lettura di una ricetta incollata: una chiamata al modello ciascuna.
+    "recipe_import": 25,
 }
 
 

@@ -412,10 +412,34 @@ class DiaryOut(BaseModel):
     progress: dict[str, float]
 
 
+class RecipeItemOut(BaseModel):
+    """Un ingrediente della ricetta gia abbinato al catalogo alimenti.
+
+    E quello che permette di versare una ricetta nel diario senza cercare
+    gli alimenti uno a uno: `ingredient_id` e `grams` bastano a creare la
+    voce del pasto. Quando l'abbinamento non riesce `ingredient_id` e nullo
+    e la riga va sistemata a mano.
+    """
+
+    name: str = Field(min_length=1, max_length=120)
+    measure: str | None = Field(default=None, max_length=80)
+    grams: float | None = Field(default=None, ge=0, le=5000)
+    ingredient_id: int | None = None
+    matched_name: str | None = Field(default=None, max_length=300)
+    source_label: str | None = Field(default=None, max_length=60)
+    kcal_100g: float | None = None
+    protein_100g: float | None = None
+    carbs_100g: float | None = None
+    fat_100g: float | None = None
+    fiber_100g: float | None = None
+
+
 class RecipeSuggestionOut(BaseModel):
     # Id della ricetta nella fonte (TheMealDB): serve a salvarla.
     meal_id: str | None = None
     saved: bool = False
+    # "themealdb" oppure "import" per le ricette incollate dall'utente.
+    source: str = "themealdb"
     name: str
     original_name: str | None = None
     category: str | None
@@ -433,14 +457,43 @@ class RecipeSuggestionOut(BaseModel):
     fit_score: float
     reasons: list[str]
     ingredients: list[str]
+    items: list[RecipeItemOut] = Field(default_factory=list)
 
 
 class SavedRecipeIn(RecipeSuggestionOut):
     meal_id: str = Field(min_length=1, max_length=64)
+    source: str = Field(default="themealdb", pattern="^(themealdb|import)$")
     name: str = Field(min_length=1, max_length=300)
     instructions: str | None = Field(default=None, max_length=20000)
     reasons: list[str] = Field(default_factory=list, max_length=20)
     ingredients: list[str] = Field(default_factory=list, max_length=60)
+    items: list[RecipeItemOut] = Field(default_factory=list, max_length=60)
+
+
+class RecipeImportIn(BaseModel):
+    text: str = Field(min_length=10, max_length=8000)
+
+
+class RecipeImportOut(BaseModel):
+    """Bozza di ricetta letta da un testo: si rivede e poi si salva."""
+
+    name: str
+    servings: int
+    instructions: str | None
+    items: list[RecipeItemOut]
+    warnings: list[str]
+
+
+class RecipeToDiaryIn(BaseModel):
+    """Versa gli ingredienti di una ricetta in un pasto del diario."""
+
+    items: list[RecipeItemOut] = Field(min_length=1, max_length=60)
+    meal_type: str = "lunch"
+    date: dt.date | None = None
+    # Le quantita degli ingredienti sono per la ricetta intera: si dividono
+    # per le porzioni e si moltiplicano per quelle davvero mangiate.
+    servings: int = Field(default=1, ge=1, le=20)
+    eaten_servings: float = Field(default=1.0, gt=0, le=20)
 
 
 class SavedRecipeOut(BaseModel):

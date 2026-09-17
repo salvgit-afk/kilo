@@ -40,7 +40,11 @@ from app.schemas import (
     MealItemOut,
     MealOut,
     NutritionTargetsOut,
+    RecipeImportIn,
+    RecipeImportOut,
+    RecipeItemOut,
     RecipeSuggestionOut,
+    RecipeToDiaryIn,
     SavedRecipeIn,
     SavedRecipeOut,
 )
@@ -51,6 +55,7 @@ from app.services import (
     nutrition_targets,
     off_client,
     rate_limit,
+    recipe_import,
     supplements,
     translation,
 )
@@ -337,6 +342,64 @@ def add_food(
     return voce
 
 
+@router.post("/diary/recipe", response_model=list[MealItemOut], status_code=201)
+def add_recipe_to_diary(
+    payload: RecipeToDiaryIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> list[MealItem]:
+    """Aggiunge in un colpo solo tutti gli ingredienti di una ricetta.
+
+    Le quantità arrivano riferite alla ricetta intera: qui si dividono per le
+    porzioni e si moltiplicano per quelle davvero mangiate. Gli ingredienti
+    che la ricetta non è riuscita ad abbinare al catalogo vengono saltati:
+    aggiungerli senza valori nutrizionali falserebbe il conteggio.
+    """
+    fattore = payload.eaten_servings / payload.servings
+    da_aggiungere: list[tuple[Ingredient, float]] = []
+    for voce in payload.items:
+        if voce.ingredient_id is None or not voce.grams:
+            continue
+        ingrediente = db.get(Ingredient, voce.ingredient_id)
+        if ingrediente is None or (
+            ingrediente.created_by_user_id is not None
+            and ingrediente.created_by_user_id != profile.user_id
+        ):
+            continue
+        grammi = round(voce.grams * fattore, 1)
+        # Sotto il grammo non cambia niente nel conteggio e sporca il diario
+        # con una riga per ogni spezia.
+        if 1.0 <= grammi <= 5000:
+            da_aggiungere.append((ingrediente, grammi))
+
+    if not da_aggiungere:
+        raise HTTPException(
+            status_code=422,
+            detail="Nessun ingrediente di questa ricetta è collegato al catalogo alimenti.",
+        )
+
+    pasto = food_diary.get_or_create_meal(
+        db, profile, date=payload.date, meal_type=payload.meal_type
+    )
+    voci = [
+        food_diary.add_food(db, pasto, ingrediente, grams=grammi)
+        for ingrediente, grammi in da_aggiungere
+    ]
+
+    # Come per l'inserimento singolo: se il nome italiano è già noto, il
+    # diario lo mostra in italiano.
+    nomi_it = translation.cached_food_names(db, [i.id for i, _ in da_aggiungere])
+    cambiati = False
+    for voce, (ingrediente, _) in zip(voci, da_aggiungere):
+        nome_it = nomi_it.get(ingrediente.id)
+        if nome_it and voce.name != nome_it:
+            voce.name = nome_it
+            cambiati = True
+    if cambiati:
+        db.commit()
+    return voci
+
+
 def _owned_item(db: Session, item_id: int, user: User) -> MealItem:
     """Una voce del diario, solo se il pasto è di un profilo dell'utente."""
     item = db.get(MealItem, item_id)
@@ -491,9 +554,80 @@ def suggest_recipes(
             fit_score=round(s.fit_score, 1),
             reasons=s.reasons,
             ingredients=t["ingredients"],
+            # Gli ingredienti già abbinati al catalogo: servono ad aggiungere
+            # la ricetta al diario senza ricercarli uno a uno.
+            items=[_recipe_item(i) for i in s.analyzed.ingredients],
         )
         for s, t in zip(suggerimenti, tradotte)
     ]
+
+
+def _recipe_item(voce) -> RecipeItemOut:
+    """Un ingrediente analizzato nella forma che viaggia verso il frontend."""
+    ing = voce.ingredient
+    return RecipeItemOut(
+        name=voce.name[:120] or "ingrediente",
+        measure=(voce.measure or None),
+        grams=round(voce.grams, 1) if voce.grams is not None else None,
+        ingredient_id=ing.id if ing is not None else None,
+        matched_name=ing.name if ing is not None else None,
+        source_label=food_diary.source_label(ing) if ing is not None else None,
+        kcal_100g=ing.kcal_100g if ing is not None else None,
+        protein_100g=ing.protein_100g if ing is not None else None,
+        carbs_100g=ing.carbs_100g if ing is not None else None,
+        fat_100g=ing.fat_100g if ing is not None else None,
+        fiber_100g=ing.fiber_100g if ing is not None else None,
+    )
+
+
+# --- Importazione di una ricetta da testo ---------------------------------------------
+
+
+@router.post("/recipes/import", response_model=RecipeImportOut)
+def import_recipe(
+    payload: RecipeImportIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+    profile: UserProfile = Depends(owned_profile),
+) -> RecipeImportOut:
+    """Legge una ricetta incollata come testo e la restituisce strutturata.
+
+    Non salva niente: restituisce una bozza da rivedere. I valori
+    nutrizionali non li produce il modello ma il catalogo alimenti, come per
+    qualsiasi altra ricetta.
+    """
+    try:
+        rate_limit.consume_daily(db, user.id, "recipe_import")
+    except rate_limit.RateLimited as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+
+    try:
+        bozza = recipe_import.import_from_text(db, payload.text)
+    except recipe_import.RecipeImportError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    return RecipeImportOut(
+        name=bozza.name,
+        servings=bozza.servings,
+        instructions=bozza.instructions,
+        items=[
+            RecipeItemOut(
+                name=i.name,
+                measure=i.measure or None,
+                grams=i.grams,
+                ingredient_id=i.ingredient_id,
+                matched_name=i.matched_name,
+                source_label=i.source_label,
+                kcal_100g=i.kcal_100g,
+                protein_100g=i.protein_100g,
+                carbs_100g=i.carbs_100g,
+                fat_100g=i.fat_100g,
+                fiber_100g=i.fiber_100g,
+            )
+            for i in bozza.ingredients
+        ],
+        warnings=bozza.warnings,
+    )
 
 
 # --- Ricette salvate -----------------------------------------------------------------
@@ -529,13 +663,15 @@ def save_recipe(
     riga = db.scalar(
         select(SavedRecipe).where(
             SavedRecipe.profile_id == profile.id,
-            SavedRecipe.source == "themealdb",
+            SavedRecipe.source == payload.source,
             SavedRecipe.external_id == payload.meal_id,
         )
     )
     dati = payload.model_dump(exclude={"meal_id", "saved"})
     if riga is None:
-        riga = SavedRecipe(profile_id=profile.id, source="themealdb", external_id=payload.meal_id, data=dati)
+        riga = SavedRecipe(
+            profile_id=profile.id, source=payload.source, external_id=payload.meal_id, data=dati
+        )
         db.add(riga)
     else:
         riga.data = dati
