@@ -156,6 +156,20 @@ html {
   color-scheme: dark;
 }
 
+/* Comportamento da app: niente zoom col doppio tocco, niente riquadro
+   grigio al tocco, niente "rimbalzo" o ricarica tirando la pagina, e testo
+   che non si ingrandisce da solo ruotando il telefono. */
+html {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+body {
+  overscroll-behavior: none;
+}
+
 /* Menu a tendina: stesso fondo scuro dell'interfaccia, testo nel lime del
    tema, freccia disegnata invece di quella di sistema. */
 select.input {

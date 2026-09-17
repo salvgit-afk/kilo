@@ -18,7 +18,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { api, session, type AuthSession, type Profile } from "@/lib/api";
 import type { Intent } from "@/lib/coach";
-import { Shell, type SectionId } from "@/components/Shell";
+import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
 import { Spinner } from "@/components/ui";
 import { ChatBubble } from "@/components/ChatBubble";
 import { ReminderBanner } from "@/components/ReminderBanner";
@@ -38,6 +38,24 @@ export default function Page() {
   const [section, setSection] = useState<SectionId>("oggi");
   const [loading, setLoading] = useState(true);
   const [intent, setIntent] = useState<Intent | null>(null);
+
+  // Direzione dell'ultimo cambio di sezione: su mobile la nuova sezione
+  // entra dal lato verso cui si sta "sfogliando".
+  const [shown, setShown] = useState({ section, dir: 0 });
+  if (shown.section !== section) {
+    setShown({
+      section,
+      dir: Math.sign(SECTION_ORDER.indexOf(section) - SECTION_ORDER.indexOf(shown.section)),
+    });
+  }
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const update = () => setMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   const clearIntent = useCallback(() => setIntent(null), []);
   const runIntent = useCallback((next: Omit<Intent, "nonce">) => {
@@ -92,8 +110,8 @@ export default function Page() {
             bloccata a opacità 0 e da lì ogni sezione appariva vuota. */}
         <motion.div
             key={section}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={mobile ? { opacity: 0, x: shown.dir * 36 } : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, x: 0, y: 0 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
             {section === "oggi" && <Today profile={profile} onNavigate={setSection} />}
