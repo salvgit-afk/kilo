@@ -153,7 +153,7 @@ export function Recipes({
         ) : salvate.length === 0 ? (
           <Card>
             <div className="grid place-items-center px-6 py-12 text-center">
-              <Mascot size={54} />
+              <Mascot size={54} interactive />
               <p className="mt-3 text-[14px] text-white/75">Nessuna ricetta salvata</p>
               <p className="mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-white/40">
                 Tocca il segnalibro su una ricetta che ti piace: la ritrovi qui, con macro,

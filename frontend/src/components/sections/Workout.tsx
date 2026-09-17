@@ -285,7 +285,7 @@ export function Workout({
         !generating && (
           <Card>
             <div className="grid place-items-center px-6 py-12 text-center">
-              <Mascot size={58} />
+              <Mascot size={58} interactive />
               <p className="mt-3 text-[14px] text-white/75">Non hai ancora una scheda</p>
               <p className="mt-1 max-w-sm text-[12.5px] leading-relaxed text-white/40">
                 Serie, ripetizioni, RIR e recuperi vengono calcolati dai parametri delle fonti,

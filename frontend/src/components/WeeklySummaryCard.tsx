@@ -118,7 +118,11 @@ export function WeeklySummaryCard({ profileId }: { profileId: number }) {
 
       {data.focus && (
         <div className="flex items-start gap-3 border-t border-white/[0.06] px-5 py-3.5">
-          <Mascot size={30} mood="happy" className="shrink-0" />
+          <Mascot
+            size={30}
+            mood={data.focus.startsWith("Settimana solida") ? "goal" : "happy"}
+            className="shrink-0"
+          />
           <div className="min-w-0">
             <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-lime-400/70">
               Per la prossima settimana

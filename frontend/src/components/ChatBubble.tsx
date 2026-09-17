@@ -248,7 +248,7 @@ export function ChatBubble({
         aria-label={open ? "Chiudi la chat con Kilo" : "Apri la chat con Kilo"}
       >
         <span className="coach-fab block">
-          <Mascot size={48} mood={busy ? "thinking" : "idle"} />
+          <Mascot size={48} mood={busy ? "thinking" : pendingNotes.length ? "remind" : "idle"} interactive />
         </span>
         <AnimatePresence>
           {!open && pendingNotes.length > 0 && (
@@ -312,7 +312,7 @@ export function ChatBubble({
               {messages.length === 0 && (
                 <div className="space-y-3">
                   <div className="flex items-start gap-3">
-                    <Mascot size={42} mood="happy" className="shrink-0" />
+                    <Mascot size={42} mood="happy" interactive className="shrink-0" />
                     <p className="text-[13px] leading-relaxed text-white/60">
                       Ciao, sono Kilo! Conosco il tuo profilo, la tua scheda, il diario di oggi e i tuoi
                       target. Chiedimi pure: se serve fare qualcosa te lo propongo, e tu

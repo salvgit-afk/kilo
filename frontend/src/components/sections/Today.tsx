@@ -165,7 +165,12 @@ export function Today({
 
       <Card className="mb-4">
         <div className="flex items-center gap-3.5 border-b border-white/[0.06] px-5 py-4">
-          <Mascot size={48} mood="happy" />
+          {/* Contenta; salta con le scintille quando le proteine di oggi sono coperte. */}
+          <Mascot
+            size={48}
+            mood={diary && (diary.progress.protein_g ?? 0) >= 1 ? "goal" : "happy"}
+            interactive
+          />
           <div className="min-w-0 flex-1">
             <h2 className="text-[15.5px] font-semibold text-white">Kilo per oggi</h2>
             <p className="text-[12.5px] text-white/45">

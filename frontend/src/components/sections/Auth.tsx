@@ -47,7 +47,7 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (s: AuthSession) =>
         className="mb-8 text-center"
       >
         <div className="mx-auto mb-4 w-fit">
-          <BrandMark size={78} mood="happy" />
+          <BrandMark size={78} mood="happy" interactive />
         </div>
         <h1 className="text-[26px] font-semibold tracking-tight text-white">
           Kilo

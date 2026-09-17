@@ -119,7 +119,7 @@ export function Supplements({ profileId }: { profileId: number }) {
       ) : items.length === 0 ? (
         <Card>
           <div className="grid place-items-center px-6 py-12 text-center">
-            <Mascot size={58} />
+            <Mascot size={58} interactive />
             <p className="mt-3 text-[14px] text-white/75">Non hai dichiarato integratori</p>
             <p className="mt-1.5 max-w-md text-[12.5px] leading-relaxed text-white/40">
               E non te ne suggerisco: nessun piano cambia perché non ne prendi. Se invece ne

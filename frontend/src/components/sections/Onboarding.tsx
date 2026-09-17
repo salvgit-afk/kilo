@@ -89,7 +89,7 @@ export function Onboarding({ onCreated }: { onCreated: (p: Profile) => void }) {
         className="mb-7 text-center"
       >
         <div className="mx-auto mb-4 w-fit">
-          <BrandMark size={68} mood="happy" />
+          <BrandMark size={68} mood="happy" interactive />
         </div>
         <h1 className="text-[28px] font-semibold tracking-tight text-white">
           Creiamo il tuo profilo

@@ -19,12 +19,18 @@ import { useNotes } from "@/lib/notes";
 import type { AgentNote } from "@/lib/api";
 import type { SectionId } from "@/components/Shell";
 import { SourceTags } from "@/components/ui";
-import { Mascot } from "@/components/Mascot";
+import { Mascot, type MascotMood } from "@/components/Mascot";
 
 const TONE: Record<AgentNote["tone"], { bubble: string; dot: string; label: string }> = {
   success: { bubble: "border-lime-400/25 bg-lime-400/[0.06]", dot: "bg-lime-400", label: "Traguardo" },
   info: { bubble: "border-iris-400/25 bg-iris-400/[0.07]", dot: "bg-iris-300", label: "Da sapere" },
   attention: { bubble: "border-amber-300/25 bg-amber-300/[0.06]", dot: "bg-amber-300", label: "Da guardare" },
+};
+
+const MOODS: Record<AgentNote["tone"], MascotMood> = {
+  success: "goal",
+  info: "idle",
+  attention: "remind",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -62,7 +68,7 @@ export function KiloNote({
           {/* Su schermi piccoli la mascotte entra nel fumetto: a lato
               toglierebbe troppa larghezza al testo. */}
           <div className="mt-1 hidden shrink-0 sm:block">
-            <Mascot size={44} mood={note.tone === "success" ? "happy" : "idle"} />
+            <Mascot size={48} mood={MOODS[note.tone]} interactive />
           </div>
 
           <div
@@ -70,7 +76,7 @@ export function KiloNote({
           >
             <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.14em] text-white/45">
-                <Mascot size={20} mood={note.tone === "success" ? "happy" : "idle"} className="-my-1 sm:hidden" />
+                <Mascot size={20} mood={MOODS[note.tone]} className="-my-1 sm:hidden" />
                 <span className={`hidden h-1.5 w-1.5 rounded-full sm:inline-block ${TONE[note.tone].dot}`} />
                 Kilo · {TONE[note.tone].label}
                 {section === "oggi" && note.section !== "oggi" && (
