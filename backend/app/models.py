@@ -772,6 +772,32 @@ class Recipe(Base):
         return self._sum_macro("fiber_100g")
 
 
+class SavedRecipe(Base):
+    """Ricetta salvata dall'utente nella sezione Ricette.
+
+    Si salva una **copia** della ricetta già analizzata (macro, ingredienti,
+    preparazione tradotti): riaprirla è immediato, non richiede di rianalizzare
+    gli ingredienti e resta uguale anche se la fonte cambia.
+    """
+
+    __tablename__ = "saved_recipes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(16), default="themealdb")
+    external_id: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "source", "external_id", name="uq_saved_recipe"),
+    )
+
+
 class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
 

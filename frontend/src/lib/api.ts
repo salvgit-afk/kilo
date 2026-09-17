@@ -261,6 +261,9 @@ export type Diary = {
 };
 
 export type RecipeSuggestion = {
+  /** Id nella fonte (TheMealDB): serve per salvarla. */
+  meal_id: string | null;
+  saved: boolean;
   name: string;
   original_name: string | null;
   category: string | null;
@@ -279,6 +282,8 @@ export type RecipeSuggestion = {
   reasons: string[];
   ingredients: string[];
 };
+
+export type SavedRecipe = { id: number; saved_at: string; recipe: RecipeSuggestion };
 
 export type Benefit = { domain: string; evidence: string; detail: string };
 

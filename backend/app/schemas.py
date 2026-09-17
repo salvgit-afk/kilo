@@ -413,6 +413,9 @@ class DiaryOut(BaseModel):
 
 
 class RecipeSuggestionOut(BaseModel):
+    # Id della ricetta nella fonte (TheMealDB): serve a salvarla.
+    meal_id: str | None = None
+    saved: bool = False
     name: str
     original_name: str | None = None
     category: str | None
@@ -430,6 +433,20 @@ class RecipeSuggestionOut(BaseModel):
     fit_score: float
     reasons: list[str]
     ingredients: list[str]
+
+
+class SavedRecipeIn(RecipeSuggestionOut):
+    meal_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=300)
+    instructions: str | None = Field(default=None, max_length=20000)
+    reasons: list[str] = Field(default_factory=list, max_length=20)
+    ingredients: list[str] = Field(default_factory=list, max_length=60)
+
+
+class SavedRecipeOut(BaseModel):
+    id: int
+    saved_at: dt.datetime
+    recipe: RecipeSuggestionOut
 
 
 # --- Integratori ---------------------------------------------------------------

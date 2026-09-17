@@ -17,7 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Ingredient, IngredientSource, MealItem, MealLog, User, UserProfile
+from app.models import (
+    Ingredient,
+    IngredientSource,
+    MealItem,
+    MealLog,
+    SavedRecipe,
+    User,
+    UserProfile,
+)
 from app.routers.auth import current_user
 from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
@@ -33,6 +41,8 @@ from app.schemas import (
     MealOut,
     NutritionTargetsOut,
     RecipeSuggestionOut,
+    SavedRecipeIn,
+    SavedRecipeOut,
 )
 from app.services import (
     food_diary,
@@ -455,8 +465,13 @@ def suggest_recipes(
         ],
     )
 
+    salvate = set(
+        db.scalars(select(SavedRecipe.external_id).where(SavedRecipe.profile_id == profile.id))
+    )
     return [
         RecipeSuggestionOut(
+            meal_id=s.analyzed.recipe.meal_id,
+            saved=s.analyzed.recipe.meal_id in salvate,
             name=t["name"],
             original_name=(
                 s.analyzed.recipe.name if t["name"] != s.analyzed.recipe.name else None
@@ -479,3 +494,69 @@ def suggest_recipes(
         )
         for s, t in zip(suggerimenti, tradotte)
     ]
+
+
+# --- Ricette salvate -----------------------------------------------------------------
+
+
+@router.get("/recipes/saved", response_model=list[SavedRecipeOut])
+def list_saved_recipes(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> list[SavedRecipeOut]:
+    """Le ricette salvate, dalla più recente."""
+    righe = db.scalars(
+        select(SavedRecipe)
+        .where(SavedRecipe.profile_id == profile.id)
+        .order_by(SavedRecipe.created_at.desc(), SavedRecipe.id.desc())
+    ).all()
+    return [
+        SavedRecipeOut(
+            id=r.id,
+            saved_at=r.created_at,
+            recipe=RecipeSuggestionOut(**{**r.data, "meal_id": r.external_id, "saved": True}),
+        )
+        for r in righe
+    ]
+
+
+@router.post("/recipes/saved", response_model=SavedRecipeOut, status_code=201)
+def save_recipe(
+    payload: SavedRecipeIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> SavedRecipeOut:
+    """Salva una ricetta suggerita. Salvarla due volte non crea doppioni."""
+    riga = db.scalar(
+        select(SavedRecipe).where(
+            SavedRecipe.profile_id == profile.id,
+            SavedRecipe.source == "themealdb",
+            SavedRecipe.external_id == payload.meal_id,
+        )
+    )
+    dati = payload.model_dump(exclude={"meal_id", "saved"})
+    if riga is None:
+        riga = SavedRecipe(profile_id=profile.id, source="themealdb", external_id=payload.meal_id, data=dati)
+        db.add(riga)
+    else:
+        riga.data = dati
+    db.commit()
+    db.refresh(riga)
+    return SavedRecipeOut(
+        id=riga.id,
+        saved_at=riga.created_at,
+        recipe=RecipeSuggestionOut(**{**riga.data, "meal_id": riga.external_id, "saved": True}),
+    )
+
+
+@router.delete("/recipes/saved/{meal_id}", status_code=204, response_model=None)
+def remove_saved_recipe(
+    meal_id: str, db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> None:
+    riga = db.scalar(
+        select(SavedRecipe).where(
+            SavedRecipe.profile_id == profile.id, SavedRecipe.external_id == meal_id
+        )
+    )
+    if riga is not None:
+        db.delete(riga)
+        db.commit()

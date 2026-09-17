@@ -335,3 +335,36 @@ def test_prodotto_manuale_altrui_non_aggiungibile_al_diario(client):
         "ingredient_id": creato.json()["ingredient_id"], "grams": 100, "meal_type": "snack",
     })
     assert r.status_code == 404
+
+
+# --- Ricette salvate ----------------------------------------------------------------
+
+RICETTA = {
+    "meal_id": "52772", "name": "Pollo teriyaki", "category": "Chicken", "area": "Japanese",
+    "thumbnail_url": None, "instructions": "Cuoci il pollo.", "kcal_per_serving": 480,
+    "protein_per_serving": 42, "carbs_per_serving": 35, "fat_per_serving": 16,
+    "fiber_per_serving": 2, "servings": 4, "coverage": 0.92, "fit_score": 7.5,
+    "reasons": ["42 g di proteine"], "ingredients": ["500 g petto di pollo"],
+}
+
+
+def test_ricette_salvate_senza_doppioni_e_rimovibili(client):
+    utente, pid = _account(client, "utente@example.com")
+    url = f"/nutrition/recipes/saved?profile_id={pid}"
+    assert client.post(url, headers=utente, json=RICETTA).status_code == 201
+    assert client.post(url, headers=utente, json=RICETTA).status_code == 201
+    salvate = client.get(url, headers=utente).json()
+    assert len(salvate) == 1
+    assert salvate[0]["recipe"]["meal_id"] == "52772" and salvate[0]["recipe"]["saved"] is True
+    assert salvate[0]["recipe"]["protein_per_serving"] == 42
+
+    assert client.delete(f"/nutrition/recipes/saved/52772?profile_id={pid}", headers=utente).status_code == 204
+    assert client.get(url, headers=utente).json() == []
+
+
+def test_ricette_salvate_separate_per_utente(client):
+    a, pid_a = _account(client, "a@example.com")
+    b, pid_b = _account(client, "b@example.com")
+    client.post(f"/nutrition/recipes/saved?profile_id={pid_a}", headers=a, json=RICETTA)
+    assert client.get(f"/nutrition/recipes/saved?profile_id={pid_b}", headers=b).json() == []
+    assert client.get(f"/nutrition/recipes/saved?profile_id={pid_a}", headers=b).status_code == 404
