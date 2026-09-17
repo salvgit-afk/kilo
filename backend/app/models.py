@@ -134,7 +134,8 @@ class EvidenceTier:
 class IngredientSource:
     WGER = "wger"        # database wger (re-import di Open Food Facts)
     USDA = "usda"        # USDA FoodData Central (alimenti generici/grezzi)
-    MANUAL = "manual"    # inserito a mano dall'utente
+    OFF = "off"          # Open Food Facts, letto dal codice a barre del prodotto
+    MANUAL = "manual"    # inserito a mano dall'utente (dall'etichetta)
 
 
 class RecipeSource:
@@ -695,6 +696,16 @@ class Ingredient(Base):
     sugars_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fiber_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     saturated_fat_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Codice a barre (EAN/UPC) del prodotto: una seconda scansione trova qui i
+    # valori senza richiamare Open Food Facts.
+    barcode: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # Solo per i prodotti inseriti a mano: sono visibili unicamente a chi li
+    # ha inseriti, così un valore sbagliato (o malevolo) non finisce nel
+    # diario di altri utenti che scansionano lo stesso codice.
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

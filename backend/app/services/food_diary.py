@@ -156,6 +156,106 @@ def search_foods(db: Session, query: str, *, limit: int = 15) -> list[FoodSearch
     return risultati
 
 
+# --- Codice a barre --------------------------------------------------------------
+
+
+@dataclass
+class BarcodeLookup:
+    ingredient: Ingredient
+    cached: bool  # True = trovato in cache, nessuna chiamata a Open Food Facts
+
+
+def lookup_barcode(db: Session, raw_barcode: str, *, user_id: int) -> BarcodeLookup:
+    """Prodotto dal codice a barre: prima la cache, poi Open Food Facts.
+
+    Ordine: il prodotto che l'utente stesso ha inserito a mano (è la sua
+    etichetta), poi quello già letto da Open Food Facts, poi la chiamata.
+    Solleva `ValueError` (codice non valido), `off_client.ProductNotFound`,
+    `off_client.IncompleteProduct` o `off_client.OffError`.
+    """
+    from app.services import off_client
+
+    codice = off_client.normalize_barcode(raw_barcode)
+    proprio = db.scalar(
+        select(Ingredient).where(
+            Ingredient.barcode == codice,
+            Ingredient.source == IngredientSource.MANUAL,
+            Ingredient.created_by_user_id == user_id,
+        ).order_by(Ingredient.id.desc())
+    )
+    if proprio is not None:
+        return BarcodeLookup(proprio, cached=True)
+
+    in_cache = db.scalar(
+        select(Ingredient).where(
+            Ingredient.barcode == codice, Ingredient.source == IngredientSource.OFF
+        )
+    )
+    if in_cache is not None:
+        return BarcodeLookup(in_cache, cached=True)
+
+    prodotto = off_client.get_product(codice)
+    ingrediente = Ingredient(
+        source=IngredientSource.OFF,
+        source_id=codice,
+        barcode=codice,
+        name=prodotto.name,
+        kcal_100g=prodotto.kcal_100g,
+        protein_100g=prodotto.protein_100g,
+        carbs_100g=prodotto.carbs_100g,
+        fat_100g=prodotto.fat_100g,
+        sugars_100g=prodotto.sugars_100g,
+        fiber_100g=prodotto.fiber_100g,
+        saturated_fat_100g=prodotto.saturated_fat_100g,
+    )
+    db.add(ingrediente)
+    db.commit()
+    db.refresh(ingrediente)
+    return BarcodeLookup(ingrediente, cached=False)
+
+
+def create_manual_product(
+    db: Session,
+    *,
+    user_id: int,
+    name: str,
+    kcal_100g: float,
+    protein_100g: float,
+    carbs_100g: float,
+    fat_100g: float,
+    barcode: str | None = None,
+) -> Ingredient:
+    """Prodotto inserito dall'etichetta, visibile solo a chi lo inserisce."""
+    from app.services import off_client
+
+    codice = off_client.normalize_barcode(barcode) if barcode else None
+    if protein_100g + carbs_100g + fat_100g > 100.5:
+        raise ValueError("Proteine, carboidrati e grassi insieme non possono superare 100 g su 100 g.")
+    ingrediente = Ingredient(
+        source=IngredientSource.MANUAL,
+        source_id=codice,
+        barcode=codice,
+        name=name.strip()[:255],
+        kcal_100g=kcal_100g,
+        protein_100g=protein_100g,
+        carbs_100g=carbs_100g,
+        fat_100g=fat_100g,
+        created_by_user_id=user_id,
+    )
+    db.add(ingrediente)
+    db.commit()
+    db.refresh(ingrediente)
+    return ingrediente
+
+
+def source_label(ingredient: Ingredient) -> str:
+    return {
+        IngredientSource.USDA: "generico (USDA)",
+        IngredientSource.OFF: "codice a barre · Open Food Facts",
+        IngredientSource.MANUAL: "inserito da te",
+    }.get(ingredient.source, "prodotto di marca")
+
+
 def get_or_create_meal(
     db: Session,
     profile: UserProfile,

@@ -355,6 +355,22 @@ class FoodSearchOut(BaseModel):
     fat_100g: float
 
 
+class BarcodeFoodOut(FoodSearchOut):
+    barcode: str
+    cached: bool
+
+
+class ManualProductIn(BaseModel):
+    """Valori per 100 g copiati dall'etichetta."""
+
+    name: str = Field(min_length=2, max_length=200)
+    barcode: str | None = Field(default=None, max_length=32)
+    kcal_100g: float = Field(ge=0, le=950)
+    protein_100g: float = Field(ge=0, le=100)
+    carbs_100g: float = Field(ge=0, le=100)
+    fat_100g: float = Field(ge=0, le=100)
+
+
 class MealItemIn(BaseModel):
     ingredient_id: int
     grams: float = Field(gt=0, le=5000)

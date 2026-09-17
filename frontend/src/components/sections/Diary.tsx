@@ -27,6 +27,8 @@ import { Card, Empty, Notice, ProgressRing, StatBar, Spinner } from "@/component
 import { PageHeader } from "@/components/Shell";
 import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { ApiError } from "@/lib/api";
 import { KiloNote } from "@/components/KiloNote";
 
 const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
@@ -201,6 +203,110 @@ export function Diary({
   );
 }
 
+function BarcodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-current" aria-hidden>
+      <path d="M3 5h2v14H3V5Zm3 0h1v14H6V5Zm2 0h2v14H8V5Zm3 0h1v14h-1V5Zm2 0h3v14h-3V5Zm4 0h1v14h-1V5Zm2 0h2v14h-2V5Z" />
+    </svg>
+  );
+}
+
+/** Prodotto non trovato (o incompleto) su Open Food Facts: si copia l'etichetta. */
+function ManualProductForm({
+  barcode,
+  reason,
+  onCancel,
+  onCreated,
+}: {
+  barcode: string | null;
+  reason: string | null;
+  onCancel: () => void;
+  onCreated: (prodotto: FoodResult) => void;
+}) {
+  const [name, setName] = useState("");
+  const [kcal, setKcal] = useState<number | null>(null);
+  const [protein, setProtein] = useState<number | null>(null);
+  const [carbs, setCarbs] = useState<number | null>(null);
+  const [fat, setFat] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const completo = name.trim().length >= 2 && [kcal, protein, carbs, fat].every((v) => v !== null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      onCreated(
+        await api.post<FoodResult>("/nutrition/foods/manual", {
+          name: name.trim(),
+          barcode,
+          kcal_100g: kcal,
+          protein_100g: protein,
+          carbs_100g: carbs,
+          fat_100g: fat,
+        })
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Salvataggio non riuscito");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 p-2">
+      <Notice>{reason ?? "Prodotto non trovato, vuoi inserirlo manualmente?"}</Notice>
+      <p className="text-[12px] leading-snug text-white/45">
+        Copia i valori <strong className="text-white/70">per 100 g</strong> dalla tabella
+        nutrizionale sulla confezione. Il prodotto resta visibile solo a te
+        {barcode ? ", e la prossima scansione di questo codice lo ritrova subito" : ""}.
+      </p>
+      <div>
+        <label className="label">Nome del prodotto</label>
+        <input
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="es. Kefir magro · marca"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        {(
+          [
+            ["Calorie", kcal, setKcal, "kcal", 950],
+            ["Proteine", protein, setProtein, "g", 100],
+            ["Carboidrati", carbs, setCarbs, "g", 100],
+            ["Grassi", fat, setFat, "g", 100],
+          ] as const
+        ).map(([etichetta, valore, imposta, unita, massimo]) => (
+          <div key={etichetta}>
+            <label className="label">{etichetta}</label>
+            <NumberField
+              value={valore}
+              onChange={imposta}
+              min={0}
+              max={massimo}
+              decimals={1}
+              suffix={unita}
+              placeholder="—"
+              ariaLabel={`${etichetta} per 100 g`}
+            />
+          </div>
+        ))}
+      </div>
+      {barcode && <p className="font-mono text-[11px] text-white/30">Codice {barcode}</p>}
+      {error && <p className="text-[12px] text-rose-200/80">{error}</p>}
+      <div className="flex gap-2">
+        <button className="btn-ghost flex-1" onClick={onCancel}>
+          Annulla
+        </button>
+        <button className="btn-primary flex-1" disabled={!completo || saving} onClick={save}>
+          {saving ? "Salvo…" : "Salva e usa"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GapCard({
   gap,
   profileId,
@@ -311,12 +417,41 @@ function FoodSearchDialog({
   const [selected, setSelected] = useState<FoodResult | null>(null);
   const [grams, setGrams] = useState<number | null>(100);
   const [saving, setSaving] = useState(false);
+  // "scan": fotocamera; "manual": prodotto non trovato, si inserisce dall'etichetta.
+  const [mode, setMode] = useState<"search" | "scan" | "manual">("search");
+  const [lookingUp, setLookingUp] = useState(false);
+  const [manualBarcode, setManualBarcode] = useState<string | null>(null);
+  const [manualReason, setManualReason] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const gramsRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  async function lookupBarcode(code: string) {
+    setLookingUp(true);
+    setError(null);
+    try {
+      const prodotto = await api.get<FoodResult>(`/nutrition/foods/barcode/${encodeURIComponent(code)}`);
+      setResults([prodotto]);
+      setSelected(prodotto);
+      setQuery("");
+      setMode("search");
+      setTimeout(() => gramsRef.current?.focus(), 80);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        setManualBarcode(code);
+        setManualReason(e.message);
+        setMode("manual");
+      } else {
+        setError(e instanceof Error ? e.message : "Lettura del codice non riuscita");
+        setMode("search");
+      }
+    } finally {
+      setLookingUp(false);
+    }
+  }
 
   // La ricerca interroga USDA e Open Food Facts: si aspetta che l'utente
   // smetta di digitare invece di partire a ogni tasto.
@@ -399,14 +534,31 @@ function FoodSearchDialog({
             <input
               ref={inputRef}
               className="input pl-10"
-              placeholder="Cerca un alimento — es. petto di pollo, riso, banana"
+              placeholder="Cerca un alimento — es. petto di pollo, riso"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setSelected(null);
+                setMode("search");
               }}
             />
           </div>
+          <button
+            onClick={() => {
+              setSelected(null);
+              setMode(mode === "scan" ? "search" : "scan");
+            }}
+            aria-pressed={mode === "scan"}
+            title="Scansiona il codice a barre del prodotto"
+            className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[12.5px] font-semibold transition ${
+              mode === "scan"
+                ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                : "border-lime-400/40 bg-lime-400/[0.12] text-lime-200 hover:bg-lime-400/[0.2]"
+            }`}
+          >
+            <BarcodeIcon />
+            <span className="hidden sm:inline">Scansiona</span>
+          </button>
           <CloseButton onClose={onClose} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -429,7 +581,51 @@ function FoodSearchDialog({
 
       {/* Risultati: l'unica parte che scorre */}
       <div className="min-h-[140px] flex-1 overflow-y-auto overscroll-contain p-2">
-        {searching && <Spinner label="Cerco su USDA e Open Food Facts…" />}
+        {mode === "scan" && (
+          <div className="p-2">
+            <BarcodeScanner onDetected={lookupBarcode} busy={lookingUp} />
+            <p className="mt-2 text-[11.5px] leading-snug text-white/35">
+              I valori arrivano da Open Food Facts per il prodotto esatto. Una seconda
+              scansione dello stesso prodotto è immediata.
+            </p>
+          </div>
+        )}
+
+        {mode === "manual" && (
+          <ManualProductForm
+            barcode={manualBarcode}
+            reason={manualReason}
+            onCancel={() => setMode("search")}
+            onCreated={(prodotto) => {
+              setResults([prodotto]);
+              setSelected(prodotto);
+              setMode("search");
+              setTimeout(() => gramsRef.current?.focus(), 80);
+            }}
+          />
+        )}
+
+        {mode === "search" && query.trim().length < 2 && !selected && (
+          <button
+            onClick={() => setMode("scan")}
+            className="m-2 flex w-[calc(100%-1rem)] items-center gap-3.5 rounded-2xl border border-lime-400/25 bg-lime-400/[0.06] p-4 text-left transition hover:border-lime-400/45 hover:bg-lime-400/[0.1]"
+          >
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-lime-400 text-ink-900">
+              <BarcodeIcon />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[14px] font-semibold text-white">
+                Hai il prodotto in mano? Scansiona il codice a barre
+              </span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-white/50">
+                È il modo più preciso per i prodotti confezionati: trovi quello esatto, non una
+                voce con lo stesso nome. Per frutta, carne o riso sfusi usa la ricerca.
+              </span>
+            </span>
+          </button>
+        )}
+
+        {mode === "search" && searching && <Spinner label="Cerco su USDA e Open Food Facts…" />}
 
         {error && (
           <div className="p-2">
@@ -437,11 +633,12 @@ function FoodSearchDialog({
           </div>
         )}
 
-        {!searching && !error && query.trim().length >= 2 && results.length === 0 && (
-          <Empty title="Nessun risultato" hint="Prova con un nome più semplice, es. «riso» o «yogurt greco»." />
+        {mode === "search" && !searching && !error && query.trim().length >= 2 && results.length === 0 && (
+          <Empty title="Nessun risultato" hint="Prova con un nome più semplice, es. «riso» o «yogurt greco», oppure scansiona il codice a barre." />
         )}
 
-        {!searching &&
+        {mode === "search" &&
+          !searching &&
           results.map((r) => {
             const isSelected = selected?.ingredient_id === r.ingredient_id;
             const nome = nameOf(r);

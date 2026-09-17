@@ -21,11 +21,13 @@ from app.models import Ingredient, IngredientSource, MealItem, MealLog, User, Us
 from app.routers.auth import current_user
 from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
+    BarcodeFoodOut,
     DiaryOut,
     FoodNamesIn,
     FoodSearchOut,
     GapFoodOut,
     GapSuggestionsOut,
+    ManualProductIn,
     MealItemIn,
     MealItemOut,
     MealOut,
@@ -37,6 +39,7 @@ from app.services import (
     gap_filler,
     meal_suggestions,
     nutrition_targets,
+    off_client,
     rate_limit,
     supplements,
     translation,
@@ -162,6 +165,81 @@ def search_foods(
     ]
 
 
+def _food_out(ingrediente: Ingredient) -> dict:
+    return dict(
+        ingredient_id=ingrediente.id,
+        name=ingrediente.name,
+        name_it=None,
+        source_label=food_diary.source_label(ingrediente),
+        is_generic=ingrediente.source == IngredientSource.USDA,
+        kcal_100g=ingrediente.kcal_100g,
+        protein_100g=ingrediente.protein_100g,
+        carbs_100g=ingrediente.carbs_100g,
+        fat_100g=ingrediente.fat_100g,
+    )
+
+
+@router.get("/foods/barcode/{barcode}", response_model=BarcodeFoodOut)
+def food_by_barcode(
+    barcode: str, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> BarcodeFoodOut:
+    """Prodotto dal codice a barre, con i valori per 100 g.
+
+    Il metodo più preciso per i prodotti confezionati: identifica il prodotto
+    esatto invece di scegliere fra voci con lo stesso nome. Una seconda
+    scansione dello stesso codice legge la cache, senza chiamare Open Food
+    Facts. Codice sconosciuto o valori incompleti rispondono 404, con un
+    messaggio che invita a inserire il prodotto a mano.
+    """
+    try:
+        codice = off_client.normalize_barcode(barcode)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # La quota si consuma solo se il prodotto non è già in cache.
+    gia_noto = db.scalar(select(Ingredient.id).where(Ingredient.barcode == codice).limit(1))
+    if gia_noto is None:
+        try:
+            rate_limit.consume_daily(db, user.id, "barcode_lookup")
+        except rate_limit.RateLimited as e:
+            raise HTTPException(
+                status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
+            ) from e
+
+    try:
+        esito = food_diary.lookup_barcode(db, codice, user_id=user.id)
+    except off_client.ProductNotFound as e:
+        raise HTTPException(
+            status_code=404,
+            detail="Prodotto non trovato, vuoi inserirlo manualmente?",
+        ) from e
+    except off_client.IncompleteProduct as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{e} Vuoi inserirlo manualmente?",
+        ) from e
+    except off_client.OffError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    return BarcodeFoodOut(**_food_out(esito.ingredient), barcode=codice, cached=esito.cached)
+
+
+@router.post("/foods/manual", response_model=FoodSearchOut, status_code=201)
+def create_manual_food(
+    payload: ManualProductIn, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> FoodSearchOut:
+    """Prodotto inserito dall'etichetta (visibile solo a chi lo inserisce).
+
+    Con il codice a barre, la prossima scansione dello stesso prodotto lo
+    ritrova subito.
+    """
+    try:
+        ingrediente = food_diary.create_manual_product(db, user_id=user.id, **payload.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return FoodSearchOut(**_food_out(ingrediente))
+
+
 @router.post("/foods/names", response_model=dict[int, str])
 def translate_food_names(
     payload: FoodNamesIn, db: Session = Depends(get_db), user: User = Depends(current_user)
@@ -229,7 +307,10 @@ def add_food(
     profile: UserProfile = Depends(owned_profile),
 ) -> MealItem:
     ingrediente = db.get(Ingredient, payload.ingredient_id)
-    if ingrediente is None:
+    # I prodotti inseriti a mano appartengono a chi li ha inseriti.
+    if ingrediente is None or (
+        ingrediente.created_by_user_id is not None and ingrediente.created_by_user_id != profile.user_id
+    ):
         raise HTTPException(status_code=404, detail="Alimento non trovato")
 
     pasto = food_diary.get_or_create_meal(

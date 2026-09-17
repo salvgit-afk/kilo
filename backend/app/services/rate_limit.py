@@ -79,6 +79,8 @@ DAILY_LIMITS = {
     "chat": 60,
     "food_names": 150,
     "plan_generation": 25,
+    # Solo le letture che chiamano davvero Open Food Facts (non la cache).
+    "barcode_lookup": 150,
 }
 
 

@@ -303,3 +303,35 @@ def test_intestazioni_di_sicurezza_dell_api(client):
     r = client.get(f"/nutrition/diary?profile_id={pid}", headers=utente)
     assert r.headers["cache-control"] == "no-store"
     assert r.headers["x-content-type-options"] == "nosniff"
+
+
+# --- Codice a barre ------------------------------------------------------------------
+
+
+def test_barcode_non_trovato_invita_all_inserimento_manuale(client, monkeypatch):
+    from app.services import off_client
+
+    utente, _ = _account(client, "utente@example.com")
+
+    def non_trovato(codice, **kw):
+        raise off_client.ProductNotFound("no")
+
+    monkeypatch.setattr(off_client, "get_product", non_trovato)
+    r = client.get("/nutrition/foods/barcode/8002580005059", headers=utente)
+    assert r.status_code == 404
+    assert "manualmente" in r.json()["detail"]
+    assert client.get("/nutrition/foods/barcode/12ab", headers=utente).status_code == 422
+
+
+def test_prodotto_manuale_altrui_non_aggiungibile_al_diario(client):
+    proprietario, _ = _account(client, "proprietario@example.com")
+    altro, pid_altro = _account(client, "altro@example.com")
+    creato = client.post("/nutrition/foods/manual", headers=proprietario, json={
+        "name": "Kefir di casa", "barcode": "8002580005059",
+        "kcal_100g": 44, "protein_100g": 3.5, "carbs_100g": 4, "fat_100g": 0.5,
+    })
+    assert creato.status_code == 201
+    r = client.post(f"/nutrition/diary/items?profile_id={pid_altro}", headers=altro, json={
+        "ingredient_id": creato.json()["ingredient_id"], "grams": 100, "meal_type": "snack",
+    })
+    assert r.status_code == 404
