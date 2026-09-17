@@ -351,6 +351,28 @@ export type AgentNote = {
   action: string | null;
 };
 
+export type WeeklySummary = {
+  week_start: string;
+  week_end: string;
+  has_data: boolean;
+  sessions_done: number;
+  sessions_planned: number | null;
+  weight_average: number | null;
+  weight_delta_kg: number | null;
+  weigh_ins: number;
+  logged_days: number;
+  protein_average_g: number | null;
+  protein_target_g: number | null;
+  supplements: {
+    supplement_id: number;
+    kind: string;
+    product_name: string | null;
+    days_taken: number;
+    days_expected: number;
+  }[];
+  focus: string | null;
+};
+
 export type VolumeRecommendation = {
   adjustment: string;
   current_weekly_sets: number;

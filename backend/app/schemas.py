@@ -522,6 +522,32 @@ class NoteDismissIn(BaseModel):
     key: str = Field(min_length=1, max_length=160)
 
 
+class SupplementWeekOut(BaseModel):
+    supplement_id: int
+    kind: str
+    product_name: str | None
+    days_taken: int
+    days_expected: int
+
+
+class WeeklySummaryOut(BaseModel):
+    """Riepilogo della settimana conclusa: numeri calcolati e un solo obiettivo."""
+
+    week_start: dt.date
+    week_end: dt.date
+    has_data: bool
+    sessions_done: int
+    sessions_planned: int | None
+    weight_average: float | None
+    weight_delta_kg: float | None
+    weigh_ins: int
+    logged_days: int
+    protein_average_g: float | None
+    protein_target_g: float | None
+    supplements: list[SupplementWeekOut]
+    focus: str | None
+
+
 # --- Progressione ---------------------------------------------------------------
 
 

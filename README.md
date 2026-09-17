@@ -59,6 +59,10 @@ presenta come Kilo.
   dell'LLM e non inventa. «Approfondisci» apre la chat sulla domanda, «Ho
   capito» la chiude su tutti i dispositivi, e un pallino sul pulsante della
   chat segnala le note nuove.
+- **La tua settimana**: in Oggi, il riepilogo della settimana conclusa
+  (allenamenti fatti su quelli previsti, peso medio rispetto alla settimana
+  prima, proteine sul target, costanza con gli integratori) e una sola cosa
+  su cui concentrarsi. «Commentala con Kilo» chiede il commento alla chat.
 - **Promemoria**: dalle 12 un banner discreto ricorda cosa non hai ancora
   segnato oggi: gli integratori dichiarati, che si segnano direttamente da
   lì, e i pasti, ma solo se usi il diario. Si chiude con un clic fino al
@@ -280,6 +284,7 @@ knowledge base e client esterni (con risposte simulate).
 | `GET /supplements/intake` · `PUT /supplements/{id}/intake` | Diario delle assunzioni |
 | `GET /profile/{id}/reminders` | Cosa non è ancora segnato oggi |
 | `GET /profile/{id}/notes` · `POST /profile/{id}/notes/dismiss` | Note di Kilo |
+| `GET /profile/{id}/weekly-summary` | Riepilogo della settimana conclusa |
 | `GET /progress/report` | Report di progressione |
 | `GET /catalog/status` · `POST /catalog/sync-exercises` | Stato e importazione del catalogo esercizi |
 

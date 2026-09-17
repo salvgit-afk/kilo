@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/Shell";
 import type { SectionId } from "@/components/Shell";
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
+import { WeeklySummaryCard } from "@/components/WeeklySummaryCard";
 
 type WeightPoint = { date: string; weight_kg: number };
 
@@ -207,6 +208,8 @@ export function Today({
           ))}
         </div>
       </Card>
+
+      <WeeklySummaryCard profileId={profile.id} />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <Card hover>

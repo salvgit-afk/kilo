@@ -15,6 +15,8 @@ from app.schemas import (
     AgentNoteOut,
     DailyRemindersOut,
     NoteDismissIn,
+    SupplementWeekOut,
+    WeeklySummaryOut,
     PendingSupplementOut,
     ProfileIn,
     ProfileOut,
@@ -24,7 +26,7 @@ from app.schemas import (
     WeightLogIn,
     WeightLogOut,
 )
-from app.services import agent_notes, daily_reminders, supplement_intake
+from app.services import agent_notes, daily_reminders, supplement_intake, weekly_summary
 
 router = APIRouter(prefix="/profile", tags=["profilo"])
 
@@ -224,3 +226,29 @@ def dismiss_note(
 ) -> None:
     """«Ho capito»: la nota non ricompare, su nessun dispositivo."""
     agent_notes.dismiss(db, get_profile(profile_id, db, user), payload.key)
+
+
+@router.get("/{profile_id}/weekly-summary", response_model=WeeklySummaryOut)
+def weekly(
+    profile_id: int,
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> WeeklySummaryOut:
+    """Riepilogo della settimana conclusa (lunedì-domenica) prima di `today`."""
+    r = weekly_summary.build(db, get_profile(profile_id, db, user), today=today or dt.date.today())
+    return WeeklySummaryOut(
+        week_start=r.week_start,
+        week_end=r.week_end,
+        has_data=r.has_data,
+        sessions_done=r.sessions_done,
+        sessions_planned=r.sessions_planned,
+        weight_average=r.weight_average,
+        weight_delta_kg=round(r.weight_delta_kg, 1) if r.weight_delta_kg is not None else None,
+        weigh_ins=r.weigh_ins,
+        logged_days=r.logged_days,
+        protein_average_g=r.protein_average_g,
+        protein_target_g=r.protein_target_g,
+        supplements=[SupplementWeekOut(**vars(i)) for i in r.supplements],
+        focus=r.focus,
+    )
