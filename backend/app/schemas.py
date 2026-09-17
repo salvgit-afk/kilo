@@ -134,6 +134,22 @@ class WeightLogOut(BaseModel):
 # --- Allenamento ---------------------------------------------------------------
 
 
+class ExerciseGuidanceOut(BaseModel):
+    """Biomeccanica e suggerimento di focus, calcolati (vedi `exercise_guidance.py`)."""
+
+    pattern: str | None
+    movement: str
+    joints: list[str]
+    actions: list[str]
+    plane: str
+    plane_hint: str
+    cues: list[str]
+    focus_evidence: str
+    focus_note: str
+    lengthened_note: str | None
+    knowledge_tags: list[str]
+
+
 class ExerciseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -153,6 +169,8 @@ class ExerciseOut(BaseModel):
     instructions_it: list[str] | None = None
     focus_it: list[str] | None = None
     tips_it: list[str] | None = None
+    # Solo nel dettaglio dell'esercizio (overlay), non negli elenchi.
+    guidance: ExerciseGuidanceOut | None = None
 
 
 class PlanExerciseOut(BaseModel):

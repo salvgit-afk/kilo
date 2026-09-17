@@ -8,15 +8,25 @@
  *   gratuite verificate non erano utilizzabili (vedi `exercise_library.py`).
  * - **Esecuzione**: traduzione italiana dei passaggi della fonte, numerati.
  * - **Focus muscolare**: indicazioni per sentire lavorare il muscolo
- *   principale, ricavate dal movimento. La nota sotto riporta ciò che dice
- *   davvero lo studio in `exercise_choice_and_focus.md`: beneficio osservato
- *   sui bicipiti, nessuna differenza sui quadricipiti.
+ *   principale. La nota sotto dipende dal muscolo (`exercise_guidance.py`):
+ *   sui bicipiti lo studio ha misurato un beneficio, sui quadricipiti no, e
+ *   per gli altri muscoli non è stato misurato. Prima era una frase unica,
+ *   uguale anche per lo squat.
+ * - **Come si muove il corpo**: articolazioni, azioni articolari, piano di
+ *   movimento e indicazioni di forma, calcolati dallo schema di movimento.
  */
 
 import { AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { MUSCLE_LABELS, api, exerciseName, formatEquipment, type Exercise } from "@/lib/api";
-import { Spinner } from "@/components/ui";
+import {
+  MUSCLE_LABELS,
+  api,
+  exerciseName,
+  formatEquipment,
+  type Exercise,
+  type ExerciseGuidance,
+} from "@/lib/api";
+import { SourceTags, Spinner } from "@/components/ui";
 import { AskCoachButton, DemoAnimation, Modal, ModalHeader } from "@/components/controls";
 
 export function ExerciseDetail({
@@ -71,6 +81,7 @@ export function ExerciseDetail({
   }
 
   const nome = exerciseName(exercise);
+  const guida = exercise.guidance ?? null;
   const primario = MUSCLE_LABELS[exercise.primary_muscle ?? ""] ?? exercise.primary_muscle ?? "";
   const secondari = (exercise.secondary_muscles ?? "")
     .split(",")
@@ -131,41 +142,68 @@ export function ExerciseDetail({
               )}
             </p>
 
-            <div className="flex flex-wrap gap-1.5">
-              <span className="pill border border-lime-400/30 bg-lime-400/10 text-lime-200">
-                {primario}
-              </span>
-              {secondari.map((m) => (
-                <span key={m} className="pill border border-white/10 bg-white/[0.05] text-white/55">
-                  {m}
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="w-20 text-[10.5px] uppercase tracking-wider text-white/30">Primario</span>
+                <span className="pill border border-lime-400/30 bg-lime-400/10 text-lime-200">
+                  {primario}
                 </span>
-              ))}
+              </div>
+              {secondari.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-20 text-[10.5px] uppercase tracking-wider text-white/30">Secondari</span>
+                  {secondari.map((m) => (
+                    <span key={m} className="pill border border-white/10 bg-white/[0.05] text-white/55">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Info label="Tipo" value={exercise.is_compound ? "Multi-articolare" : "Isolamento"} />
               <Info label="Attrezzatura" value={formatEquipment(exercise.equipment)} />
             </div>
+
+            {guida && <Biomechanics guida={guida} />}
           </div>
 
           <div className="space-y-5">
-            {exercise.focus_it && exercise.focus_it.length > 0 && (
+            {(exercise.focus_it?.length || guida) && (
               <div className="rounded-2xl border border-lime-400/20 bg-lime-400/[0.06] p-4">
                 <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-lime-300/85">
                   Dove concentrarti · {primario}
                 </p>
-                <ul className="space-y-2">
-                  {exercise.focus_it.map((f, i) => (
-                    <li key={i} className="flex gap-2.5 text-[13.5px] leading-snug text-white/85">
-                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-lime-400" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-3 text-[11px] leading-snug text-white/35">
-                  Nello studio riportato dalle fonti, concentrarsi sul muscolo ha dato più
-                  crescita sui bicipiti e nessuna differenza sui quadricipiti: è un aiuto,
-                  non una regola.
-                </p>
+                {exercise.focus_it && exercise.focus_it.length > 0 && (
+                  <ul className="space-y-2">
+                    {exercise.focus_it.map((f, i) => (
+                      <li key={i} className="flex gap-2.5 text-[13.5px] leading-snug text-white/85">
+                        <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-lime-400" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {guida && (
+                  <div
+                    className={`flex gap-2 text-[12px] leading-snug text-white/55 ${
+                      exercise.focus_it?.length ? "mt-3 border-t border-lime-400/10 pt-3" : ""
+                    }`}
+                  >
+                    <span
+                      className={`mt-[3px] shrink-0 rounded px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide ${FOCUS_BADGE[guida.focus_evidence].className}`}
+                    >
+                      {FOCUS_BADGE[guida.focus_evidence].label}
+                    </span>
+                    <span>{guida.focus_note}</span>
+                  </div>
+                )}
+                {guida?.lengthened_note && (
+                  <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/15 px-2.5 py-2 text-[12px] leading-snug text-white/60">
+                    <span className="font-medium text-white/80">In allungamento: </span>
+                    {guida.lengthened_note}
+                  </p>
+                )}
               </div>
             )}
 
@@ -252,6 +290,71 @@ export function ExerciseDetail({
         </div>
       </div>
     </Modal>
+  );
+}
+
+const FOCUS_BADGE: Record<ExerciseGuidance["focus_evidence"], { label: string; className: string }> = {
+  supported: { label: "Misurato", className: "bg-lime-400/20 text-lime-200" },
+  not_shown: { label: "Nessuna differenza", className: "bg-amber-300/15 text-amber-100" },
+  untested: { label: "Non misurato", className: "bg-white/10 text-white/55" },
+};
+
+/** Come si muove il corpo: articolazioni, azioni, piano e indicazioni di forma. */
+function Biomechanics({ guida }: { guida: ExerciseGuidance }) {
+  return (
+    <div className="rounded-2xl border border-iris-400/20 bg-iris-400/[0.05] p-4">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-iris-200/80">
+        Come si muove il corpo
+      </p>
+      <p className="mt-1 text-[14px] font-semibold text-white">{guida.movement}</p>
+
+      <div className="mt-3 space-y-2.5">
+        {guida.joints.length > 0 && (
+          <div>
+            <p className="text-[10.5px] uppercase tracking-wider text-white/30">Articolazioni</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {guida.joints.map((j) => (
+                <span key={j} className="pill border border-iris-400/25 bg-iris-400/10 text-iris-100">
+                  {j}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div>
+          <p className="text-[10.5px] uppercase tracking-wider text-white/30">Movimento articolare</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-white/75">{guida.actions.join(" · ")}</p>
+        </div>
+        <div>
+          <p className="text-[10.5px] uppercase tracking-wider text-white/30">Piano di movimento</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-white/75">
+            <span className="capitalize">{guida.plane}</span>
+            <span className="text-white/40"> — {guida.plane_hint}</span>
+          </p>
+        </div>
+      </div>
+
+      {guida.cues.length > 0 && (
+        <div className="mt-3.5 border-t border-white/[0.06] pt-3">
+          <p className="mb-1.5 text-[10.5px] uppercase tracking-wider text-white/30">Forma corretta</p>
+          <ul className="space-y-1.5">
+            {guida.cues.map((c, i) => (
+              <li key={i} className="flex gap-2.5 text-[13px] leading-snug text-white/75">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-iris-300" />
+                {c}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10.5px] leading-snug text-white/30">
+            Indicazioni di anatomia e biomeccanica applicate: aiutano a muoversi bene, ma
+            raramente sono state confrontate in studi sulla crescita muscolare.
+          </p>
+        </div>
+      )}
+      <div className="mt-3">
+        <SourceTags tags={guida.knowledge_tags} />
+      </div>
+    </div>
   );
 }
 

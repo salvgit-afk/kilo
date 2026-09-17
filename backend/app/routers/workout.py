@@ -28,6 +28,7 @@ from app.schemas import (
     ChatActionOut,
     ChatIn,
     ChatOut,
+    ExerciseGuidanceOut,
     ExerciseOut,
     PreferenceIn,
     PreferenceOut,
@@ -42,6 +43,7 @@ from app.schemas import (
 from app.services import (
     autoregulation,
     chat_agent,
+    exercise_guidance,
     exercise_library,
     exercise_swap,
     rate_limit,
@@ -371,13 +373,19 @@ def submit_feedback(
 
 
 @router.get("/exercises/{exercise_id}", response_model=ExerciseOut)
-def read_exercise(exercise_id: int, db: Session = Depends(get_db)) -> Exercise:
-    """Dettaglio di un esercizio, per l'overlay con l'esecuzione."""
+def read_exercise(exercise_id: int, db: Session = Depends(get_db)) -> ExerciseOut:
+    """Dettaglio di un esercizio, per l'overlay con l'esecuzione.
+
+    Include la biomeccanica (articolazioni, piano, indicazioni di forma) e il
+    suggerimento sul focus coerente con il muscolo principale.
+    """
     exercise = db.get(Exercise, exercise_id)
     if exercise is None:
         raise HTTPException(status_code=404, detail="Esercizio non trovato")
     translation.ensure_translated(db, [exercise])
-    return exercise
+    risposta = ExerciseOut.model_validate(exercise)
+    risposta.guidance = ExerciseGuidanceOut(**exercise_guidance.build(exercise).as_dict())
+    return risposta
 
 
 @router.get("/exercises", response_model=list[ExerciseOut])

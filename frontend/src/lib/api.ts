@@ -141,6 +141,23 @@ export type Exercise = {
   instructions_it: string[] | null;
   focus_it: string[] | null;
   tips_it: string[] | null;
+  /** Solo nel dettaglio dell'esercizio: biomeccanica e focus calcolati. */
+  guidance?: ExerciseGuidance | null;
+};
+
+export type ExerciseGuidance = {
+  pattern: string | null;
+  movement: string;
+  joints: string[];
+  actions: string[];
+  plane: string;
+  plane_hint: string;
+  cues: string[];
+  /** supported = misurato un beneficio · not_shown = nessuna differenza · untested = non misurato */
+  focus_evidence: "supported" | "not_shown" | "untested";
+  focus_note: string;
+  lengthened_note: string | null;
+  knowledge_tags: string[];
 };
 
 export type PlanExercise = {
