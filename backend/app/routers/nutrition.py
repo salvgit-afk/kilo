@@ -17,8 +17,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Ingredient, IngredientSource, MealItem, MealLog
-from app.routers.profile import get_profile
+from app.models import Ingredient, IngredientSource, MealItem, MealLog, User, UserProfile
+from app.routers.auth import current_user
+from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
     DiaryOut,
     FoodNamesIn,
@@ -36,11 +37,14 @@ from app.services import (
     gap_filler,
     meal_suggestions,
     nutrition_targets,
+    rate_limit,
     supplements,
     translation,
 )
 
-router = APIRouter(prefix="/nutrition", tags=["nutrizione"])
+router = APIRouter(
+    prefix="/nutrition", tags=["nutrizione"], dependencies=[Depends(current_user)]
+)
 
 # Cucine di TheMealDB (campo `strArea`), in italiano.
 AREA_IT = {
@@ -95,8 +99,7 @@ def _targets_out(targets) -> NutritionTargetsOut:
     )
 
 
-def _compute_targets(db: Session, profile_id: int):
-    profile = get_profile(profile_id, db)
+def _compute_targets(profile: UserProfile):
     try:
         return profile, nutrition_targets.compute_targets(
             profile, training_days=profile.training_days_per_week
@@ -106,28 +109,30 @@ def _compute_targets(db: Session, profile_id: int):
 
 
 @router.get("/targets", response_model=NutritionTargetsOut)
-def read_targets(profile_id: int, db: Session = Depends(get_db)) -> NutritionTargetsOut:
+def read_targets(profile: UserProfile = Depends(owned_profile)) -> NutritionTargetsOut:
     """Target giornalieri calcolati dal profilo.
 
     Le proteine sono in g/kg di peso corporeo e non come percentuale delle
     calorie: il fabbisogno dipende dalla massa da mantenere, non da quanto si
     mangia.
     """
-    _, targets = _compute_targets(db, profile_id)
+    _, targets = _compute_targets(profile)
     return _targets_out(targets)
 
 
 @router.post("/targets/save", response_model=NutritionTargetsOut, status_code=201)
-def save_targets(profile_id: int, db: Session = Depends(get_db)) -> NutritionTargetsOut:
-    profile, targets = _compute_targets(db, profile_id)
+def save_targets(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> NutritionTargetsOut:
+    profile, targets = _compute_targets(profile)
     nutrition_targets.persist_plan(db, profile, targets)
     return _targets_out(targets)
 
 
 @router.get("/foods/search", response_model=list[FoodSearchOut])
 def search_foods(
-    q: str = Query(min_length=2),
-    limit: int = 15,
+    q: str = Query(min_length=2, max_length=100),
+    limit: int = Query(default=15, ge=1, le=40),
     db: Session = Depends(get_db),
 ) -> list[FoodSearchOut]:
     """Cerca un alimento su USDA (generici) e wger/Open Food Facts (di marca).
@@ -158,8 +163,16 @@ def search_foods(
 
 
 @router.post("/foods/names", response_model=dict[int, str])
-def translate_food_names(payload: FoodNamesIn, db: Session = Depends(get_db)) -> dict[int, str]:
+def translate_food_names(
+    payload: FoodNamesIn, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> dict[int, str]:
     """Nomi italiani degli alimenti indicati (USDA li fornisce in inglese)."""
+    try:
+        rate_limit.consume_daily(db, user.id, "food_names")
+    except rate_limit.RateLimited as e:
+        raise HTTPException(
+            status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
+        ) from e
     ingredienti = db.scalars(
         select(Ingredient).where(Ingredient.id.in_(payload.ids[:25]))
     ).all()
@@ -167,10 +180,12 @@ def translate_food_names(payload: FoodNamesIn, db: Session = Depends(get_db)) ->
 
 
 @router.get("/diary/fill-gap", response_model=GapSuggestionsOut)
-def fill_gap(profile_id: int, db: Session = Depends(get_db)) -> GapSuggestionsOut:
+def fill_gap(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> GapSuggestionsOut:
     """Con quali alimenti, e quanti grammi, chiudere le proteine di oggi
     restando nelle calorie rimaste. Proposte: l'utente conferma."""
-    profile, targets = _compute_targets(db, profile_id)
+    profile, targets = _compute_targets(profile)
     totali = food_diary.daily_totals(db, profile)
     proteine_integratori = supplements.protein_from_supplements(db, profile)
     if proteine_integratori:
@@ -209,9 +224,10 @@ def fill_gap(profile_id: int, db: Session = Depends(get_db)) -> GapSuggestionsOu
 
 @router.post("/diary/items", response_model=MealItemOut, status_code=201)
 def add_food(
-    profile_id: int, payload: MealItemIn, db: Session = Depends(get_db)
+    payload: MealItemIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> MealItem:
-    profile = get_profile(profile_id, db)
     ingrediente = db.get(Ingredient, payload.ingredient_id)
     if ingrediente is None:
         raise HTTPException(status_code=404, detail="Alimento non trovato")
@@ -230,27 +246,39 @@ def add_food(
     return voce
 
 
-@router.patch("/diary/items/{item_id}", response_model=MealItemOut)
-def update_quantity(
-    item_id: int, grams: float = Query(gt=0, le=5000), db: Session = Depends(get_db)
-) -> MealItem:
+def _owned_item(db: Session, item_id: int, user: User) -> MealItem:
+    """Una voce del diario, solo se il pasto è di un profilo dell'utente."""
     item = db.get(MealItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Voce non trovata")
+    ensure_owner(db, item.meal_log.profile_id, user, "Voce non trovata")
+    return item
+
+
+@router.patch("/diary/items/{item_id}", response_model=MealItemOut)
+def update_quantity(
+    item_id: int,
+    grams: float = Query(gt=0, le=5000),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> MealItem:
+    item = _owned_item(db, item_id, user)
     return food_diary.update_quantity(db, item, grams)
 
 
 @router.delete("/diary/items/{item_id}", status_code=204, response_model=None)
-def remove_food(item_id: int, db: Session = Depends(get_db)) -> None:
-    item = db.get(MealItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Voce non trovata")
+def remove_food(
+    item_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> None:
+    item = _owned_item(db, item_id, user)
     food_diary.remove_food(db, item)
 
 
 @router.get("/diary", response_model=DiaryOut)
 def read_diary(
-    profile_id: int, date: dt.date | None = None, db: Session = Depends(get_db)
+    date: dt.date | None = None,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> DiaryOut:
     """Giornata completa con il confronto rispetto ai target.
 
@@ -258,7 +286,7 @@ def read_diary(
     perché il target è l'apporto proteico giornaliero e non l'integratore in
     sé.
     """
-    profile, targets = _compute_targets(db, profile_id)
+    profile, targets = _compute_targets(profile)
     giorno = date or dt.date.today()
 
     pasti = db.scalars(
@@ -300,12 +328,12 @@ def read_diary(
 
 @router.get("/recipes/suggest", response_model=list[RecipeSuggestionOut])
 def suggest_recipes(
-    profile_id: int,
-    query: str | None = None,
+    query: str | None = Query(default=None, max_length=100),
     consumed_kcal: float = 0.0,
     consumed_protein_g: float = 0.0,
-    top: int = 3,
+    top: int = Query(default=3, ge=1, le=10),
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[RecipeSuggestionOut]:
     """Ricette che avvicinano ai target rimasti per la giornata.
 
@@ -314,7 +342,7 @@ def suggest_recipes(
     vanno convertite. Il campo `coverage` dice quanti ingredienti sono stati
     riconosciuti; sotto il 75% la ricetta non viene proposta affatto.
     """
-    profile, targets = _compute_targets(db, profile_id)
+    profile, targets = _compute_targets(profile)
 
     try:
         suggerimenti = meal_suggestions.suggest_meals(

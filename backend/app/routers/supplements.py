@@ -14,8 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import SupplementDeclaration
-from app.routers.profile import get_profile
+from app.models import SupplementDeclaration, User, UserProfile
+from app.routers.auth import current_user
+from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
     BenefitOut,
     IntakeDayOut,
@@ -28,7 +29,9 @@ from app.schemas import (
 )
 from app.services import food_diary, supplement_intake, supplements
 
-router = APIRouter(prefix="/supplements", tags=["integratori"])
+router = APIRouter(
+    prefix="/supplements", tags=["integratori"], dependencies=[Depends(current_user)]
+)
 
 
 def _to_out(valutazione) -> SupplementOut:
@@ -51,7 +54,9 @@ def _to_out(valutazione) -> SupplementOut:
 
 @router.get("", response_model=list[SupplementOut])
 def list_supplements(
-    profile_id: int, other_caffeine_mg: float = 0.0, db: Session = Depends(get_db)
+    other_caffeine_mg: float = 0.0,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[SupplementOut]:
     """Integratori dichiarati, con la valutazione aggiornata.
 
@@ -59,7 +64,6 @@ def list_supplements(
     conteggio: valutare il solo pre-workout ignorerebbe spesso la parte più
     consistente del totale giornaliero.
     """
-    profile = get_profile(profile_id, db)
 
     # Le proteine già assunte dal cibo servono a dire se l'integratore
     # proteico è ancora utile o è ormai superfluo.
@@ -75,9 +79,10 @@ def list_supplements(
 
 @router.post("", response_model=SupplementOut, status_code=201)
 def declare_supplement(
-    profile_id: int, payload: SupplementIn, db: Session = Depends(get_db)
+    payload: SupplementIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> SupplementOut:
-    profile = get_profile(profile_id, db)
 
     dichiarazione = SupplementDeclaration(profile_id=profile.id, **payload.model_dump())
     db.add(dichiarazione)
@@ -120,14 +125,15 @@ def _intake_out(riepilogo: supplement_intake.IntakeSummary) -> SupplementIntakeO
 
 @router.get("/intake", response_model=list[SupplementIntakeOut])
 def intake_diary(
-    profile_id: int, today: dt.date | None = None, db: Session = Depends(get_db)
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[SupplementIntakeOut]:
     """Diario delle assunzioni degli integratori dichiarati.
 
     `today` è la data locale del client: i conteggi (serie, giorni saltati)
     si calcolano rispetto al suo giorno, non a quello UTC del server.
     """
-    profile = get_profile(profile_id, db)
     oggi = today or dt.date.today()
     return [
         _intake_out(supplement_intake.summarize(db, d, today=oggi))
@@ -138,13 +144,12 @@ def intake_diary(
 @router.put("/{supplement_id}/intake", response_model=SupplementIntakeOut)
 def log_intake(
     supplement_id: int,
-    profile_id: int,
     payload: IntakeIn,
     today: dt.date | None = None,
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> SupplementIntakeOut:
     """Segna quante assunzioni ci sono state in un giorno (0 = nessuna)."""
-    profile = get_profile(profile_id, db)
     dichiarazione = db.get(SupplementDeclaration, supplement_id)
     if dichiarazione is None or dichiarazione.profile_id != profile.id:
         raise HTTPException(status_code=404, detail="Integratore non trovato")
@@ -160,23 +165,25 @@ def log_intake(
 
 
 @router.delete("/{supplement_id}", status_code=204, response_model=None)
-def remove_supplement(supplement_id: int, db: Session = Depends(get_db)) -> None:
+def remove_supplement(
+    supplement_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> None:
     dichiarazione = db.get(SupplementDeclaration, supplement_id)
     if dichiarazione is None:
         raise HTTPException(status_code=404, detail="Integratore non trovato")
+    ensure_owner(db, dichiarazione.profile_id, user, "Integratore non trovato")
     db.delete(dichiarazione)
     db.commit()
 
 
 @router.get("/catalog", response_model=list[SupplementInfoOut])
-def supplement_catalog(profile_id: int, db: Session = Depends(get_db)) -> list[SupplementInfoOut]:
+def supplement_catalog(profile: UserProfile = Depends(owned_profile)) -> list[SupplementInfoOut]:
     """Cosa dicono le fonti su ciascun integratore coperto dalla knowledge base.
 
     È **consultazione**, non consiglio: l'utente apre la scheda che gli
     interessa, e ogni scheda riporta l'evidenza per esito — anche quando è
     debole o assente. Nessuna voce viene evidenziata come "da prendere".
     """
-    profile = get_profile(profile_id, db)
     schede = []
     for kind in sorted(supplements.KIND_TO_TAG):
         # Dichiarazione temporanea, mai salvata: serve a riusare la stessa
@@ -199,14 +206,13 @@ def supplement_catalog(profile_id: int, db: Session = Depends(get_db)) -> list[S
 
 @router.post("/preview", response_model=SupplementOut)
 def preview_supplement(
-    profile_id: int,
     payload: SupplementIn,
     other_caffeine_mg: float = 0.0,
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> SupplementOut:
     """Valuta un dosaggio **senza salvarlo**: il riscontro arriva mentre
     l'utente compila, non dopo aver confermato."""
-    profile = get_profile(profile_id, db)
     bozza = SupplementDeclaration(profile_id=profile.id, **payload.model_dump())
     bozza.id = 0
     proteine_da_cibo = food_diary.daily_totals(db, profile).protein_g or None

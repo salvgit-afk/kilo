@@ -994,6 +994,25 @@ class AgentNoteDismissal(Base):
     )
 
 
+class ApiUsage(Base):
+    """Quante volte un account ha usato oggi una funzione costosa (chat, LLM).
+
+    Sta nel database e non in memoria: su Render gratuito il servizio si
+    riavvia ogni volta che si addormenta, e un contatore in memoria
+    ripartirebbe da zero.
+    """
+
+    __tablename__ = "api_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    day: Mapped[dt.date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(32))
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (UniqueConstraint("user_id", "day", "kind", name="uq_api_usage_day"),)
+
+
 # --- Tracciabilità delle raccomandazioni ------------------------------------
 
 

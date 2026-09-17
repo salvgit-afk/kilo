@@ -131,6 +131,7 @@ export default function Page() {
               <ProfileSection
                 profile={profile}
                 email={account.email}
+                isAdmin={account.is_admin}
                 onUpdated={setProfile}
                 onReset={logout}
               />

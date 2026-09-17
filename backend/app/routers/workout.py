@@ -15,11 +15,14 @@ from app.models import (
     ScreeningRecord,
     SessionSet,
     TrainingFeedback,
+    User,
+    UserProfile,
     WorkoutPlan,
     WorkoutPlanExercise,
     WorkoutSession,
 )
-from app.routers.profile import get_profile
+from app.routers.auth import current_user
+from app.routers.profile import owned_profile
 from app.schemas import (
     AlternativeOut,
     ChatActionOut,
@@ -41,11 +44,33 @@ from app.services import (
     chat_agent,
     exercise_library,
     exercise_swap,
+    rate_limit,
     translation,
     workout_generator,
 )
 
-router = APIRouter(prefix="/workout", tags=["allenamento"])
+# Ogni rotta richiede l'accesso, anche il catalogo esercizi: i dati di un
+# profilo passano da `owned_profile`, che controlla che sia di chi chiama.
+router = APIRouter(
+    prefix="/workout", tags=["allenamento"], dependencies=[Depends(current_user)]
+)
+
+
+def _limit(db: Session, user: User, kind: str) -> None:
+    try:
+        rate_limit.consume_daily(db, user.id, kind)
+    except rate_limit.RateLimited as e:
+        raise HTTPException(
+            status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
+        ) from e
+
+
+def _plan_row(db: Session, profile: UserProfile, plan_exercise_id: int) -> WorkoutPlanExercise:
+    """Una riga di scheda, solo se la scheda è del profilo."""
+    riga = db.get(WorkoutPlanExercise, plan_exercise_id)
+    if riga is None or riga.plan is None or riga.plan.profile_id != profile.id:
+        raise HTTPException(status_code=404, detail="Esercizio non presente in scheda")
+    return riga
 
 
 def _latest_screening(db: Session, profile_id: int) -> ScreeningRecord | None:
@@ -78,7 +103,6 @@ def _plan_for(db: Session, profile_id: int, plan_id: int | None) -> WorkoutPlan 
 
 @router.post("/plans/generate", response_model=PlanGenerationOut, status_code=201)
 def generate_plan(
-    profile_id: int,
     explain: bool = True,
     split_type: str | None = None,
     replace_plan_id: int | None = None,
@@ -86,6 +110,8 @@ def generate_plan(
     reps_min: int | None = Query(default=None, ge=1, le=50),
     reps_max: int | None = Query(default=None, ge=1, le=50),
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+    user: User = Depends(current_user),
 ) -> PlanGenerationOut:
     """Genera una scheda e la aggiunge a quelle attive.
 
@@ -98,7 +124,6 @@ def generate_plan(
     affiancarla. `sets_per_exercise` e `reps_min`/`reps_max` sono una scelta
     manuale dell'utente e la scheda dichiara che non seguono le fonti.
     """
-    profile = get_profile(profile_id, db)
     screening = _latest_screening(db, profile.id)
 
     if (reps_min is None) != (reps_max is None):
@@ -107,6 +132,8 @@ def generate_plan(
         raise HTTPException(
             status_code=422, detail="Le ripetizioni minime non possono superare le massime"
         )
+    # Ogni generazione può chiamare l'LLM per la spiegazione.
+    _limit(db, user, "plan_generation")
     if replace_plan_id is not None:
         da_sostituire = _plan_for(db, profile.id, replace_plan_id)
         if da_sostituire is None or not da_sostituire.is_active:
@@ -150,30 +177,33 @@ def generate_plan(
 
 
 @router.get("/plans/active", response_model=WorkoutPlanOut | None)
-def read_active_plan(profile_id: int, db: Session = Depends(get_db)):
-    get_profile(profile_id, db)
-    return _active_plan(db, profile_id)
+def read_active_plan(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+):
+    return _active_plan(db, profile.id)
 
 
 @router.get("/plans", response_model=list[WorkoutPlanOut])
 def list_plans(
-    profile_id: int, active_only: bool = False, db: Session = Depends(get_db)
+    active_only: bool = False,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[WorkoutPlan]:
-    get_profile(profile_id, db)
-    query = select(WorkoutPlan).where(WorkoutPlan.profile_id == profile_id)
+    query = select(WorkoutPlan).where(WorkoutPlan.profile_id == profile.id)
     if active_only:
         query = query.where(WorkoutPlan.is_active.is_(True))
     return list(db.scalars(query.order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())))
 
 
 @router.delete("/plans/{plan_id}", status_code=204, response_model=None)
-def delete_plan(plan_id: int, profile_id: int, db: Session = Depends(get_db)) -> None:
+def delete_plan(
+    plan_id: int, db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> None:
     """Toglie la scheda da quelle attive.
 
     Non la cancella dal database: sessioni e report di progressione continuano
     a riferirsi a ciò che era in programma in quel periodo.
     """
-    profile = get_profile(profile_id, db)
     if workout_generator.archive_plan(db, profile, plan_id) is None:
         raise HTTPException(status_code=404, detail="Scheda non trovata")
 
@@ -184,10 +214,10 @@ def delete_plan(plan_id: int, profile_id: int, db: Session = Depends(get_db)) ->
 )
 def list_alternatives(
     plan_exercise_id: int,
-    profile_id: int,
     limit: int = 6,
     q: str | None = None,
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[AlternativeOut]:
     """Alternative per lo stesso gruppo muscolare, filtrabili per nome.
 
@@ -195,10 +225,7 @@ def list_alternatives(
     imposto e noioso viene saltato.
     """
     limit = max(1, min(limit, 40))
-    profile = get_profile(profile_id, db)
-    riga = db.get(WorkoutPlanExercise, plan_exercise_id)
-    if riga is None:
-        raise HTTPException(status_code=404, detail="Esercizio non presente in scheda")
+    riga = _plan_row(db, profile, plan_exercise_id)
 
     try:
         alternative = exercise_swap.find_alternatives(
@@ -221,14 +248,11 @@ def list_alternatives(
 @router.post("/plan-exercises/{plan_exercise_id}/swap", response_model=WorkoutPlanOut)
 def swap_exercise(
     plan_exercise_id: int,
-    profile_id: int,
     payload: SwapIn,
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> WorkoutPlan:
-    profile = get_profile(profile_id, db)
-    riga = db.get(WorkoutPlanExercise, plan_exercise_id)
-    if riga is None:
-        raise HTTPException(status_code=404, detail="Esercizio non presente in scheda")
+    riga = _plan_row(db, profile, plan_exercise_id)
 
     sostituto = db.get(Exercise, payload.replacement_exercise_id)
     if sostituto is None:
@@ -247,14 +271,15 @@ def swap_exercise(
 
 @router.post("/sessions", response_model=SessionOut, status_code=201)
 def log_session(
-    profile_id: int, payload: SessionIn, db: Session = Depends(get_db)
+    payload: SessionIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> WorkoutSession:
     """Registra una sessione svolta con le serie effettive.
 
     Sono questi i dati su cui si basano i report di progressione, e non
     dipendono da nessuna API esterna.
     """
-    profile = get_profile(profile_id, db)
     piano = _active_plan(db, profile.id)
 
     sessione = WorkoutSession(
@@ -282,13 +307,14 @@ def log_session(
 
 @router.get("/sessions", response_model=list[SessionOut])
 def list_sessions(
-    profile_id: int, limit: int = 50, db: Session = Depends(get_db)
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> list[WorkoutSession]:
-    get_profile(profile_id, db)
     return list(
         db.scalars(
             select(WorkoutSession)
-            .where(WorkoutSession.profile_id == profile_id)
+            .where(WorkoutSession.profile_id == profile.id)
             .order_by(WorkoutSession.date.desc())
             .limit(limit)
         )
@@ -297,7 +323,9 @@ def list_sessions(
 
 @router.post("/feedback", response_model=VolumeRecommendationOut, status_code=201)
 def submit_feedback(
-    profile_id: int, payload: FeedbackIn, db: Session = Depends(get_db)
+    payload: FeedbackIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> VolumeRecommendationOut:
     """Registra come sta rispondendo l'utente e restituisce la raccomandazione.
 
@@ -306,7 +334,6 @@ def submit_feedback(
     Con `apply_to_plan=true` la modifica viene applicata alla scheda indicata
     in `plan_id`, oppure alla più recente.
     """
-    profile = get_profile(profile_id, db)
     piano = _plan_for(db, profile.id, payload.plan_id)
 
     feedback = TrainingFeedback(
@@ -372,13 +399,14 @@ def list_exercises(
         # "bench" devono trovare lo stesso esercizio.
         termine = f"%{q.strip()}%"
         query = query.where(or_(Exercise.name_it.ilike(termine), Exercise.name.ilike(termine)))
-    query = query.order_by(*exercise_library.catalog_order()).limit(limit)
+    query = query.order_by(*exercise_library.catalog_order()).limit(max(1, min(limit, 100)))
     return list(db.scalars(query))
 
 
 @router.get("/preferences", response_model=list[PreferenceOut])
-def list_preferences(profile_id: int, db: Session = Depends(get_db)) -> list[PreferenceOut]:
-    profile = get_profile(profile_id, db)
+def list_preferences(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> list[PreferenceOut]:
     righe = db.scalars(
         select(ExercisePreference).where(ExercisePreference.profile_id == profile.id)
     ).all()
@@ -394,7 +422,9 @@ def list_preferences(profile_id: int, db: Session = Depends(get_db)) -> list[Pre
 
 @router.post("/preferences", response_model=PreferenceOut, status_code=201)
 def set_preference(
-    profile_id: int, payload: PreferenceIn, db: Session = Depends(get_db)
+    payload: PreferenceIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> PreferenceOut:
     """Segna un esercizio come preferito o da evitare.
 
@@ -402,7 +432,6 @@ def set_preference(
     non solo sulla sostituzione a posteriori: se preferisci la chest press
     alla panca piana, la prossima scheda nasce così.
     """
-    profile = get_profile(profile_id, db)
     exercise = db.get(Exercise, payload.exercise_id)
     if exercise is None:
         raise HTTPException(status_code=404, detail="Esercizio non trovato")
@@ -419,9 +448,10 @@ def set_preference(
 
 @router.delete("/preferences/{exercise_id}", status_code=204, response_model=None)
 def clear_preference(
-    profile_id: int, exercise_id: int, db: Session = Depends(get_db)
+    exercise_id: int,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> None:
-    profile = get_profile(profile_id, db)
     preferenza = db.scalar(
         select(ExercisePreference).where(
             ExercisePreference.profile_id == profile.id,
@@ -435,14 +465,17 @@ def clear_preference(
 
 @router.post("/chat", response_model=ChatOut)
 def chat(
-    profile_id: int, payload: ChatIn, db: Session = Depends(get_db)
+    payload: ChatIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+    user: User = Depends(current_user),
 ) -> ChatOut:
     """Assistente conversazionale.
 
     Riceve i dati reali del profilo e i documenti pertinenti, e **non può
     modificare nulla**: le modifiche restano azioni esplicite dell'utente.
     """
-    profile = get_profile(profile_id, db)
+    _limit(db, user, "chat")
     risposta = chat_agent.answer(
         db, profile, payload.message,
         history=[m.model_dump() for m in payload.history],

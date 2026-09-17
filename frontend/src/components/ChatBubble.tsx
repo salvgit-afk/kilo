@@ -127,7 +127,9 @@ export function ChatBubble({
       const domanda = text.trim();
       if (!domanda || busyRef.current) return;
 
-      const storico = messagesRef.current.map(({ role, content }) => ({ role, content }));
+      // Solo gli ultimi messaggi: il backend ne usa comunque pochi e rifiuta
+      // storici troppo lunghi.
+      const storico = messagesRef.current.slice(-20).map(({ role, content }) => ({ role, content }));
       push({ role: "user", content: domanda });
       setInput("");
       setBusy(true);

@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     # https://fdc.nal.usda.gov/api-key-signup
     # Copre gli alimenti generici/grezzi, dove Open Food Facts è più debole.
     secret_key: str = ""
+
+    # --- Sicurezza -----------------------------------------------------------
+    # Email (separate da virgola) degli account che possono aggiornare il
+    # catalogo: l'operazione scarica le fonti e avvia centinaia di chiamate
+    # all'LLM, non deve poterla lanciare chiunque.
+    admin_emails: str = ""
+    # /docs e /openapi.json descrivono tutta l'API: utili in locale, in
+    # produzione sono una mappa per chi cerca punti deboli. Spenti di default.
+    docs_enabled: bool = False
     usda_api_key: str = ""
     usda_base_url: str = "https://api.nal.usda.gov/fdc/v1"
 
@@ -76,6 +85,10 @@ class Settings(BaseSettings):
         if v.startswith("postgres://"):
             return "postgresql+psycopg://" + v[len("postgres://") :]
         return v
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     @property
     def cors_origins(self) -> list[str]:

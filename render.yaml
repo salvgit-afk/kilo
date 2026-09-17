@@ -32,6 +32,10 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # Email degli account amministratori (separate da virgola): solo loro
+      # possono lanciare «Aggiorna catalogo».
+      - key: ADMIN_EMAILS
+        sync: false
       - key: USDA_API_KEY
         sync: false
       - key: GEMINI_MODEL

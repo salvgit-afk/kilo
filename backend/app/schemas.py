@@ -10,6 +10,7 @@ senza separarlo dal suo contesto — che è il requisito di
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +27,9 @@ class UserOut(BaseModel):
 
     id: int
     email: str
+    # Solo per mostrare o nascondere le funzioni riservate: il controllo vero
+    # lo fa il backend a ogni richiesta.
+    is_admin: bool = False
 
 
 class AuthOut(BaseModel):
@@ -207,13 +211,15 @@ class PreferenceOut(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str          # "user" | "assistant"
-    content: str
+    role: Literal["user", "assistant"]
+    # Lo storico arriva dal browser: senza limiti si potrebbero spedire
+    # prompt enormi e costosi.
+    content: str = Field(max_length=4000)
 
 
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
-    history: list[ChatMessage] = []
+    history: list[ChatMessage] = Field(default_factory=list, max_length=30)
     # Dove si trova l'utente quando chiede (sezione, esercizio aperto...):
     # permette risposte su "questo" senza doverlo rispiegare.
     context: str | None = Field(default=None, max_length=500)

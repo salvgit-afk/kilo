@@ -26,11 +26,13 @@ import { REMINDER_HOUR, reminderSettings } from "@/components/ReminderBanner";
 export function ProfileSection({
   profile,
   email,
+  isAdmin = false,
   onUpdated,
   onReset,
 }: {
   profile: Profile;
   email?: string;
+  isAdmin?: boolean;
   onUpdated: (p: Profile) => void;
   onReset: () => void;
 }) {
@@ -243,9 +245,13 @@ export function ProfileSection({
                   Exercise data by RepDB (repdb.co)
                 </a>
               </p>
-              <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
-                {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
-              </button>
+              {/* Riservato all'amministratore: scarica le fonti e avvia la
+                  traduzione di tutto il catalogo. */}
+              {isAdmin && (
+                <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
+                  {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
+                </button>
+              )}
             </div>
           </Card>
 

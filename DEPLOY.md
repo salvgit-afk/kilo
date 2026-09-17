@@ -58,6 +58,7 @@ indirizzo al momento del build.
    | `DATABASE_URL` | la connection string Neon *pooled*, con `?sslmode=require` |
    | `GEMINI_API_KEY` | la tua chiave, oppure lascia vuoto |
    | `USDA_API_KEY` | la tua chiave, oppure lascia vuoto |
+   | `ADMIN_EMAILS` | l'email con cui accedi a Kilo: solo gli amministratori vedono «Aggiorna catalogo» |
 
    `SECRET_KEY` viene generata da Render, `PYTHON_VERSION` e `GEMINI_MODEL`
    sono già impostate.
@@ -137,5 +138,7 @@ mese, quindi rientra nelle 750.
 | Il deploy Render fallisce all'avvio | `DATABASE_URL` errata o migrazione fallita | Guarda i **Logs** del servizio: l'errore di Alembic o psycopg è lì |
 | `connection to server at "2a05:…" failed: Network is unreachable` | **Messaggio fuorviante.** psycopg prova prima gli indirizzi IPv4 di Neon e poi quelli IPv6, ma mostra solo l'ultimo errore. Render non ha IPv6, quindi il vero errore IPv4 resta nascosto. Il caso tipico è `sslmode=verify-full` copiato da Neon, che richiede un certificato che non c'è | Usa `?sslmode=require` nella `DATABASE_URL`, senza `verify-full` né `channel_binding` |
 | La prima richiesta dopo una pausa va in errore | Il servizio Render si stava riaccendendo | Riprova dopo un minuto, oppure attiva il ping |
+| «Aggiorna catalogo» non compare in Profilo | L'email del tuo account non è in `ADMIN_EMAILS` | Aggiungila su Render (più email separate da virgola) |
+| Errore 429 «Troppi tentativi» o «limite giornaliero» | Protezione contro tentativi a raffica e consumo della quota Gemini | Aspetta il tempo indicato; i limiti sono in `app/services/rate_limit.py` |
 | `/health` mostra `gemini_configured: false` | Chiave non inserita | Aggiungi `GEMINI_API_KEY` su Render; il servizio si riavvia da solo |
 | Esercizi con nomi in inglese | Traduzioni ancora in corso o Gemini non configurato | Attendi qualche minuto o configura la chiave |

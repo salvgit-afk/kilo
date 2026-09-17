@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Exercise, Ingredient
-from app.routers.profile import get_profile
+from app.models import Exercise, Ingredient, UserProfile
+from app.routers.auth import current_user, require_admin
+from app.routers.profile import owned_profile
 from app.schemas import (
     CatalogStatusOut,
     ExerciseProgressOut,
@@ -19,14 +20,14 @@ from app.schemas import (
 )
 from app.services import catalog_sync, exercise_library, progress_report, translation
 
-router = APIRouter(tags=["progressione"])
+router = APIRouter(tags=["progressione"], dependencies=[Depends(current_user)])
 
 
 @router.get("/progress/report", response_model=ProgressReportOut)
 def read_report(
-    profile_id: int,
-    weeks: int = 12,
+    weeks: int = Query(default=12, ge=1, le=104),
     db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
 ) -> ProgressReportOut:
     """Report del periodo richiesto.
 
@@ -35,7 +36,6 @@ def read_report(
     confronto fra due misurazioni soprattutto rumore. Quando le pesate sono
     troppo poche, la risposta lo dichiara in `weight_smoothed`.
     """
-    profile = get_profile(profile_id, db)
     fine = dt.date.today()
     report = progress_report.build_report(
         db, profile, since=fine - dt.timedelta(weeks=weeks), until=fine
@@ -110,7 +110,13 @@ def catalog_status(db: Session = Depends(get_db)) -> CatalogStatusOut:
     )
 
 
-@router.post("/catalog/sync-exercises", response_model=SyncResultOut)
+@router.post(
+    "/catalog/sync-exercises",
+    response_model=SyncResultOut,
+    # Scarica le fonti e avvia centinaia di chiamate all'LLM: solo chi è in
+    # ADMIN_EMAILS può lanciarla.
+    dependencies=[Depends(require_admin)],
+)
 def sync_exercises(
     background: BackgroundTasks, include_wger: bool = False, db: Session = Depends(get_db)
 ) -> SyncResultOut:

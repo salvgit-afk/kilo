@@ -322,6 +322,19 @@ verifica e livello di affidabilità**.
   nessuna scheda o piano cambia perché non assumi qualcosa.
 - **Password**: solo hash Argon2, mai salvate né scritte nei log. Token JWT
   con scadenza, firmati con `SECRET_KEY`.
+- **Ogni dato è accessibile solo al suo proprietario**: tutte le rotte, tranne
+  accesso, registrazione e `/health`, richiedono il token, e ogni profilo o
+  risorsa (integratore, alimento del diario, scheda) viene verificata contro
+  l'account che chiama; se non è sua risponde 404, senza rivelare che esiste.
+  Un test scorre tutte le rotte dell'app e fallisce se una resta scoperta.
+- **Limiti contro gli abusi**: tentativi di accesso falliti per email e
+  richieste per IP, registrazioni per IP, e quote giornaliere per account
+  sulle funzioni che usano Gemini (chat, traduzioni, generazione schede).
+  «Aggiorna catalogo» è riservato alle email in `ADMIN_EMAILS`.
+- **Input della chat trattato come dato**: domanda, storico e schermata
+  stanno fra tag nel prompt, con l'istruzione di non eseguirli; lo storico ha
+  ruoli ammessi e lunghezze massime.
+- **Documentazione dell'API spenta in produzione** (`DOCS_ENABLED`).
 - **Nessun segreto nel repo**: chiavi e `DATABASE_URL` stanno solo in `.env`
   (git-ignorato). Nel repo c'è solo `.env.example`.
 - **Errori esterni gestiti**: se Gemini, USDA, wger o TheMealDB non

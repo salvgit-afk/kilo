@@ -31,18 +31,35 @@ from app.services import agent_notes, daily_reminders, supplement_intake, weekly
 router = APIRouter(prefix="/profile", tags=["profilo"])
 
 
-def get_profile(profile_id: int, db: Session, user: User | None = None) -> UserProfile:
+def get_profile(profile_id: int, db: Session, user: User) -> UserProfile:
     """Recupera un profilo, verificando che appartenga a chi lo richiede.
 
     Il controllo di proprietà risponde 404 e non 403: dire "esiste ma non è
-    tuo" rivelerebbe quali id sono in uso.
+    tuo" rivelerebbe quali id sono in uso. Un profilo senza account (creato
+    prima degli account) non è di nessuno, quindi non è accessibile.
     """
     profile = db.get(UserProfile, profile_id)
-    if profile is None:
-        raise HTTPException(status_code=404, detail="Profilo non trovato")
-    if user is not None and profile.user_id not in (None, user.id):
+    if profile is None or profile.user_id != user.id:
         raise HTTPException(status_code=404, detail="Profilo non trovato")
     return profile
+
+
+def owned_profile(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> UserProfile:
+    """Dipendenza: il profilo indicato da `profile_id`, se è dell'utente
+    che ha fatto l'accesso. Senza token valido risponde 401."""
+    return get_profile(profile_id, db, user)
+
+
+def ensure_owner(db: Session, profile_id: int, user: User, detail: str) -> None:
+    """Per le risorse raggiunte dal loro id (un integratore, un alimento del
+    diario): esistono, ma vanno trattate come inesistenti se non sono tue."""
+    profile = db.get(UserProfile, profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(status_code=404, detail=detail)
 
 
 @router.post("", response_model=ProfileOut, status_code=201)
@@ -96,7 +113,10 @@ def update_profile(
 
 @router.post("/{profile_id}/screening", response_model=ScreeningOut, status_code=201)
 def add_screening(
-    profile_id: int, payload: ScreeningIn, db: Session = Depends(get_db)
+    profile_id: int,
+    payload: ScreeningIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ) -> ScreeningRecord:
     """Registra un questionario PAR-Q+.
 
@@ -104,7 +124,7 @@ def add_screening(
     salute cambia nel tempo, e serve sapere quale risposta era valida quando
     un certo piano è stato generato.
     """
-    profile = get_profile(profile_id, db)
+    profile = get_profile(profile_id, db, user)
     screening = ScreeningRecord(profile_id=profile.id, **payload.model_dump())
     db.add(screening)
     db.commit()

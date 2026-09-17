@@ -23,6 +23,10 @@ app = FastAPI(
         "professionista della nutrizione."
     ),
     version="0.1.0",
+    # In produzione la documentazione interattiva resta spenta (DOCS_ENABLED).
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
 )
 
 app.add_middleware(
@@ -60,6 +64,6 @@ def health() -> dict:
 def root() -> dict:
     return {
         "app": "agente-allenamento-nutrizione",
-        "docs": "/docs",
+        "docs": "/docs" if settings.docs_enabled else None,
         "health": "/health",
     }

@@ -75,7 +75,8 @@ export const api = {
 
 export type AuthSession = {
   token: string;
-  user: { id: number; email: string };
+  /** `is_admin` serve solo a mostrare le funzioni riservate: il controllo è nel backend. */
+  user: { id: number; email: string; is_admin: boolean };
   profile: Profile | null;
 };
 
