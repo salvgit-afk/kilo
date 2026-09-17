@@ -95,5 +95,14 @@ def test_nei_multiarticolari_la_priorita_resta_il_movimento():
 
 def test_allungamento_solo_dove_la_fonte_ha_dati():
     assert "seduti" in g.build(ex("Seated Leg Curl", "Hamstrings")).lengthened_note
-    assert "sopra la testa" in g.build(ex("Overhead Cable Extension", "Triceps")).lengthened_note
+    assert "sopra la testa" in g.build(ex("Triceps Extension: Cable (Overhead)", "Triceps")).lengthened_note
     assert g.build(ex("Bench Press: Barbell", "Chest")).lengthened_note is None
+
+
+def test_dato_sull_allungamento_solo_sotto_l_esercizio_studiato():
+    """Lo studio sulla leg extension non va mostrato sotto lo squat, né quello
+    sul leg curl sotto lo stacco rumeno."""
+    assert g.build(ex("Front Squat with Barbell", "Quads", compound=True)).lengthened_note is None
+    assert g.build(ex("Leg Extension", "Quads")).lengthened_note is not None
+    assert g.build(ex("Romanian Deadlift", "Hamstrings", compound=True)).lengthened_note is None
+    assert g.build(ex("Bench Dips", "Triceps", compound=True)).lengthened_note is None

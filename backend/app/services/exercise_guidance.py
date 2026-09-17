@@ -452,24 +452,27 @@ FOCUS_COMPOUND_NOTE = (
 
 # --- Allenamento in allungamento (`biomechanics_technique.md`) -----------------
 
-LENGTHENED_NOTES: dict[str, str] = {
-    "Hamstrings": (
+# Per (muscolo, schema di movimento): i dati della fonte riguardano esercizi
+# precisi, e riportarli sotto un esercizio diverso (lo studio sulla leg
+# extension sotto lo squat) ripeterebbe l'errore della frase unica.
+LENGTHENED_NOTES: dict[tuple[str, str], str] = {
+    ("Hamstrings", "leg_curl"): (
         "Il leg curl da seduti (anca piegata, femorali allungati) ha dato più "
         "crescita di quello da sdraiati: +14% contro +9% in 12 settimane."
     ),
-    "Triceps": (
+    ("Triceps", "triceps_extension"): (
         "Le estensioni con il braccio sopra la testa hanno fatto crescere di più il "
         "tricipite (+19,9% contro +13,9%), soprattutto il capo lungo."
     ),
-    "Calves": (
+    ("Calves", "calf_raise"): (
         "Lavorare nella parte bassa, con la caviglia in allungamento, ha fatto "
         "crescere il gastrocnemio più del movimento completo (+15,2% contro +6,7%)."
     ),
-    "Quads": (
-        "Nella leg extension la parte con il ginocchio piegato ha dato più crescita "
-        "di quella finale: non fermarti a metà."
+    ("Quads", "leg_extension"): (
+        "La parte del movimento con il ginocchio piegato ha dato più crescita di "
+        "quella finale: non fermarti a metà."
     ),
-    "Biceps": (
+    ("Biceps", "curl"): (
         "Nei soggetti allenati, parziali in allungamento e movimento completo hanno "
         "dato risultati simili: conta arrivare fino a braccio disteso."
     ),
@@ -524,7 +527,7 @@ def build(exercise: Exercise) -> ExerciseGuidance:
     if exercise.is_compound and evidenza != FOCUS_NOT_SHOWN:
         nota += FOCUS_COMPOUND_NOTE
 
-    allungamento = LENGTHENED_NOTES.get(muscolo)
+    allungamento = LENGTHENED_NOTES.get((muscolo, pattern.key)) if pattern else None
     tags = ["focus_attentivo", "tecnica_esecuzione"]
     if allungamento:
         tags.append("ampiezza_movimento")
