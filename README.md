@@ -50,6 +50,15 @@ presenta come Kilo.
   preso (anche dose per dose, per esempio in una fase di carico) e vedi i
   giorni totali, la serie in corso e i giorni saltati nelle ultime 4
   settimane.
+- **Note di Kilo**: in cima alle sezioni la mascotte segnala di sua
+  iniziativa ciò che conta in quel momento: scorte di creatina piene dopo 28
+  giorni (senza pause obbligate), fase di carico finita, 4-6 settimane con la
+  stessa scheda (momento di fare il punto), carichi fermi, calo di peso
+  troppo rapido, proteine sotto target nella settimana. Ogni nota è una
+  regola scritta sulle fonti, con i documenti citati: non consuma la quota
+  dell'LLM e non inventa. «Approfondisci» apre la chat sulla domanda, «Ho
+  capito» la chiude su tutti i dispositivi, e un pallino sul pulsante della
+  chat segnala le note nuove.
 - **Promemoria**: dalle 12 un banner discreto ricorda cosa non hai ancora
   segnato oggi: gli integratori dichiarati, che si segnano direttamente da
   lì, e i pasti, ma solo se usi il diario. Si chiude con un clic fino al
@@ -270,6 +279,7 @@ knowledge base e client esterni (con risposte simulate).
 | `GET/POST/DELETE /supplements` · `GET /supplements/catalog` | Integratori dichiarati e schede informative |
 | `GET /supplements/intake` · `PUT /supplements/{id}/intake` | Diario delle assunzioni |
 | `GET /profile/{id}/reminders` | Cosa non è ancora segnato oggi |
+| `GET /profile/{id}/notes` · `POST /profile/{id}/notes/dismiss` | Note di Kilo |
 | `GET /progress/report` | Report di progressione |
 | `GET /catalog/status` · `POST /catalog/sync-exercises` | Stato e importazione del catalogo esercizi |
 

@@ -970,6 +970,30 @@ class SupplementIntake(Base):
     )
 
 
+class AgentNoteDismissal(Base):
+    """Nota di Kilo chiusa dall'utente con «Ho capito».
+
+    Sta nel database e non nel browser: una nota chiusa dal telefono non deve
+    ricomparire sul computer. La chiave identifica l'evento (vedi
+    `agent_notes.py`), quindi una situazione nuova produce una nota nuova.
+    """
+
+    __tablename__ = "agent_note_dismissals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
+    )
+    note_key: Mapped[str] = mapped_column(String(160))
+    dismissed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "note_key", name="uq_agent_note_dismissal"),
+    )
+
+
 # --- Tracciabilità delle raccomandazioni ------------------------------------
 
 

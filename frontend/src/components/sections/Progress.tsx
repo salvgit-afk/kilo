@@ -26,6 +26,7 @@ import { api, type ProgressReport } from "@/lib/api";
 import { Card, CardHeader, Empty, Notice, Spinner } from "@/components/ui";
 import { AskCoachButton, NumberField } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
+import { KiloNote } from "@/components/KiloNote";
 
 type WeightPoint = { date: string; weight_kg: number };
 
@@ -109,6 +110,8 @@ export function Progress({ profileId }: { profileId: number }) {
           </div>
         }
       />
+
+      <KiloNote section="progressi" />
 
       {report.too_early && (
         <div className="mb-4">

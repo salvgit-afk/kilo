@@ -323,7 +323,7 @@ export type SupplementIntake = {
   missed_days: number;
   history_days: number;
   history: IntakeDay[];
-  milestone: { days: number; note: string; knowledge_tag: string } | null;
+  milestone: { days: number; note: string; reached_note: string; knowledge_tag: string } | null;
 };
 
 export type DailyReminders = {
@@ -336,6 +336,19 @@ export type DailyReminders = {
     doses_required: number;
   }[];
   meals_missing: boolean;
+};
+
+/** Nota di Kilo: indicazione calcolata con una regola delle fonti. */
+export type AgentNote = {
+  key: string;
+  section: string;
+  tone: "success" | "info" | "attention";
+  title: string;
+  text: string;
+  knowledge_tags: string[];
+  question: string;
+  priority: number;
+  action: string | null;
 };
 
 export type VolumeRecommendation = {
@@ -585,4 +598,18 @@ export const TAG_LABELS: Record<string, string> = {
   omega3: "Omega-3",
   qualita_prodotto: "Qualità del prodotto",
   integratori_oltre_muscolo: "Integratori oltre il muscolo",
+  ipertrofia: "Prescrizione per l'ipertrofia",
+  forza: "Allenamento per la forza",
+  progressione: "Progressione dei carichi",
+  periodizzazione: "Periodizzazione",
+  frequenza_allenamento: "Frequenza di allenamento",
+  tecniche_avanzate: "Tecniche avanzate",
+  cardio: "Allenamento aerobico",
+  biomeccanica: "Biomeccanica",
+  tecnica_esecuzione: "Tecnica di esecuzione",
+  ampiezza_movimento: "Ampiezza di movimento",
+  composizione_corporea: "Diete e composizione corporea",
+  surplus_calorico: "Surplus calorico",
+  tipi_dieta: "Tipi di dieta",
+  categorie_integratori: "Categorie di evidenza degli integratori",
 };

@@ -22,6 +22,7 @@ import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
 import { Spinner } from "@/components/ui";
 import { ChatBubble } from "@/components/ChatBubble";
 import { ReminderBanner } from "@/components/ReminderBanner";
+import { NotesProvider } from "@/lib/notes";
 import { Auth } from "@/components/sections/Auth";
 import { Onboarding } from "@/components/sections/Onboarding";
 import { Today } from "@/components/sections/Today";
@@ -102,7 +103,7 @@ export default function Page() {
   if (!profile) return <Onboarding onCreated={setProfile} />;
 
   return (
-    <>
+    <NotesProvider profileId={profile.id} section={section}>
       <Shell active={section} onNavigate={setSection} profileName={profile.display_name}>
         <ReminderBanner profileId={profile.id} section={section} onNavigate={setSection} />
         {/* Solo animazione d'entrata. Con un'uscita in modalità "wait", la
@@ -143,6 +144,6 @@ export default function Page() {
         onNavigate={setSection}
         onIntent={runIntent}
       />
-    </>
+    </NotesProvider>
   );
 }

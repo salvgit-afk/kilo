@@ -12,7 +12,9 @@ from app.database import get_db
 from app.models import ScreeningRecord, User, UserProfile, WeightLog
 from app.routers.auth import current_user
 from app.schemas import (
+    AgentNoteOut,
     DailyRemindersOut,
+    NoteDismissIn,
     PendingSupplementOut,
     ProfileIn,
     ProfileOut,
@@ -22,7 +24,7 @@ from app.schemas import (
     WeightLogIn,
     WeightLogOut,
 )
-from app.services import daily_reminders, supplement_intake
+from app.services import agent_notes, daily_reminders, supplement_intake
 
 router = APIRouter(prefix="/profile", tags=["profilo"])
 
@@ -192,3 +194,33 @@ def reminders(
         ],
         meals_missing=promemoria.meals_missing,
     )
+
+
+@router.get("/{profile_id}/notes", response_model=list[AgentNoteOut])
+def notes(
+    profile_id: int,
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> list[AgentNoteOut]:
+    """Note di Kilo ancora aperte, dalla più importante. `today` è la data locale."""
+    profile = get_profile(profile_id, db, user)
+    return [
+        AgentNoteOut(
+            key=n.key, section=n.section, tone=n.tone, title=n.title, text=n.text,
+            knowledge_tags=n.knowledge_tags, question=n.question,
+            priority=n.priority, action=n.action,
+        )
+        for n in agent_notes.build(db, profile, today=today or dt.date.today())
+    ]
+
+
+@router.post("/{profile_id}/notes/dismiss", status_code=204, response_model=None)
+def dismiss_note(
+    profile_id: int,
+    payload: NoteDismissIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> None:
+    """«Ho capito»: la nota non ricompare, su nessun dispositivo."""
+    agent_notes.dismiss(db, get_profile(profile_id, db, user), payload.key)

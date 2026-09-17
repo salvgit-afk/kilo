@@ -33,6 +33,7 @@ import { PageHeader } from "@/components/Shell";
 import { AskCoachButton, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { SupplementDiary } from "@/components/SupplementDiary";
+import { KiloNote } from "@/components/KiloNote";
 
 const EVIDENCE_DOT: Record<string, string> = {
   strong: "bg-lime-400",
@@ -81,6 +82,8 @@ export function Supplements({ profileId }: { profileId: number }) {
           </button>
         }
       />
+
+      <KiloNote section="integratori" />
 
       <div className="mb-4 inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
         {(

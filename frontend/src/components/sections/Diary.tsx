@@ -27,6 +27,7 @@ import { Card, Empty, Notice, ProgressRing, StatBar, Spinner } from "@/component
 import { PageHeader } from "@/components/Shell";
 import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { KiloNote } from "@/components/KiloNote";
 
 const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -81,6 +82,8 @@ export function Diary({
         title="Diario di oggi"
         description="Cerchi l'alimento, scegli tu quale e indichi i grammi: qui non c'è niente di stimato."
       />
+
+      <KiloNote section="diario" />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_350px]">
         <div className="space-y-3">

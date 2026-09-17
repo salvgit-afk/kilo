@@ -468,6 +468,7 @@ class IntakeDayOut(BaseModel):
 class IntakeMilestoneOut(BaseModel):
     days: int
     note: str
+    reached_note: str
     knowledge_tag: str
 
 
@@ -501,6 +502,24 @@ class DailyRemindersOut(BaseModel):
     date: dt.date
     supplements: list[PendingSupplementOut]
     meals_missing: bool
+
+
+class AgentNoteOut(BaseModel):
+    """Nota di Kilo: indicazione basata su una regola delle fonti."""
+
+    key: str
+    section: str
+    tone: str
+    title: str
+    text: str
+    knowledge_tags: list[str]
+    question: str
+    priority: int
+    action: str | None
+
+
+class NoteDismissIn(BaseModel):
+    key: str = Field(min_length=1, max_length=160)
 
 
 # --- Progressione ---------------------------------------------------------------

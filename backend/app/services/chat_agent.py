@@ -214,6 +214,17 @@ def _user_context(db: Session, profile: UserProfile) -> str:
     else:
         righe.append("- Nessun integratore dichiarato (e non gliene vanno proposti)")
 
+    # Le note che l'app gli sta mostrando: se l'utente chiede "perché mi hai
+    # scritto questo?", la risposta deve essere coerente con la nota.
+    from app.services import agent_notes
+
+    note = agent_notes.build(db, profile, today=dt.date.today())
+    if note:
+        righe.append(
+            "- Note di Kilo mostrate ora nell'app: "
+            + "; ".join(f"«{n.title}» (sezione {n.section}): {n.text}" for n in note[:4])
+        )
+
     return "\n".join(righe)
 
 

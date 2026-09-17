@@ -26,22 +26,30 @@ MAX_DOSES_PER_DAY = 20
 # Durate documentate nelle fonti, per mostrare a che punto è l'utente. Non
 # sono obiettivi da raggiungere: dicono dopo quanto ha senso aspettarsi
 # l'effetto per cui l'integratore è studiato.
-MILESTONES: dict[str, tuple[int, str, str]] = {
+# Il secondo testo vale a durata raggiunta: dice cosa significa, perché "28 di
+# 28 giorni" da solo sembrerebbe la fine dell'assunzione.
+MILESTONES: dict[str, tuple[int, str, str, str]] = {
     SupplementKind.CREATINE: (
         28,
         "Senza fase di carico, con 3-5 g al giorno le scorte muscolari salgono "
         "in 3-4 settimane.",
+        "Scorte piene: da qui è mantenimento, 3-5 g al giorno. Non serve fare "
+        "pause o cicli, e la fonte non indica un limite di durata.",
         "creatina",
     ),
     SupplementKind.BETA_ALANINE: (
         28,
         "Servono almeno 4 settimane continuative per aumentare la carnosina "
         "muscolare.",
+        "Durata minima raggiunta. Su quanto proseguire o se fare pause la fonte "
+        "non dà indicazioni.",
         "beta_alanina",
     ),
     SupplementKind.ASHWAGANDHA: (
         56,
         "Gli effetti sul sonno sono più marcati dopo almeno 8 settimane.",
+        "Durata raggiunta. Da sapere: la sicurezza a lungo termine non è ancora "
+        "ben caratterizzata.",
         "integratori_oltre_muscolo",
     ),
 }
@@ -51,6 +59,7 @@ MILESTONES: dict[str, tuple[int, str, str]] = {
 class Milestone:
     days: int
     note: str
+    reached_note: str
     knowledge_tag: str
 
 

@@ -21,6 +21,7 @@ import type { SectionId } from "@/components/Shell";
 import { SourceTags } from "@/components/ui";
 import { CloseButton, useEscape } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { useNotes } from "@/lib/notes";
 
 type Message = ChatMessage & { tags?: string[]; actions?: ChatAction[] };
 
@@ -94,6 +95,12 @@ export function ChatBubble({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [used, setUsed] = useState<Set<string>>(new Set());
+  // Note di Kilo per la sezione aperta non ancora portate in chat: fanno
+  // comparire il pallino sul pulsante, e aprendo la chat diventano il primo
+  // messaggio.
+  const { forSection } = useNotes();
+  const [shownNotes, setShownNotes] = useState<Set<string>>(new Set());
+  const pendingNotes = forSection(section).filter((n) => !shownNotes.has(n.key));
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -214,7 +221,19 @@ export function ChatBubble({
   return (
     <>
       <motion.button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open && pendingNotes.length) {
+            const nota = pendingNotes[0];
+            push({
+              role: "assistant",
+              content: `${nota.title}\n\n${nota.text}`,
+              tags: nota.knowledge_tags,
+              actions: [{ type: "ask", label: "Approfondisci", section: null, value: nota.question }],
+            });
+            setShownNotes((prev) => new Set(prev).add(nota.key));
+          }
+          setOpen((o) => !o);
+        }}
         whileTap={{ scale: 0.93 }}
         whileHover={{ scale: 1.07 }}
         className="group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6"
@@ -223,6 +242,19 @@ export function ChatBubble({
         <span className="coach-fab block">
           <Mascot size={48} mood={busy ? "thinking" : "idle"} />
         </span>
+        <AnimatePresence>
+          {!open && pendingNotes.length > 0 && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              aria-label="Kilo ha una nota per te"
+              className="absolute right-0.5 top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-ink-900 bg-lime-400 px-1 text-[10px] font-bold leading-none text-ink-900"
+            >
+              {pendingNotes.length}
+            </motion.span>
+          )}
+        </AnimatePresence>
         {!open && (
           <span className="pointer-events-none absolute right-full mr-3 hidden whitespace-nowrap rounded-lg border border-white/10 bg-ink-800/95 px-2.5 py-1.5 text-[12px] text-white/85 opacity-0 shadow-lift transition group-hover:opacity-100 lg:block">
             Chiedi a Kilo

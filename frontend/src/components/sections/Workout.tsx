@@ -38,6 +38,7 @@ import { ExerciseDetailHost } from "@/components/ExerciseDetail";
 import { PreferencesDialog } from "@/components/PreferencesDialog";
 import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { KiloNote } from "@/components/KiloNote";
 
 export { formatEquipment } from "@/lib/api";
 
@@ -215,6 +216,11 @@ export function Workout({
             </button>
           </div>
         }
+      />
+
+      <KiloNote
+        section="scheda"
+        onAction={(azione) => azione === "feedback" && plan && setFeedbackOpen(true)}
       />
 
       {plans.length > 0 && (

@@ -292,7 +292,7 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-[12.5px] text-white/65">
                     {item.days_taken >= item.milestone.days
-                      ? `Superati i ${item.milestone.days} giorni indicati dalle fonti`
+                      ? `${item.days_taken} giorni: durata indicata dalle fonti raggiunta`
                       : `${item.days_taken} di ${item.milestone.days} giorni`}
                   </p>
                   <span className="font-mono text-[11.5px] tabular-nums text-white/35">
@@ -307,7 +307,9 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
                     transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                   />
                 </div>
-                <p className="text-[11.5px] leading-snug text-white/40">{item.milestone.note}</p>
+                <p className="text-[11.5px] leading-snug text-white/40">
+                  {item.days_taken >= item.milestone.days ? item.milestone.reached_note : item.milestone.note}
+                </p>
                 <SourceTags tags={[item.milestone.knowledge_tag]} />
               </div>
             )}

@@ -17,6 +17,7 @@ import { Card, CardHeader, Notice, ProgressRing, StatBar, Spinner } from "@/comp
 import { PageHeader } from "@/components/Shell";
 import type { SectionId } from "@/components/Shell";
 import { Mascot } from "@/components/Mascot";
+import { KiloNote } from "@/components/KiloNote";
 
 type WeightPoint = { date: string; weight_kg: number };
 
@@ -121,31 +122,15 @@ export function Today({
       action: { label: "Generala", run: () => onNavigate("scheda") },
     });
   } else {
-    const settimane = Math.floor((Date.now() - new Date(plan.started_at).getTime()) / (7 * GIORNO_MS));
-    briefing.push(
-      settimane >= 3
-        ? {
-            key: "scheda",
-            tone: "iris",
-            title: `Scheda attiva da ${settimane} settimane`,
-            text: "È un buon momento per fare il punto su progressi e recupero: se serve, il volume si adatta.",
-            action: {
-              label: "Fai il punto con Kilo",
-              run: () =>
-                askCoach(
-                  `Uso la scheda attuale da ${settimane} settimane: come capisco se sta funzionando e se devo cambiare qualcosa?`,
-                  "Sezione Oggi"
-                ),
-            },
-          }
-        : {
-            key: "scheda",
-            tone: "lime",
-            title: plan.name,
-            text: `${days.length} giornate: ${days.join(", ")}.`,
-            action: { label: "Apri la scheda", run: () => onNavigate("scheda") },
-          }
-    );
+    // Il momento di "fare il punto" lo segnala la nota di Kilo in cima, con
+    // la soglia delle fonti: qui resta il riepilogo della scheda.
+    briefing.push({
+      key: "scheda",
+      tone: "lime",
+      title: plan.name,
+      text: `${days.length} giornate: ${days.join(", ")}.`,
+      action: { label: "Apri la scheda", run: () => onNavigate("scheda") },
+    });
   }
 
   const giorniDallaPesata = lastWeight
@@ -174,6 +159,8 @@ export function Today({
           profile.training_days_per_week
         } allenamenti a settimana`}
       />
+
+      <KiloNote section="oggi" onNavigate={onNavigate} />
 
       <Card className="mb-4">
         <div className="flex items-center gap-3.5 border-b border-white/[0.06] px-5 py-4">
