@@ -25,10 +25,14 @@ class Settings(BaseSettings):
     # l'app resta usabile: i piani si generano comunque dai parametri della
     # knowledge base, senza il testo esplicativo.
     gemini_api_key: str = ""
-    # Alias "latest": robusto alle deprecazioni dei nomi con versione.
-    gemini_model: str = "gemini-flash-lite-latest"
+    # Versione fissa: con un alias "latest" il comportamento cambierebbe da
+    # solo a ogni aggiornamento di Google. Se la versione viene ritirata,
+    # `llm_client` ripiega sull'alias della stessa famiglia.
+    gemini_model: str = "gemini-3.5-flash-lite"
     # Modello per le traduzioni del catalogo: si fanno una volta sola e
-    # restano salvate, quindi conviene la qualità alla velocità.
+    # restano salvate, quindi conviene la qualità alla velocità. È un modello
+    # diverso da quello della chat anche perché i limiti del piano gratuito
+    # sono per modello: tradurre il catalogo non consuma la quota della chat.
     gemini_translation_model: str = "gemini-3.5-flash"
 
     # --- Database esercizi e alimenti --------------------------------------

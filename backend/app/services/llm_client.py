@@ -35,6 +35,16 @@ class LLMError(RuntimeError):
     """Chiamata all'LLM fallita (rete, quota, risposta non parsabile)."""
 
 
+class LLMQuotaExceeded(LLMError):
+    """Limite di richieste del piano raggiunto (HTTP 429)."""
+
+
+def fallback_model(model: str) -> str:
+    """Alias "latest" della stessa famiglia, usato se il modello fissato
+    viene ritirato: meglio una versione diversa che nessuna risposta."""
+    return "gemini-flash-lite-latest" if "lite" in model else "gemini-flash-latest"
+
+
 def is_configured() -> bool:
     return get_settings().gemini_configured
 
@@ -66,18 +76,34 @@ def generate_structured(
         },
     }
 
+    modello = model or settings.gemini_model
     try:
         # La chiave va nell'header e non nell'URL: gli URL finiscono nei log
         # (httpx li registra a livello INFO), gli header no.
-        resp = httpx.post(
-            _GEMINI_URL.format(model=model or settings.gemini_model),
-            headers={"x-goog-api-key": settings.gemini_api_key},
-            json=payload,
-            timeout=timeout,
-        )
+        resp = _post(modello, payload, settings.gemini_api_key, timeout)
+        if resp.status_code == 404 and modello != fallback_model(modello):
+            # Versione fissata ritirata da Google.
+            logger.warning(
+                "Modello %s non disponibile: uso %s", modello, fallback_model(modello)
+            )
+            resp = _post(fallback_model(modello), payload, settings.gemini_api_key, timeout)
+        if resp.status_code == 429:
+            raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
         resp.raise_for_status()
         text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
+    except LLMQuotaExceeded:
+        logger.warning("Quota Gemini esaurita (%s)", modello)
+        raise
     except Exception as e:
         logger.warning("Chiamata LLM fallita: %s", e)
         raise LLMError(str(e)) from e
+
+
+def _post(model: str, payload: dict[str, Any], api_key: str, timeout: float) -> httpx.Response:
+    return httpx.post(
+        _GEMINI_URL.format(model=model),
+        headers={"x-goog-api-key": api_key},
+        json=payload,
+        timeout=timeout,
+    )

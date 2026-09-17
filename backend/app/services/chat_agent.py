@@ -392,6 +392,15 @@ def answer(
 
     try:
         risposta = llm_client.generate_structured(prompt, _SCHEMA, timeout=60.0)
+    except llm_client.LLMQuotaExceeded:
+        return ChatReply(
+            answer=(
+                "Per oggi ho esaurito i messaggi a disposizione: riprova domani "
+                "mattina. Nel frattempo schede, diario, note e promemoria "
+                "funzionano normalmente."
+            ),
+            used_llm=False,
+        )
     except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
         logger.info("Chat non disponibile (%s)", e)
         return ChatReply(

@@ -35,4 +35,4 @@ services:
       - key: USDA_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-flash-lite-latest
+        value: gemini-3.5-flash-lite
