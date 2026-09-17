@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import time
 from typing import Any
 
 import httpx
@@ -49,15 +51,30 @@ def is_configured() -> bool:
     return get_settings().gemini_configured
 
 
+# Errori temporanei del server: vale la pena riprovare. Il 429 no: sul piano
+# gratuito di solito è la quota esaurita, e riprovare subito non serve.
+RETRY_STATUSES = {500, 502, 503, 504}
+RETRY_BACKOFF_SECONDS = (1.0, 3.0)
+
+
 def generate_structured(
     prompt: str,
     response_schema: dict[str, Any],
     *,
+    system: str | None = None,
     temperature: float = 0.2,
     timeout: float = 30.0,
     model: str | None = None,
+    max_output_tokens: int | None = None,
+    purpose: str = "generico",
 ) -> dict[str, Any]:
     """Chiede a Gemini una risposta JSON conforme a `response_schema`.
+
+    - `system` va nel `systemInstruction` di Gemini: regole e dati fidati
+      separati dal testo dell'utente, che resiste meglio a chi prova a
+      scavalcarle;
+    - `timeout` è il tempo **complessivo**, nuovi tentativi compresi;
+    - `purpose` etichetta la chiamata nei log dei token consumati.
 
     Solleva `LLMNotConfigured` / `LLMError`: sta al chiamante decidere il
     fallback (di norma: generare comunque l'output in modo deterministico dai
@@ -67,37 +84,95 @@ def generate_structured(
     if not settings.gemini_configured:
         raise LLMNotConfigured("GEMINI_API_KEY non configurata nel file .env")
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": temperature,
-            "responseMimeType": "application/json",
-            "responseSchema": response_schema,
-        },
+    config: dict[str, Any] = {
+        "temperature": temperature,
+        "responseMimeType": "application/json",
+        "responseSchema": response_schema,
     }
+    if max_output_tokens:
+        config["maxOutputTokens"] = max_output_tokens
+    payload: dict[str, Any] = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": config,
+    }
+    if system:
+        payload["systemInstruction"] = {"parts": [{"text": system}]}
 
     modello = model or settings.gemini_model
+    scadenza = time.monotonic() + timeout
     try:
         # La chiave va nell'header e non nell'URL: gli URL finiscono nei log
         # (httpx li registra a livello INFO), gli header no.
-        resp = _post(modello, payload, settings.gemini_api_key, timeout)
+        resp = _send(modello, payload, settings.gemini_api_key, scadenza)
         if resp.status_code == 404 and modello != fallback_model(modello):
             # Versione fissata ritirata da Google.
             logger.warning(
                 "Modello %s non disponibile: uso %s", modello, fallback_model(modello)
             )
-            resp = _post(fallback_model(modello), payload, settings.gemini_api_key, timeout)
+            modello = fallback_model(modello)
+            resp = _send(modello, payload, settings.gemini_api_key, scadenza)
         if resp.status_code == 429:
             raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
         resp.raise_for_status()
-        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
+
+        dati = resp.json()
+        _log_usage(purpose, modello, dati.get("usageMetadata") or {})
+        candidato = dati["candidates"][0]
+        if candidato.get("finishReason") == "MAX_TOKENS":
+            raise LLMError(f"Risposta troncata dal limite di {max_output_tokens} token")
+        return json.loads(candidato["content"]["parts"][0]["text"])
     except LLMQuotaExceeded:
-        logger.warning("Quota Gemini esaurita (%s)", modello)
+        logger.warning("Quota Gemini esaurita (%s, %s)", modello, purpose)
+        raise
+    except LLMError:
         raise
     except Exception as e:
-        logger.warning("Chiamata LLM fallita: %s", e)
+        logger.warning("Chiamata LLM fallita (%s): %s", purpose, e)
         raise LLMError(str(e)) from e
+
+
+def _send(
+    model: str, payload: dict[str, Any], api_key: str, deadline: float
+) -> httpx.Response:
+    """Una chiamata, con nuovi tentativi sugli errori temporanei finché resta tempo."""
+    for tentativo in range(len(RETRY_BACKOFF_SECONDS) + 1):
+        rimasto = deadline - time.monotonic()
+        if rimasto <= 0:
+            raise LLMError("Tempo massimo per la risposta esaurito")
+        try:
+            resp = _post(model, payload, api_key, rimasto)
+            if resp.status_code not in RETRY_STATUSES:
+                return resp
+            motivo = f"HTTP {resp.status_code}"
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            resp = None
+            motivo = type(e).__name__
+
+        if tentativo == len(RETRY_BACKOFF_SECONDS):
+            break
+        attesa = RETRY_BACKOFF_SECONDS[tentativo] + random.uniform(0, 0.5)
+        # Un nuovo tentativo ha senso solo se c'è tempo per la risposta.
+        if deadline - time.monotonic() < attesa + 2:
+            break
+        logger.info("Gemini %s: %s, nuovo tentativo fra %.1f s", model, motivo, attesa)
+        time.sleep(attesa)
+
+    if resp is None:
+        raise LLMError(f"Gemini non raggiungibile ({motivo})")
+    return resp
+
+
+def _log_usage(purpose: str, model: str, usage: dict[str, Any]) -> None:
+    """Token consumati per chiamata: è così che la quota si tiene d'occhio
+    sui numeri reali (nei log di Render), non a stima."""
+    logger.info(
+        "Gemini [%s] %s: %s token in ingresso, %s in uscita, %s di ragionamento",
+        purpose,
+        model,
+        usage.get("promptTokenCount", "?"),
+        usage.get("candidatesTokenCount", 0),
+        usage.get("thoughtsTokenCount", 0),
+    )
 
 
 def _post(model: str, payload: dict[str, Any], api_key: str, timeout: float) -> httpx.Response:

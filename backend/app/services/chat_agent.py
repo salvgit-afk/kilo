@@ -153,7 +153,9 @@ def _tags_for(question: str) -> list[str]:
 def _user_context(db: Session, profile: UserProfile) -> str:
     """Dati reali dell'utente, così l'assistente non deve indovinarli."""
     righe = [
-        f"- Nome: {profile.display_name}, {profile.age} anni, {profile.sex}",
+        # Niente nome né email: al modello servono solo i dati che cambiano la
+        # risposta, e meno dati personali escono dal backend meglio è.
+        f"- {profile.age} anni, sesso {profile.sex}",
         f"- Peso {profile.weight_kg} kg, altezza {profile.height_cm} cm",
         f"- Obiettivo: {profile.goal}, esperienza: {profile.experience_level}",
         f"- Allenamenti a settimana: {profile.training_days_per_week}",
@@ -404,17 +406,27 @@ def answer(
         ruolo = "Utente" if turno.get("role") == "user" else "Tu"
         conversazione += f"\n{ruolo}: {_untrusted(turno.get('content', ''))}"
 
-    # Le parti scritte dall'utente stanno fra tag, così il modello le
-    # distingue dalle regole (vedi il system prompt).
+    # Regole, dati dell'utente e fonti vanno nel system prompt; nel messaggio
+    # solo ciò che scrive l'utente, fra tag. Così il modello distingue le
+    # istruzioni fidate dal testo che non deve eseguire.
+    sistema = _SYSTEM_PROMPT.format(contesto=contesto, fonti=fonti)
     prompt = (
-        _SYSTEM_PROMPT.format(contesto=contesto, fonti=fonti)
-        + (f"\n<conversazione>{conversazione}\n</conversazione>\n" if conversazione else "")
-        + (f"\n<schermata>{_untrusted(context)}</schermata>\n" if context else "")
-        + f"\n<domanda>{_untrusted(question)}</domanda>"
+        (f"<conversazione>{conversazione}\n</conversazione>\n" if conversazione else "")
+        + (f"<schermata>{_untrusted(context)}</schermata>\n" if context else "")
+        + f"<domanda>{_untrusted(question)}</domanda>"
     )
 
     try:
-        risposta = llm_client.generate_structured(prompt, _SCHEMA, timeout=60.0)
+        risposta = llm_client.generate_structured(
+            prompt,
+            _SCHEMA,
+            system=sistema,
+            timeout=60.0,
+            # La risposta è di massimo 180 parole: il margine copre azioni e
+            # ragionamento interno del modello, non risposte fuori misura.
+            max_output_tokens=4096,
+            purpose="chat",
+        )
     except llm_client.LLMQuotaExceeded:
         return ChatReply(
             answer=(

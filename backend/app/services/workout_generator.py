@@ -765,7 +765,9 @@ def explain_plan(generated: GeneratedPlan, profile: UserProfile) -> str:
     )
 
     try:
-        risposta = llm_client.generate_structured(prompt, _EXPLANATION_SCHEMA)
+        risposta = llm_client.generate_structured(
+            prompt, _EXPLANATION_SCHEMA, purpose="explain_plan"
+        )
     except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
         logger.info("Spiegazione LLM non disponibile (%s): uso quella deterministica", e)
         return generated.rationale

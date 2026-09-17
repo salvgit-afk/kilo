@@ -224,6 +224,7 @@ def _convert_with_llm(
             # Una ricetta può avere 15-20 ingredienti da convertire in una
             # sola chiamata: il timeout predefinito di 30s non basta.
             timeout=75.0,
+            purpose="recipe_quantities",
         )
     except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
         logger.info("Conversione in grammi non disponibile (%s)", e)

@@ -269,6 +269,7 @@ def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
                     temperature=0.2,
                     timeout=150.0,
                     model=modello,
+                    purpose="translate_exercises",
                 )
             except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
                 logger.info("Traduzione esercizi interrotta (%s)", e)
@@ -422,6 +423,7 @@ def _translate_recipe_call(recipe: dict) -> dict | None:
             _RECIPE_SCHEMA,
             temperature=0.1,
             timeout=60.0,
+            purpose="translate_recipes",
         )
     except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
         logger.info("Traduzione ricetta non disponibile (%s)", e)
@@ -535,6 +537,7 @@ def translate_food_names(db: Session, ingredients: list) -> dict[int, str]:
             _FOOD_SCHEMA,
             temperature=0.0,
             timeout=30.0,
+            purpose="translate_food_names",
         )
     except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
         logger.info("Traduzione nomi alimenti non disponibile (%s)", e)
@@ -621,6 +624,7 @@ def query_to_english(db: Session, query: str, *, allow_llm: bool = True) -> str:
             _QUERY_SCHEMA,
             temperature=0.0,
             timeout=20.0,
+            purpose="query_to_english",
         )
     except (llm_client.LLMNotConfigured, llm_client.LLMError):
         return testo
