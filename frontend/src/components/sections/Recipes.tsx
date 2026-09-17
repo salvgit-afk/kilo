@@ -12,9 +12,14 @@
  * Si cerca in italiano: il backend traduce la ricerca per la fonte (che
  * conosce solo l'inglese) e poi traduce le ricette trovate.
  *
- * Due viste con lo stesso selettore a schede della sezione Integratori:
- * **Idee per te** e **Salvate**. Una ricetta salvata è una copia di quella
- * già analizzata, salvata nel database: si riapre subito, su ogni dispositivo.
+ * Tre viste con lo stesso selettore a schede della sezione Integratori:
+ * **Idee per te**, **Importa** e **Salvate**. Una ricetta salvata è una copia
+ * di quella già analizzata, salvata nel database: si riapre subito, su ogni
+ * dispositivo.
+ *
+ * L'importazione è la via rapida: si incolla una ricetta già scritta invece
+ * di comporla ingrediente per ingrediente. A differenza dei suggerimenti, lì
+ * i grammi li conferma l'utente, quindi i valori non sono più una stima.
  */
 
 import { motion } from "framer-motion";
@@ -25,6 +30,7 @@ import { Card, Empty, Notice, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import { AskCoachButton } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { RecipeImport } from "@/components/RecipeImport";
 
 const SPUNTI = ["pollo", "salmone", "tonno", "uova", "lenticchie", "manzo", "tofu"];
 
@@ -37,7 +43,7 @@ export function Recipes({
   intent?: Intent | null;
   onIntentHandled?: () => void;
 }) {
-  const [tab, setTab] = useState<"suggest" | "saved">("suggest");
+  const [tab, setTab] = useState<"suggest" | "import" | "saved">("suggest");
   const [query, setQuery] = useState("");
   const [recipes, setRecipes] = useState<RecipeSuggestion[] | null>(null);
   const [saved, setSaved] = useState<SavedRecipe[] | null>(null);
@@ -125,6 +131,7 @@ export function Recipes({
         {(
           [
             ["suggest", "Idee per te"],
+            ["import", "Importa"],
             ["saved", `Salvate${saved ? ` · ${saved.length}` : ""}`],
           ] as const
         ).map(([id, text]) => (
@@ -147,7 +154,15 @@ export function Recipes({
         ))}
       </div>
 
-      {tab === "saved" ? (
+      {tab === "import" ? (
+        <RecipeImport
+          profileId={profileId}
+          onSaved={() => {
+            loadSaved();
+            setTab("saved");
+          }}
+        />
+      ) : tab === "saved" ? (
         !saved ? (
           <Spinner label="Carico le ricette salvate…" />
         ) : salvate.length === 0 ? (
@@ -159,9 +174,14 @@ export function Recipes({
                 Tocca il segnalibro su una ricetta che ti piace: la ritrovi qui, con macro,
                 ingredienti e preparazione, senza doverla cercare di nuovo.
               </p>
-              <button className="btn-primary mt-5" onClick={() => setTab("suggest")}>
-                Cerca ricette
-              </button>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <button className="btn-primary" onClick={() => setTab("suggest")}>
+                  Cerca ricette
+                </button>
+                <button className="btn-ghost" onClick={() => setTab("import")}>
+                  Incolla una ricetta tua
+                </button>
+              </div>
             </div>
           </Card>
         ) : (

@@ -260,9 +260,36 @@ export type Diary = {
   progress: Record<string, number>;
 };
 
+/** Un ingrediente della ricetta già collegato al catalogo alimenti. */
+export type RecipeItem = {
+  name: string;
+  measure: string | null;
+  grams: number | null;
+  /** Nullo quando l'alimento non è stato trovato: la riga non fa numeri. */
+  ingredient_id: number | null;
+  matched_name: string | null;
+  source_label: string | null;
+  kcal_100g: number | null;
+  protein_100g: number | null;
+  carbs_100g: number | null;
+  fat_100g: number | null;
+  fiber_100g: number | null;
+};
+
+/** Bozza letta da un testo incollato: si rivede e poi si salva. */
+export type ImportedRecipe = {
+  name: string;
+  servings: number;
+  instructions: string | null;
+  items: RecipeItem[];
+  warnings: string[];
+};
+
 export type RecipeSuggestion = {
-  /** Id nella fonte (TheMealDB): serve per salvarla. */
+  /** Id nella fonte (TheMealDB), oppure generato per le ricette importate. */
   meal_id: string | null;
+  /** "themealdb" oppure "import" per quelle incollate dall'utente. */
+  source: string;
   saved: boolean;
   name: string;
   original_name: string | null;
@@ -281,6 +308,7 @@ export type RecipeSuggestion = {
   fit_score: number;
   reasons: string[];
   ingredients: string[];
+  items: RecipeItem[];
 };
 
 export type SavedRecipe = { id: number; saved_at: string; recipe: RecipeSuggestion };
