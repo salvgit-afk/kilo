@@ -67,30 +67,43 @@ def test_esercizio_non_riconosciuto_senza_indicazioni_inventate():
     assert guida.joints == ["anca"]
 
 
-# --- Il bug del box verde ---------------------------------------------------------
+# --- Come sentire il muscolo (era il bug del box verde) ---------------------------------------------------------
 
 
-def test_nota_sul_focus_diversa_per_bicipiti_e_quadricipiti():
+def test_indicazione_diversa_per_ogni_movimento():
     curl = g.build(ex("EZ-Bar Curl", "Biceps"))
     squat = g.build(ex("Barbell Squat", "Quads", compound=True))
-    assert curl.focus_evidence == g.FOCUS_SUPPORTED
-    assert squat.focus_evidence == g.FOCUS_NOT_SHOWN
-    assert curl.focus_note != squat.focus_note
-    assert "bicipit" in curl.focus_note and "quadricipit" in squat.focus_note
+    lat = g.build(ex("Lat Pulldown: Cable (Wide Grip)", "Lats", compound=True))
+    assert len({curl.muscle_cue, squat.muscle_cue, lat.muscle_cue}) == 3
     # Allo squat non si parla più di bicipiti.
-    assert "bicipit" not in squat.focus_note
+    assert "gomit" not in squat.muscle_cue
+    assert "gomiti" in lat.muscle_cue and "non con le mani" in lat.muscle_cue
 
 
-def test_muscoli_non_misurati_dichiarati_come_tali():
-    for muscolo in ("Chest", "Lats", "Shoulders", "Abs"):
-        assert g.build(ex("Qualcosa", muscolo)).focus_evidence == g.FOCUS_UNTESTED
+def test_stesso_schema_muscolo_diverso_indicazione_diversa():
+    """La panca a presa stretta lavora il tricipite: l'indicazione lo segue."""
+    petto = g.build(ex("Bench Press: Barbell", "Chest", compound=True))
+    tricipite = g.build(ex("Bench Press: Barbell (Close Grip)", "Triceps", compound=True))
+    assert petto.pattern == tricipite.pattern == "horizontal_press"
+    assert "abbracciare" in petto.muscle_cue
+    assert "tricip" not in petto.muscle_cue and "gomiti vicini" in tricipite.muscle_cue
 
 
-def test_nei_multiarticolari_la_priorita_resta_il_movimento():
-    isolamento = g.build(ex("Cable Crossover", "Chest"))
-    panca = g.build(ex("Bench Press: Barbell", "Chest", compound=True))
-    assert "multi-articolari" in panca.focus_note
-    assert "multi-articolari" not in isolamento.focus_note
+def test_ogni_schema_ha_la_sua_indicazione():
+    senza = {p.key for p in g.PATTERNS} - set(g.MUSCLE_CUES_BY_PATTERN) - {"total_body"}
+    assert not senza
+
+
+def test_esercizio_non_riconosciuto_usa_il_muscolo():
+    assert g.build(ex("Qualcosa", "Chest")).muscle_cue == g.MUSCLE_CUES_BY_MUSCLE["Chest"]
+    assert g.build(ex("Qualcosa", "Muscolo sconosciuto")).muscle_cue is None
+
+
+def test_niente_etichette_di_evidenza_nelle_indicazioni():
+    """Le etichette misurato/non misurato non davano un'azione da fare."""
+    for p in g.PATTERNS:
+        frase = g.muscle_cue("Chest", p.key) or ""
+        assert "studio" not in frase and "misurat" not in frase
 
 
 def test_allungamento_solo_dove_la_fonte_ha_dati():

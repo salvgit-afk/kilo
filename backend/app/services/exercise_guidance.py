@@ -12,14 +12,14 @@ uguali per tutti, verificabili e non consumano quota:
    Se il nome non corrisponde a nessuno schema si ripiega sul movimento
    tipico del muscolo principale, senza indicazioni di forma inventate.
 
-2. **Focus sul muscolo**: una mappa muscolo → nota, coerente con quello che
-   lo studio in `exercise_choice_and_focus.md` ha misurato davvero (più
-   crescita sui bicipiti, nessuna differenza sui quadricipiti), invece di una
-   frase unica uguale per ogni esercizio. Più, dove la fonte lo documenta,
-   cosa dice la ricerca sull'allenamento in allungamento per quel muscolo.
+2. **Come sentire il muscolo**: un'indicazione pratica per lo schema di
+   movimento e il muscolo bersaglio ("tira con i gomiti, non con le mani"),
+   invece di una frase unica uguale per ogni esercizio. Più, dove la fonte lo
+   documenta, cosa dice la ricerca sull'allenamento in allungamento.
 
-Per estendere: aggiungere uno schema a `PATTERNS` o una voce a `FOCUS_NOTES`
-/ `LENGTHENED_NOTES`, con il test in `tests/test_exercise_guidance.py`.
+Per estendere: aggiungere uno schema a `PATTERNS` o una voce a
+`MUSCLE_CUES_BY_PATTERN` / `LENGTHENED_NOTES`, con il test in
+`tests/test_exercise_guidance.py`.
 """
 
 from __future__ import annotations
@@ -390,65 +390,196 @@ MUSCLE_DEFAULTS: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     "Adductors": (("anca",), ("adduzione dell'anca",), "frontale"),
 }
 
-# --- Focus sul muscolo (`exercise_choice_and_focus.md`, Schoenfeld 2018) -------
+# --- Come sentire il muscolo -----------------------------------------------------
 
-FOCUS_SUPPORTED = "supported"      # misurato: più crescita con il focus sul muscolo
-FOCUS_NOT_SHOWN = "not_shown"      # misurato: nessuna differenza
-FOCUS_UNTESTED = "untested"        # non misurato per questo muscolo
+# Un'indicazione pratica per portare il lavoro sul muscolo giusto, del tipo
+# che si dà in sala: "tira con i gomiti, non con le mani". Sono indicazioni di
+# tecnica, non risultati di studi: `exercise_choice_and_focus.md` documenta
+# che concentrarsi sul muscolo ha aiutato soprattutto negli esercizi di
+# isolamento delle braccia, e queste frasi sono il modo concreto di farlo.
+#
+# Si cerca prima la coppia (muscolo, schema), poi lo schema, poi il muscolo:
+# la stessa spinta su panca lavora il petto o il tricipite a seconda di come
+# la si esegue, e la frase deve seguire il muscolo bersaglio dell'esercizio.
 
-FOCUS_NOTES: dict[str, tuple[str, str]] = {
-    "Biceps": (
-        FOCUS_SUPPORTED,
-        "Qui vale la pena: nello studio delle fonti concentrarsi sul bicipite mentre "
-        "lavora ha dato più crescita (12,4% contro 6,9% in 8 settimane).",
+MUSCLE_CUES_BY_TARGET: dict[tuple[str, str], str] = {
+    ("Triceps", "horizontal_press"): (
+        "Presa stretta e gomiti vicini ai fianchi: pensa di distendere le braccia, "
+        "non di spingere con il petto."
     ),
-    "Triceps": (
-        FOCUS_UNTESTED,
-        "Sui tricipiti non è stato misurato, ma il beneficio osservato riguarda i "
-        "muscoli piccoli delle braccia come il bicipite: provarlo ha senso, "
-        "soprattutto negli esercizi di isolamento.",
+    ("Chest", "dip"): (
+        "Busto inclinato in avanti e gomiti un po' aperti: così il carico va sul "
+        "petto, che senti allungarsi in basso."
     ),
-    "Forearms": (
-        FOCUS_UNTESTED,
-        "Non misurato sugli avambracci; il beneficio osservato riguarda i muscoli "
-        "piccoli delle braccia, quindi provarlo ha senso.",
+    ("Triceps", "dip"): (
+        "Busto dritto e gomiti vicini al corpo: pensa di spingere le parallele verso "
+        "il basso distendendo le braccia."
     ),
-    "Quads": (
-        FOCUS_NOT_SHOWN,
-        "Sui quadricipiti concentrarsi sul muscolo non ha cambiato la crescita "
-        "nello studio delle fonti: qui conta di più scendere in profondità con "
-        "carico e controllo.",
+    ("Shoulders", "horizontal_press"): (
+        "Spingi pensando di portare la parte anteriore della spalla verso l'alto: "
+        "gomiti sotto le mani, non troppo aperti."
     ),
-    "Hamstrings": (
-        FOCUS_NOT_SHOWN,
-        "Sulle gambe lo studio non ha trovato differenze (misurate sui "
-        "quadricipiti): per i femorali conta di più arrivare in allungamento.",
+    ("Glutes", "lunge"): (
+        "Busto leggermente in avanti e passo lungo: spingi con il tallone davanti e "
+        "senti il gluteo tirare in basso."
     ),
-    "Glutes": (
-        FOCUS_NOT_SHOWN,
-        "Sulle gambe lo studio non ha trovato differenze (misurate sui "
-        "quadricipiti): usa il focus se ti aiuta a sentire i glutei, ma la "
-        "priorità è la tecnica.",
+    ("Glutes", "hinge"): (
+        "Pensa di chiudere una porta alle tue spalle con il sedere: la risalita la "
+        "fanno i glutei che spingono il bacino in avanti."
     ),
-    "Calves": (
-        FOCUS_NOT_SHOWN,
-        "Sulle gambe lo studio non ha trovato differenze: per i polpacci conta "
-        "di più scendere fino al massimo allungamento.",
+    ("Lower back", "hinge"): (
+        "Schiena lunga e ferma: i lombari tengono la colonna in posizione, il "
+        "movimento lo fanno le anche."
     ),
-    "Adductors": (
-        FOCUS_NOT_SHOWN,
-        "Sulle gambe lo studio non ha trovato differenze: la priorità è un "
-        "movimento completo e controllato.",
+    ("Forearms", "curl"): (
+        "Stringi l'impugnatura per tutta la serie: sono gli avambracci a tenere il "
+        "polso fermo e dritto."
     ),
 }
-FOCUS_DEFAULT = (
-    FOCUS_UNTESTED,
-    "Per questo muscolo non ci sono misure dirette: concentrarsi sul muscolo è un "
-    "aiuto da provare, soprattutto negli esercizi di isolamento, non una regola.",
-)
-FOCUS_COMPOUND_NOTE = (
-    " Negli esercizi multi-articolari, però, la priorità resta il movimento e il carico."
-)
+
+MUSCLE_CUES_BY_PATTERN: dict[str, str] = {
+    "vertical_pull": (
+        "Pensa di tirare con i gomiti, non con le mani: portali giù verso i fianchi, "
+        "come per infilarli nelle tasche dietro. Le mani sono solo ganci."
+    ),
+    "row": (
+        "Tira con i gomiti verso i fianchi e, a fine movimento, avvicina le scapole "
+        "come per stringere una matita fra di esse."
+    ),
+    "straight_arm": (
+        "Braccia come leve rigide: spingi verso le cosce pensando di portare giù le "
+        "ascelle, senza piegare i gomiti."
+    ),
+    "horizontal_press": (
+        "Pensa di avvicinare le braccia fra loro, come per abbracciare un albero, più "
+        "che di spingere il peso lontano. Scapole ferme contro la panca."
+    ),
+    "fly": (
+        "Immagina di abbracciare un grosso albero: il movimento parte dalla spalla, i "
+        "gomiti restano appena piegati e non cambiano angolo."
+    ),
+    "overhead_press": (
+        "Spingi verso l'alto tenendo i gomiti sotto le mani e senti la spalla che "
+        "solleva il braccio, fino al bicipite vicino all'orecchio."
+    ),
+    "lateral_raise": (
+        "Pensa di spingere i gomiti verso le pareti ai tuoi lati, non di alzare le "
+        "mani: guida il gomito, la mano segue."
+    ),
+    "front_raise": (
+        "Solleva pensando alla parte davanti della spalla, fino all'altezza degli "
+        "occhi, senza slanciare con il busto."
+    ),
+    "rear_delt": (
+        "Apri i gomiti verso l'esterno e indietro, come per scostare due tende: le "
+        "scapole restano quasi ferme, lavora il retro della spalla."
+    ),
+    "upright_row": (
+        "Guidano i gomiti, che salgono sempre più in alto delle mani."
+    ),
+    "shrug": (
+        "Porta le spalle dritte verso le orecchie, senza ruotarle, e fermati un "
+        "istante in cima."
+    ),
+    "curl": (
+        "Gomito fermo al fianco come un cardine e pensa di portare il mignolo verso "
+        "la spalla: se il gomito avanza, sta lavorando la spalla."
+    ),
+    "triceps_extension": (
+        "Il gomito è un perno fermo: senti il tricipite che distende il braccio e "
+        "stringilo un istante a braccio disteso."
+    ),
+    "dip": (
+        "Scendi controllato e spingi le parallele verso il basso: i gomiti restano "
+        "puntati indietro, non verso l'esterno."
+    ),
+    "squat": (
+        "Pensa di spingere il pavimento lontano da te con tutto il piede, invece di "
+        "\"alzarti\": le ginocchia seguono la direzione delle punte."
+    ),
+    "lunge": (
+        "Il peso sta sulla gamba davanti: spingi con tutto il piede davanti, quella "
+        "dietro serve solo da appoggio."
+    ),
+    "hinge": (
+        "Pensa di spingere i fianchi indietro verso il muro alle tue spalle, non di "
+        "piegarti in avanti: devi sentire i femorali tendersi."
+    ),
+    "hip_thrust": (
+        "Spingi con i talloni e porta il bacino in alto stringendo i glutei; il mento "
+        "resta verso il petto, così il movimento non va nella schiena."
+    ),
+    "leg_curl": (
+        "Pensa di portare i talloni verso i glutei tenendo il bacino incollato al "
+        "supporto."
+    ),
+    "leg_extension": (
+        "Pensa di calciare in alto con la tibia restando ben seduto, e stringi i "
+        "quadricipiti un istante in cima."
+    ),
+    "calf_raise": (
+        "Sali spingendo il pavimento con la base dell'alluce, poi lascia scendere il "
+        "tallone fino in fondo, senza rimbalzo."
+    ),
+    "hip_abduction": (
+        "Spingi con l'esterno delle ginocchia, come per allontanarle, senza dondolare "
+        "con il busto."
+    ),
+    "crunch": (
+        "Pensa di avvicinare lo sterno al bacino arrotolando la schiena, non di tirare "
+        "su la testa con il collo."
+    ),
+    "leg_raise": (
+        "Pensa di portare il bacino verso le costole, non solo le gambe in alto: se il "
+        "bacino non si arrotola, lavorano i flessori dell'anca."
+    ),
+    "rotation": (
+        "La rotazione parte dal busto e le braccia seguono: senti i fianchi "
+        "dell'addome che girano."
+    ),
+    "side_bend": (
+        "Piegati di lato pensando di accorciare il fianco opposto al peso."
+    ),
+    "anti_movement": (
+        "Avvicina le costole al bacino e stringi i glutei: il corpo è una tavola "
+        "rigida che non cede."
+    ),
+    "wrist": (
+        "Il movimento è solo del polso: l'avambraccio resta appoggiato e fermo."
+    ),
+    "shoulder_rotation": (
+        "Gomito fermo al fianco come un perno: ruota solo il braccio, lentamente."
+    ),
+}
+
+# Quando il nome dell'esercizio non corrisponde a nessuno schema.
+MUSCLE_CUES_BY_MUSCLE: dict[str, str] = {
+    "Chest": "Pensa di avvicinare le braccia al centro del petto, non di spingere con le mani.",
+    "Lats": "Pensa di tirare con i gomiti verso i fianchi, non con le mani.",
+    "Shoulders": "Guida con i gomiti e senti la spalla che solleva il braccio.",
+    "Biceps": "Gomito fermo al fianco: pensa di portare il mignolo verso la spalla.",
+    "Triceps": "Gomito fermo come un perno: senti il tricipite che distende il braccio.",
+    "Quads": "Pensa di spingere il pavimento lontano da te con tutto il piede.",
+    "Hamstrings": "Pensa di spingere i fianchi indietro e senti i femorali tendersi.",
+    "Glutes": "Spingi con i talloni e stringi i glutei a fine movimento.",
+    "Calves": "Scendi fino in fondo con il tallone e sali sulla base dell'alluce.",
+    "Abs": "Pensa di avvicinare le costole al bacino.",
+    "Trapezius": "Porta le spalle dritte verso le orecchie, senza ruotarle.",
+    "Forearms": "Il movimento è solo del polso: l'avambraccio resta fermo.",
+    "Adductors": "Pensa di avvicinare le ginocchia fra loro, lentamente e senza slancio.",
+    "Lower back": "Schiena lunga e ferma: il movimento lo fanno le anche.",
+}
+
+
+def muscle_cue(muscolo: str, pattern_key: str | None) -> str | None:
+    if pattern_key:
+        frase = MUSCLE_CUES_BY_TARGET.get((muscolo, pattern_key)) or MUSCLE_CUES_BY_PATTERN.get(
+            pattern_key
+        )
+        if frase:
+            return frase
+    return MUSCLE_CUES_BY_MUSCLE.get(muscolo)
+
 
 # --- Allenamento in allungamento (`biomechanics_technique.md`) -----------------
 
@@ -488,8 +619,7 @@ class ExerciseGuidance:
     plane: str
     plane_hint: str
     cues: list[str] = field(default_factory=list)
-    focus_evidence: str = FOCUS_UNTESTED
-    focus_note: str = ""
+    muscle_cue: str | None = None
     lengthened_note: str | None = None
     knowledge_tags: list[str] = field(default_factory=list)
 
@@ -523,10 +653,6 @@ def build(exercise: Exercise) -> ExerciseGuidance:
             "Movimento tipico del muscolo principale", list(articolazioni), list(azioni), []
         )
 
-    evidenza, nota = FOCUS_NOTES.get(muscolo, FOCUS_DEFAULT)
-    if exercise.is_compound and evidenza != FOCUS_NOT_SHOWN:
-        nota += FOCUS_COMPOUND_NOTE
-
     allungamento = LENGTHENED_NOTES.get((muscolo, pattern.key)) if pattern else None
     tags = ["focus_attentivo", "tecnica_esecuzione"]
     if allungamento:
@@ -540,8 +666,7 @@ def build(exercise: Exercise) -> ExerciseGuidance:
         plane=piano,
         plane_hint=PLANES[piano],
         cues=cues,
-        focus_evidence=evidenza,
-        focus_note=nota,
+        muscle_cue=muscle_cue(muscolo, pattern.key if pattern else None),
         lengthened_note=allungamento,
         knowledge_tags=tags,
     )

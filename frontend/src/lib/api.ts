@@ -154,8 +154,8 @@ export type ExerciseGuidance = {
   plane_hint: string;
   cues: string[];
   /** supported = misurato un beneficio · not_shown = nessuna differenza · untested = non misurato */
-  focus_evidence: "supported" | "not_shown" | "untested";
-  focus_note: string;
+  /** Indicazione pratica per sentire il muscolo bersaglio in questo movimento. */
+  muscle_cue: string | null;
   lengthened_note: string | null;
   knowledge_tags: string[];
 };

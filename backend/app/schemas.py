@@ -144,8 +144,7 @@ class ExerciseGuidanceOut(BaseModel):
     plane: str
     plane_hint: str
     cues: list[str]
-    focus_evidence: str
-    focus_note: str
+    muscle_cue: str | None = None
     lengthened_note: str | None
     knowledge_tags: list[str]
 

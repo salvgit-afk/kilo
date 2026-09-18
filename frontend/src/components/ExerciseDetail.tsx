@@ -184,19 +184,20 @@ export function ExerciseDetail({
                     ))}
                   </ul>
                 )}
-                {guida && (
-                  <div
-                    className={`flex gap-2 text-[12px] leading-snug text-white/55 ${
+                {guida?.muscle_cue && (
+                  <p
+                    className={`flex gap-2.5 text-[13px] leading-snug text-white/80 ${
                       exercise.focus_it?.length ? "mt-3 border-t border-lime-400/10 pt-3" : ""
                     }`}
                   >
-                    <span
-                      className={`mt-[3px] shrink-0 self-start whitespace-nowrap rounded px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide ${FOCUS_BADGE[guida.focus_evidence].className}`}
-                    >
-                      {FOCUS_BADGE[guida.focus_evidence].label}
+                    <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 fill-lime-300/80" aria-hidden>
+                      <path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2Zm-3 18h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1Z" />
+                    </svg>
+                    <span>
+                      <span className="font-medium text-lime-200/90">Come sentirlo: </span>
+                      {guida.muscle_cue}
                     </span>
-                    <span>{guida.focus_note}</span>
-                  </div>
+                  </p>
                 )}
                 {guida?.lengthened_note && (
                   <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/15 px-2.5 py-2 text-[12px] leading-snug text-white/60">
@@ -292,12 +293,6 @@ export function ExerciseDetail({
     </Modal>
   );
 }
-
-const FOCUS_BADGE: Record<ExerciseGuidance["focus_evidence"], { label: string; className: string }> = {
-  supported: { label: "Misurato", className: "bg-lime-400/20 text-lime-200" },
-  not_shown: { label: "Nessuna differenza", className: "bg-amber-300/15 text-amber-100" },
-  untested: { label: "Non misurato", className: "bg-white/10 text-white/55" },
-};
 
 /** Come si muove il corpo: articolazioni, azioni, piano e indicazioni di forma. */
 function Biomechanics({ guida }: { guida: ExerciseGuidance }) {
