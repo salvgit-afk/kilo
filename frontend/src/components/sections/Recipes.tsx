@@ -32,6 +32,16 @@ import { AskCoachButton } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { RecipeImport } from "@/components/RecipeImport";
 
+// Ricette per volta: la prima pagina arriva subito, le altre su richiesta.
+const PAGE_SIZE = 4;
+
+function suggestUrl(profileId: number, query: string, exclude: string[]): string {
+  const params = new URLSearchParams({ profile_id: String(profileId), top: String(PAGE_SIZE) });
+  if (query.trim()) params.set("query", query.trim());
+  for (const id of exclude) params.append("exclude", id);
+  return `/nutrition/recipes/suggest?${params.toString()}`;
+}
+
 const SPUNTI = ["pollo", "salmone", "tonno", "uova", "lenticchie", "colazione", "spuntino"];
 
 export function Recipes({
@@ -49,6 +59,10 @@ export function Recipes({
   const [saved, setSaved] = useState<SavedRecipe[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Carica altre": la ricerca da proseguire e se può esserci altro.
+  const [lastQuery, setLastQuery] = useState("");
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const loadSaved = useCallback(async () => {
     try {
@@ -68,12 +82,10 @@ export function Recipes({
       setLoading(true);
       setError(null);
       try {
-        const q = text.trim() ? `&query=${encodeURIComponent(text.trim())}` : "";
-        setRecipes(
-          await api.get<RecipeSuggestion[]>(
-            `/nutrition/recipes/suggest?profile_id=${profileId}&top=6${q}`
-          )
-        );
+        const trovate = await api.get<RecipeSuggestion[]>(suggestUrl(profileId, text, []));
+        setRecipes(trovate);
+        setLastQuery(text);
+        setHasMore(trovate.length === PAGE_SIZE);
       } catch (e) {
         setRecipes(null);
         setError(
@@ -87,6 +99,27 @@ export function Recipes({
     },
     [profileId]
   );
+
+  async function loadMore() {
+    if (!recipes) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const gia = recipes.map((r) => r.meal_id).filter((id): id is string => !!id);
+      const altre = await api.get<RecipeSuggestion[]>(suggestUrl(profileId, lastQuery, gia));
+      const nuove = altre.filter((r) => !gia.includes(r.meal_id ?? ""));
+      setRecipes([...recipes, ...nuove]);
+      setHasMore(altre.length === PAGE_SIZE && nuove.length > 0);
+    } catch (e) {
+      setError(
+        e instanceof ApiError && e.status === 503
+          ? e.message
+          : "Non sono riuscito a caricare altre ricette. Riprova tra poco."
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     if (intent?.section === "ricette" && intent.recipeQuery !== undefined) {
@@ -291,6 +324,35 @@ export function Recipes({
                 />
               ))}
           </div>
+
+          {!loading && recipes && recipes.length > 0 && (
+            <div className="mt-5 flex flex-col items-center gap-2">
+              {hasMore ? (
+                <>
+                  <button className="btn-ghost min-w-[220px]" onClick={loadMore} disabled={loadingMore}>
+                    {loadingMore ? (
+                      <>
+                        <Mascot size={20} mood="thinking" />
+                        Cerco altre ricette…
+                      </>
+                    ) : (
+                      "Carica altre ricette"
+                    )}
+                  </button>
+                  {loadingMore && (
+                    <p className="max-w-sm text-center text-[11.5px] leading-snug text-white/35">
+                      Finite le Ricette Kilo, analizzo quelle della raccolta internazionale: la prima
+                      volta può servire fino a un minuto.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[12px] text-white/35">
+                  Non ci sono altre ricette per questa ricerca.
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
     </>

@@ -487,6 +487,7 @@ def suggest_recipes(
     consumed_kcal: float = 0.0,
     consumed_protein_g: float = 0.0,
     top: int = Query(default=3, ge=1, le=10),
+    exclude: list[str] = Query(default=[], max_length=60),
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> list[RecipeSuggestionOut]:
@@ -506,6 +507,7 @@ def suggest_recipes(
             consumed_kcal=consumed_kcal,
             consumed_protein_g=consumed_protein_g,
             top=top,
+            exclude={e[:64] for e in exclude},
         )
     except meal_suggestions.RecipeSourceUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

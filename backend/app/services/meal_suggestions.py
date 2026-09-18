@@ -274,12 +274,18 @@ def suggest_meals(
     meal_share: float = DEFAULT_MEAL_SHARE,
     candidates: int = 6,
     top: int = 3,
+    exclude: set[str] | None = None,
 ) -> list[MealSuggestion]:
     """Propone le ricette che meglio avvicinano ai target rimasti.
 
     `consumed_*` permette di suggerire in corso di giornata: a cena si tiene
     conto di quanto già mangiato, non del target pieno.
+
+    `exclude` sono le ricette già mostrate: "Carica altre" chiede le
+    successive senza doppioni, anche se l'ordine delle ricette esterne cambia
+    man mano che se ne analizzano di più.
     """
+    esclusi = exclude or set()
     kcal_rimaste = _remaining(targets.target_kcal, consumed_kcal)
     protein_rimaste = _remaining(targets.protein_g, consumed_protein_g)
 
@@ -288,15 +294,21 @@ def suggest_meals(
         protein_rimaste * meal_share if consumed_protein_g == 0 else protein_rimaste
     )
 
-    kilo = kilo_candidates(profile, query)
+    kilo = [r for r in kilo_candidates(profile, query) if r.meal_id not in esclusi]
     porzioni = {r.meal_id: r.servings for r in kilo}
     ricette = [kilo_raw_recipe(r) for r in kilo]
 
     # TheMealDB serve solo quando le Ricette Kilo non bastano: è più lento
     # (quantità da convertire con il modello) e i suoi valori sono stime.
     if len(kilo) < top:
+        # Quelle esterne già mostrate occupano posti fra le candidate: se ne
+        # chiedono altrettante in più.
+        gia_viste = sum(1 for m in esclusi if not is_kilo(m))
         try:
-            ricette += _candidate_recipes(db, profile, query, candidates)
+            ricette += [
+                r for r in _candidate_recipes(db, profile, query, candidates + gia_viste)
+                if r.meal_id not in esclusi
+            ]
         except themealdb_client.MealDbError as e:
             logger.warning("TheMealDB non disponibile: %s", e)
             if not kilo:

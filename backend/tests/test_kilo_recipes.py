@@ -179,3 +179,35 @@ def test_porzioni_della_ricetta_usate_nell_analisi(db, catalogo_finto, monkeypat
     profilo = _profilo()
     risultati = ms.suggest_meals(db, profilo, nt.compute_targets(profilo), query="ragù", top=1)
     assert risultati[0].analyzed.servings == k.get("kilo:pasta-ragu-magro").servings
+
+
+def test_carica_altre_senza_doppioni(db, catalogo_finto, monkeypatch):
+    """Seconda pagina: le ricette già mostrate non tornano, le esterne arrivano dopo."""
+    esterne = [
+        themealdb_client.RawRecipe(
+            meal_id=str(52770 + n), name=f"Chicken {n}", category="Chicken", area="British",
+            instructions="...", thumbnail_url=None, tags=[],
+            ingredients=[themealdb_client.RawRecipeIngredient("chicken", "300 g")],
+        )
+        for n in range(8)
+    ]
+    richieste = []
+
+    def candidate(_db, _p, _q, limit):
+        richieste.append(limit)
+        return esterne[:limit]
+
+    monkeypatch.setattr(ms, "_candidate_recipes", candidate)
+    profilo, target = _profilo(), nt.compute_targets(_profilo())
+
+    prima = ms.suggest_meals(db, profilo, target, query="pollo", top=4)
+    visti = {s.analyzed.recipe.meal_id for s in prima}
+    seconda = ms.suggest_meals(db, profilo, target, query="pollo", top=4, exclude=visti)
+    terza_esclusi = visti | {s.analyzed.recipe.meal_id for s in seconda}
+    terza = ms.suggest_meals(db, profilo, target, query="pollo", top=4, exclude=terza_esclusi)
+
+    assert all(ms.is_kilo(s.analyzed.recipe.meal_id) for s in prima)
+    assert len(seconda) == 4 and not visti & {s.analyzed.recipe.meal_id for s in seconda}
+    assert not terza_esclusi & {s.analyzed.recipe.meal_id for s in terza}
+    # Le esterne già viste liberano posto: se ne chiedono di più.
+    assert richieste[-1] > richieste[0]
