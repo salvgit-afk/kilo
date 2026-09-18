@@ -84,7 +84,7 @@ RECIPES: tuple[KiloRecipe, ...] = (
         (
             _i("yogurt greco magro", "greek yogurt nonfat plain", 250),
             _i("fiocchi d'avena", "oats", 30),
-            _i("bananas raw", "bananas raw", 100),
+            _i("banana", "bananas raw", 100),
             _i("noci", "walnuts", 15),
             _i("miele", "honey", 10),
         ),
@@ -97,7 +97,7 @@ RECIPES: tuple[KiloRecipe, ...] = (
         (
             _i("fiocchi d'avena", "oats", 50),
             _i("albume", "egg white", 150),
-            _i("bananas raw", "bananas raw", 60),
+            _i("banana", "bananas raw", 60),
             _i("yogurt greco magro", "greek yogurt nonfat plain", 100),
             _i("frutti di bosco", "raspberries", 50),
         ),
@@ -206,7 +206,7 @@ RECIPES: tuple[KiloRecipe, ...] = (
         "tacchino-funghi-quinoa", "Straccetti di tacchino ai funghi con quinoa", "Pollo e tacchino", 1, 25, OMNIVORE,
         (
             _i("fesa di tacchino", "turkey breast meat only raw", 150),
-            _i("quinoa uncooked", "quinoa uncooked", 70),
+            _i("quinoa", "quinoa uncooked", 70),
             _i("funghi champignon", "mushrooms", 150),
             (_i(*OLIO, 10)),
         ),
@@ -374,9 +374,9 @@ RECIPES: tuple[KiloRecipe, ...] = (
     KiloRecipe(
         "buddha-bowl-ceci", "Bowl di ceci, quinoa e hummus", "Legumi e vegetariane", 1, 20, VEGAN,
         (
-            _i("quinoa uncooked", "quinoa uncooked", 60),
+            _i("quinoa", "quinoa uncooked", 60),
             _i("ceci lessati", "chickpeas cooked", 150),
-            _i("hummus commercial", "hummus commercial", 40),
+            _i("hummus", "hummus commercial", 40),
             _i("carote", "carrots", 80),
             _i("cavolo cappuccio", "cabbage", 80),
             _i("semi di zucca", "pumpkin seeds", 10),
@@ -467,7 +467,7 @@ RECIPES: tuple[KiloRecipe, ...] = (
     KiloRecipe(
         "hummus-verdure", "Hummus con verdure crude e crackers", "Spuntini", 1, 5, VEGAN,
         (
-            _i("hummus commercial", "hummus commercial", 60),
+            _i("hummus", "hummus commercial", 60),
             _i("carote", "carrots", 100),
             _i("cetriolo", "cucumber with peel raw", 100),
             _i("crackers integrali", "whole wheat crackers", 25),
@@ -478,7 +478,7 @@ RECIPES: tuple[KiloRecipe, ...] = (
     KiloRecipe(
         "banana-burro-arachidi", "Banana e burro d'arachidi pre-allenamento", "Spuntini", 1, 2, VEGAN,
         (
-            _i("bananas raw", "bananas raw", 120),
+            _i("banana", "bananas raw", 120),
             _i("burro d'arachidi", "peanut butter", 15),
             _i("gallette di riso", "rice cakes brown rice plain", 20),
         ),

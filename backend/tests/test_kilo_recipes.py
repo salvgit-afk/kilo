@@ -66,6 +66,13 @@ def test_ogni_ricetta_ha_dosi_in_grammi(ricetta):
 
 
 @pytest.mark.parametrize("ricetta", k.RECIPES, ids=lambda r: r.slug)
+def test_nomi_italiani_non_sono_termini_di_ricerca_usda(ricetta):
+    """Il nome mostrato è italiano: "bananas raw" nella card era un errore."""
+    for i in ricetta.ingredients:
+        assert not any(w in i.it.split() for w in ("raw", "uncooked", "commercial", "cooked", "canned", "dry")), i.it
+
+
+@pytest.mark.parametrize("ricetta", k.RECIPES, ids=lambda r: r.slug)
 def test_dieta_dichiarata_coerente_con_gli_ingredienti(ricetta):
     testo = " ".join(i.it for i in ricetta.ingredients).lower()
     if ricetta.diet in (k.VEGETARIAN, k.VEGAN):
