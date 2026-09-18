@@ -45,9 +45,12 @@ presenta come Kilo.
   Open Food Facts via wger per i confezionati). Poi pesi e aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
   grammi per chiudere le proteine senza sforare le calorie. Non aggiunge nulla
   senza la tua conferma.
-- **Ricette fit**: ricette da TheMealDB ordinate in base a quanto ti
-  avvicinano ai target rimasti. I macro sono calcolati sommando gli
-  ingredienti reali, e le ricette con dati insufficienti vengono scartate.
+- **Ricette fit**: prima le **Ricette Kilo**, una raccolta italiana scritta
+  per chi si allena con ogni dose in grammi (valori esatti); poi, se non
+  bastano, quelle di TheMealDB, con valori stimati e dichiarati come tali.
+  Tutte ordinate in base a quanto ti avvicinano ai target rimasti; i macro
+  sono calcolati sommando gli ingredienti reali, e le ricette con dati
+  insufficienti vengono scartate.
   Le ricette che ti piacciono si salvano e si ritrovano nella scheda
   **Salvate**.
 - **Importa una ricetta tua**: incolli il testo di una ricetta gia' scritta —
@@ -99,7 +102,7 @@ presenta come Kilo.
 | LLM | **Google Gemini** (piano gratuito), solo spiegazioni e traduzioni |
 | Esercizi | [Everkinetic](https://github.com/everkinetic/data) (disegni, CC BY-SA 4.0), [RepDB](https://github.com/RepDB/exercise-dataset) (illustrazioni, free tier con attribuzione), [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (foto, pubblico dominio), più esercizi scritti a mano |
 | Alimenti | **USDA FoodData Central** (chiave gratuita), **wger / Open Food Facts** |
-| Ricette | **TheMealDB** (senza chiave) |
+| Ricette | **Ricette Kilo** (raccolta interna, `backend/app/data/kilo_recipes.py`), poi **TheMealDB** (senza chiave) |
 | Frontend | **Next.js 15**, React 18, TypeScript, Tailwind, Framer Motion, Recharts |
 
 Tutte le integrazioni sono **gratuite**.

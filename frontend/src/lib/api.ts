@@ -290,8 +290,10 @@ export type ImportedRecipe = {
 export type RecipeSuggestion = {
   /** Id nella fonte (TheMealDB), oppure generato per le ricette importate. */
   meal_id: string | null;
-  /** "themealdb" oppure "import" per quelle incollate dall'utente. */
+  /** "kilo" (dosi esatte), "themealdb" (stime) o "import" (incollate dall'utente). */
   source: string;
+  /** Tempo di preparazione, solo per le Ricette Kilo. */
+  minutes?: number | null;
   saved: boolean;
   name: string;
   original_name: string | null;

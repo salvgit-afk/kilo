@@ -32,7 +32,7 @@ import { AskCoachButton } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { RecipeImport } from "@/components/RecipeImport";
 
-const SPUNTI = ["pollo", "salmone", "tonno", "uova", "lenticchie", "manzo", "tofu"];
+const SPUNTI = ["pollo", "salmone", "tonno", "uova", "lenticchie", "colazione", "spuntino"];
 
 export function Recipes({
   profileId,
@@ -71,7 +71,7 @@ export function Recipes({
         const q = text.trim() ? `&query=${encodeURIComponent(text.trim())}` : "";
         setRecipes(
           await api.get<RecipeSuggestion[]>(
-            `/nutrition/recipes/suggest?profile_id=${profileId}&top=4${q}`
+            `/nutrition/recipes/suggest?profile_id=${profileId}&top=6${q}`
           )
         );
       } catch (e) {
@@ -244,9 +244,9 @@ export function Recipes({
               <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V7h2v2Z" />
             </svg>
             <p>
-              I valori qui sono <strong>stimati</strong>: le quantità delle ricette sono scritte in
-              linguaggio comune e vengono convertite in grammi. Per un conteggio esatto usa il
-              diario, dove scegli tu l'alimento e i grammi.
+              Le <strong>Ricette Kilo</strong> vengono per prime: hanno ogni dose in grammi, quindi i
+              valori sono esatti. Le altre arrivano da una raccolta internazionale con quantità in
+              linguaggio comune, e i loro valori sono <strong>stimati</strong>.
             </p>
           </div>
 
@@ -375,13 +375,32 @@ function RecipeCard({
           ))}
         </div>
 
-        <p className="mb-3 text-[11px] text-white/30">
-          per porzione · {r.servings} porzioni ·{" "}
-          <span className={r.coverage < 0.9 ? "text-amber-300/70" : ""}>
-            {Math.round(r.coverage * 100)}% ingredienti riconosciuti
-          </span>
-          {r.original_name && <> · titolo originale «{r.original_name}»</>}
-        </p>
+        {r.source === "kilo" ? (
+          <p className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-white/30">
+            <span className="rounded bg-lime-400/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-lime-200">
+              Ricetta Kilo · dosi esatte
+            </span>
+            per porzione · {r.servings === 1 ? "1 porzione" : `${r.servings} porzioni`}
+            {r.minutes ? <> · {r.minutes} min</> : null}
+          </p>
+        ) : (
+          <p className="mb-3 text-[11px] text-white/30">
+            {r.source === "import" ? (
+              <span className="mr-1.5 rounded bg-iris-400/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-iris-200">
+                tua
+              </span>
+            ) : (
+              <span className="mr-1.5 rounded bg-amber-300/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-amber-100">
+                stimata
+              </span>
+            )}
+            per porzione · {r.servings} porzioni ·{" "}
+            <span className={r.coverage < 0.9 ? "text-amber-300/70" : ""}>
+              {Math.round(r.coverage * 100)}% ingredienti riconosciuti
+            </span>
+            {r.original_name && <> · titolo originale «{r.original_name}»</>}
+          </p>
+        )}
 
         {!savedView && r.reasons.length > 0 && (
           <ul className="mb-3 space-y-1.5">
