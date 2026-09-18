@@ -61,6 +61,7 @@ TAG_TO_FILE: dict[str, str] = {
     "micronutrienti": "micronutrients_efsa.md",
     "timing_pasti": "nutrient_timing.md",
     "idratazione": "hydration.md",
+    "porzioni": "standard_portions.md",
     "vegetariano": "vegetarian_vegan_nutrition.md",
     "vegano": "vegetarian_vegan_nutrition.md",
     # Integratori

@@ -424,6 +424,8 @@ class RecipeItemOut(BaseModel):
     measure: str | None = Field(default=None, max_length=80)
     grams: float | None = Field(default=None, ge=0, le=5000)
     ingredient_id: int | None = None
+    # I grammi non erano nel testo: li ha stimati il modello.
+    estimated: bool = False
     matched_name: str | None = Field(default=None, max_length=300)
     source_label: str | None = Field(default=None, max_length=60)
     kcal_100g: float | None = None

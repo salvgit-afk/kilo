@@ -186,13 +186,18 @@ _CONVERSION_SCHEMA = {
 _CONVERSION_PROMPT = """Converti in grammi le quantità di ingredienti scritte
 in linguaggio comune.
 
+La ricetta è per {porzioni} porzioni: le quantità sono per la ricetta intera.
+
 REGOLE:
 - Rispondi solo con la quantità in grammi, stimata in modo ragionevole per un
   ingrediente di dimensioni medie.
 - Considera l'ingrediente: "1 clove" di aglio pesa circa 3 g, "1" cipolla
-  circa 150 g, "1 tbsp" di olio circa 14 g.
-- Se la quantità è indicata come "to taste", "a piacere", "for garnish" o
-  simili, usa una quantità simbolica piccola (1-2 g per le spezie).
+  circa 150 g, un cucchiaio da tavola di olio 9 g, un cucchiaino di olio 5 g.
+- Se la quantità NON è indicata, usa la porzione standard italiana per una
+  persona moltiplicata per {porzioni}:
+{porzioni_standard}
+- Se la quantità è indicata come "to taste", "q.b.", "a piacere", "for
+  garnish" o simili, usa una quantità simbolica piccola (1-2 g per le spezie).
 - Non inventare valori nutrizionali: ti serve solo il peso.
 - Usa l'indice numerico fornito per ogni riga.
 
@@ -200,9 +205,20 @@ INGREDIENTI DA CONVERTIRE:
 {righe}
 """
 
+# Porzioni standard per persona (SINU, LARN V revisione 2024; il dettaglio è
+# in `knowledge_base/standard_portions.md`). Servono quando una ricetta
+# elenca gli ingredienti senza quantità: meglio partire da un riferimento
+# ufficiale che da un numero a sensazione.
+_PORZIONI_STANDARD = """  pasta, riso e cereali 80 g (crudi); pane 50 g; una piadina o tortilla
+  circa 100 g; carne rossa o bianca 100 g; pesce fresco 150 g; pesce in
+  scatola 50 g; uova 50 g ciascuno; legumi in scatola 150 g, secchi 50 g;
+  formaggi freschi 100 g; altri formaggi 50 g; latte e yogurt 125 g;
+  verdure 200 g; insalata 80 g; frutta 150 g; frutta secca 30 g;
+  olio 9 g; burro 10 g; patate 200 g."""
+
 
 def _convert_with_llm(
-    pending: list[tuple[int, RawRecipeIngredient]]
+    pending: list[tuple[int, RawRecipeIngredient]], servings: int = 4
 ) -> dict[int, float]:
     """Chiede all'LLM il peso in grammi delle misure casalinghe.
 
@@ -219,7 +235,9 @@ def _convert_with_llm(
 
     try:
         risposta = llm_client.generate_structured(
-            _CONVERSION_PROMPT.format(righe=righe),
+            _CONVERSION_PROMPT.format(
+                righe=righe, porzioni=max(1, servings), porzioni_standard=_PORZIONI_STANDARD
+            ),
             _CONVERSION_SCHEMA,
             # Una ricetta può avere 15-20 ingredienti da convertire in una
             # sola chiamata: il timeout predefinito di 30s non basta.
@@ -426,7 +444,10 @@ def _pending_measures(recipe: RawRecipe) -> list[tuple[int, RawRecipeIngredient]
 
 
 def _conversions_for(
-    db: Session, recipe: RawRecipe, pending: list[tuple[int, RawRecipeIngredient]]
+    db: Session,
+    recipe: RawRecipe,
+    pending: list[tuple[int, RawRecipeIngredient]],
+    servings: int = 4,
 ) -> dict[int, float]:
     """Conversioni in grammi, dalla cache se la ricetta è già stata vista.
 
@@ -439,7 +460,7 @@ def _conversions_for(
     if cached is not None:
         return {int(k): float(v) for k, v in cached.items()}
 
-    conversioni = _convert_with_llm(pending)
+    conversioni = _convert_with_llm(pending, servings=servings)
     if conversioni:
         translation.cache_put(
             db, _CONVERSION_CACHE, recipe.meal_id, {str(k): v for k, v in conversioni.items()}
@@ -537,7 +558,7 @@ def analyze_recipe(
             pending.append((indice, ing))
 
     if pending and use_llm:
-        for indice, grammi in _conversions_for(db, recipe, pending).items():
+        for indice, grammi in _conversions_for(db, recipe, pending, servings).items():
             if 0 <= indice < len(analyzed):
                 analyzed[indice].grams = grammi
                 analyzed[indice].conversion_source = "llm"

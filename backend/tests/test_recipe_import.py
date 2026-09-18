@@ -70,7 +70,7 @@ def modello(monkeypatch):
     """Risposta del modello alla lettura del testo, e conversione in grammi."""
     monkeypatch.setattr(recipe_import, "_parse_text", lambda _testo: RISPOSTA_MODELLO)
     # "1 cucchiaio" non ha un'unità diretta: normalmente lo converte il modello.
-    monkeypatch.setattr(recipe_analyzer, "_convert_with_llm", lambda pending: {2: 16.0})
+    monkeypatch.setattr(recipe_analyzer, "_convert_with_llm", lambda pending, **_: {2: 16.0})
 
 
 # --- Lettura del testo -----------------------------------------------------------------
@@ -90,6 +90,34 @@ def test_ricetta_letta_con_macro_dal_catalogo(db, catalogo, modello):
     avena = r.ingredients[0]
     assert avena.matched_name == "Oats, raw"
     assert avena.protein_100g == 16.9
+
+
+def test_grammi_stimati_segnati_come_tali(db, catalogo, modello):
+    r = recipe_import.import_from_text(db, TESTO)
+    # "80 g" e "300 g" vengono dal testo, "1 cucchiaio" dalla stima.
+    assert [i.estimated for i in r.ingredients] == [False, False, True]
+    # Una misura casalinga non è una dose mancante: nessun avviso.
+    assert not r.warnings
+
+
+def test_dosi_mancanti_stimate_con_avviso(db, catalogo, monkeypatch):
+    """Il caso dei tacos: nessuna quantità nel testo."""
+    senza = {**RISPOSTA_MODELLO, "porzioni": 1, "ingredienti": [
+        {**v, "quantita": ""} for v in RISPOSTA_MODELLO["ingredienti"]
+    ]}
+    monkeypatch.setattr(recipe_import, "_parse_text", lambda _t: senza)
+    ricevute = {}
+
+    def stima(pending, servings=4):
+        ricevute["porzioni"] = servings
+        return {i: 50.0 for i, _ in pending}
+
+    monkeypatch.setattr(recipe_analyzer, "_convert_with_llm", stima)
+    r = recipe_import.import_from_text(db, TESTO)
+
+    assert ricevute["porzioni"] == 1  # la stima sa per quante persone è
+    assert all(i.estimated for i in r.ingredients)
+    assert "LARN" in r.warnings[0] and "1 persona" in r.warnings[0]
 
 
 def test_ingrediente_non_trovato_dichiarato_non_inventato(db, catalogo, modello, monkeypatch):

@@ -49,6 +49,9 @@ class ImportedIngredient:
     measure: str  # la quantità come era scritta ("80 g", "2 cucchiai")
     grams: float | None
     ingredient_id: int | None = None
+    # Vero quando i grammi non erano scritti nel testo ("1 cucchiaio", o
+    # nessuna quantità) e li ha stimati il modello: vanno controllati.
+    estimated: bool = False
     matched_name: str | None = None
     source_label: str | None = None
     kcal_100g: float | None = None
@@ -136,7 +139,9 @@ def _draft_id(text: str) -> str:
     che è indicizzata sull'id: reimportare lo stesso testo non ripaga una
     seconda chiamata al modello.
     """
-    return "import:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:24]
+    # "v2": le stime dei grammi mancanti ora partono dalle porzioni LARN; le
+    # conversioni in cache fatte prima, a sensazione, non vanno riusate.
+    return "import:v2:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:24]
 
 
 def _parse_text(text: str) -> dict:
@@ -217,6 +222,7 @@ def import_from_text(db: Session, text: str) -> ImportedRecipe:
                 measure=analisi.measure,
                 grams=round(analisi.grams, 1) if analisi.grams is not None else None,
                 ingredient_id=ing.id if ing is not None else None,
+                estimated=analisi.conversion_source == "llm",
                 matched_name=ing.name if ing is not None else None,
                 source_label=food_diary.source_label(ing) if ing is not None else None,
                 kcal_100g=ing.kcal_100g if ing is not None else None,
@@ -233,6 +239,17 @@ def import_from_text(db: Session, text: str) -> ImportedRecipe:
         instructions=preparazione,
         ingredients=ingredienti,
     )
+    senza_dose = [
+        i.name for i, v in zip(ingredienti, voci)
+        if i.estimated and not str(v.get("quantita") or "").strip()
+    ]
+    if senza_dose:
+        persone = "1 persona" if porzioni == 1 else f"{porzioni} persone"
+        ricetta.warnings.append(
+            f"Il testo non indica le dosi di {len(senza_dose)} ingredienti: le ho stimate "
+            f"sulle porzioni standard italiane (LARN) per {persone}. Controllale prima "
+            "di salvare: i grammi veri li conosci tu."
+        )
     mancanti = ricetta.unresolved
     if mancanti:
         elenco = ", ".join(mancanti[:4]) + ("…" if len(mancanti) > 4 else "")

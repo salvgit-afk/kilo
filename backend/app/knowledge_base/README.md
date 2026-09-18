@@ -56,6 +56,7 @@ seguito dal contenuto in prosa che l'agente usa come contesto.
 | `micronutrients_efsa.md` | `micronutrienti` | Piano alimentare, in particolare per utenti vegetariani/vegani |
 | `nutrient_timing.md` | `timing_pasti` | Piano alimentare attorno alle sessioni di allenamento |
 | `hydration.md` | `idratazione` | Consigli durante/dopo allenamento |
+| `standard_portions.md` | `porzioni` | Porzioni standard italiane (LARN 2024), pesi di cucchiai e cucchiaini |
 | `creatine.md` | `creatina` | Utente dichiara uso creatina |
 | `caffeine.md` | `caffeina` | Utente dichiara uso caffeina/pre-workout |
 | `glutamine.md` | `glutammina` | Utente dichiara uso glutammina |

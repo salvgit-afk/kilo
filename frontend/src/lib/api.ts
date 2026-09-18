@@ -267,6 +267,8 @@ export type RecipeItem = {
   grams: number | null;
   /** Nullo quando l'alimento non è stato trovato: la riga non fa numeri. */
   ingredient_id: number | null;
+  /** I grammi non erano nel testo: li ha stimati Kilo e vanno controllati. */
+  estimated: boolean;
   matched_name: string | null;
   source_label: string | null;
   kcal_100g: number | null;

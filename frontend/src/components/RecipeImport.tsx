@@ -13,6 +13,10 @@
  * scrive. È la differenza fra una stima e un conteggio: l'ultima parola sui
  * grammi resta a chi ha cucinato.
  *
+ * I grammi che non erano scritti nel testo sono marcati **stimato** finché
+ * non li si tocca: una stima confermata o corretta diventa un dato di chi
+ * ha cucinato, una stima non guardata resta dichiarata come tale.
+ *
  * Gli ingredienti che il catalogo non conosce restano visibili e dichiarati,
  * ma non entrano nei totali: meglio un totale dichiarato incompleto che un
  * numero inventato.
@@ -146,7 +150,8 @@ export function RecipeImport({
             <p className="mb-2.5 text-[12.5px] leading-relaxed text-white/45">
               Titolo, quantità e preparazione, così come sono scritti. Vanno bene gli appunti, un
               messaggio, la lista ingredienti di un sito che ti piace. Le quantità già in grammi
-              restano esatte; quelle in cucchiai le converto io e poi le correggi.
+              restano esatte; quelle in cucchiai le converto io, e se mancano le stimo sulle
+              porzioni standard italiane. Le stime sono segnate: le controlli prima di salvare.
             </p>
             <textarea
               className="input min-h-[190px] resize-y font-mono text-[12.5px] leading-relaxed"
@@ -249,6 +254,11 @@ export function RecipeImport({
                         )}
                       </p>
                       <p className="truncate text-[11px] text-white/35">
+                        {item.estimated && !mancante && (
+                          <span className="mr-1.5 rounded bg-amber-300/15 px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide text-amber-100">
+                            stimato
+                          </span>
+                        )}
                         {mancante ? (
                           "non trovato nel catalogo: non entra nei totali"
                         ) : (
@@ -261,7 +271,10 @@ export function RecipeImport({
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <input
-                        className="input w-20 px-2 py-1.5 text-right font-mono text-[12.5px] tabular-nums"
+                        aria-label={`Grammi di ${item.name}${item.estimated ? " (stimati)" : ""}`}
+                        className={`input w-20 px-2 py-1.5 text-right font-mono text-[12.5px] tabular-nums ${
+                          item.estimated && !mancante ? "border-amber-300/40 text-amber-100" : ""
+                        }`}
                         type="number"
                         min={0}
                         max={5000}
@@ -269,7 +282,11 @@ export function RecipeImport({
                         disabled={mancante}
                         value={item.grams ?? ""}
                         onChange={(e) =>
-                          aggiorna(k, { grams: e.target.value === "" ? null : Number(e.target.value) })
+                          // Toccato il valore, è un dato di chi ha cucinato.
+                          aggiorna(k, {
+                            grams: e.target.value === "" ? null : Number(e.target.value),
+                            estimated: false,
+                          })
                         }
                       />
                       <span className="w-3 text-[11px] text-white/30">g</span>
