@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data import kilo_recipes
 from app.database import get_db
 from app.models import (
     Ingredient,
@@ -509,24 +510,43 @@ def suggest_recipes(
     except meal_suggestions.RecipeSourceUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    # I macro sono già calcolati sugli ingredienti originali: la traduzione
-    # riguarda solo il testo mostrato, non tocca nessun numero.
-    tradotte = translation.translate_recipes(
-        db,
-        [
-            {
-                "meal_id": s.analyzed.recipe.meal_id,
-                "name": s.analyzed.recipe.name,
-                "category": s.analyzed.recipe.category,
-                "area": s.analyzed.recipe.area,
-                "ingredients": [
-                    f"{i.measure} {i.name}".strip() for i in s.analyzed.ingredients
-                ],
-                "instructions": s.analyzed.recipe.instructions,
-            }
-            for s in suggerimenti
-        ],
+    # Le Ricette Kilo sono già in italiano. Per le altre i macro sono già
+    # calcolati sugli ingredienti originali: la traduzione riguarda solo il
+    # testo mostrato, non tocca nessun numero.
+    da_tradurre = [s for s in suggerimenti if not meal_suggestions.is_kilo(s.analyzed.recipe.meal_id)]
+    tradotte_it = iter(
+        translation.translate_recipes(
+            db,
+            [
+                {
+                    "meal_id": s.analyzed.recipe.meal_id,
+                    "name": s.analyzed.recipe.name,
+                    "category": s.analyzed.recipe.category,
+                    "area": s.analyzed.recipe.area,
+                    "ingredients": [
+                        f"{i.measure} {i.name}".strip() for i in s.analyzed.ingredients
+                    ],
+                    "instructions": s.analyzed.recipe.instructions,
+                }
+                for s in da_tradurre
+            ],
+        )
+        if da_tradurre
+        else []
     )
+    tradotte = []
+    for s in suggerimenti:
+        kilo = kilo_recipes.get(s.analyzed.recipe.meal_id)
+        if kilo is None:
+            tradotte.append(next(tradotte_it))
+        else:
+            tradotte.append({
+                "name": kilo.name,
+                "category": kilo.category,
+                "area": "italiana",
+                "instructions": kilo.steps,
+                "ingredients": [f"{i.grams:g} g di {i.it}" for i in kilo.ingredients],
+            })
 
     salvate = set(
         db.scalars(select(SavedRecipe.external_id).where(SavedRecipe.profile_id == profile.id))
@@ -534,6 +554,8 @@ def suggest_recipes(
     return [
         RecipeSuggestionOut(
             meal_id=s.analyzed.recipe.meal_id,
+            source="kilo" if (kilo := kilo_recipes.get(s.analyzed.recipe.meal_id)) else "themealdb",
+            minutes=kilo.minutes if kilo else None,
             saved=s.analyzed.recipe.meal_id in salvate,
             name=t["name"],
             original_name=(
@@ -556,17 +578,20 @@ def suggest_recipes(
             ingredients=t["ingredients"],
             # Gli ingredienti già abbinati al catalogo: servono ad aggiungere
             # la ricetta al diario senza ricercarli uno a uno.
-            items=[_recipe_item(i) for i in s.analyzed.ingredients],
+            items=[
+                _recipe_item(i, nome_it=kilo.ingredients[k].it if kilo else None)
+                for k, i in enumerate(s.analyzed.ingredients)
+            ],
         )
         for s, t in zip(suggerimenti, tradotte)
     ]
 
 
-def _recipe_item(voce) -> RecipeItemOut:
+def _recipe_item(voce, *, nome_it: str | None = None) -> RecipeItemOut:
     """Un ingrediente analizzato nella forma che viaggia verso il frontend."""
     ing = voce.ingredient
     return RecipeItemOut(
-        name=voce.name[:120] or "ingrediente",
+        name=(nome_it or voce.name)[:120] or "ingrediente",
         measure=(voce.measure or None),
         grams=round(voce.grams, 1) if voce.grams is not None else None,
         ingredient_id=ing.id if ing is not None else None,

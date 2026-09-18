@@ -5,9 +5,16 @@ target che gli restano per la giornata**. Una ricetta da 60 g di proteine è
 ottima a pranzo se ne mancano 70, pessima se ne mancano 20 e sfonderebbe le
 calorie.
 
-Le ricette arrivano da TheMealDB (struttura e procedimento) e vengono
-analizzate da `recipe_analyzer` per ottenere i macro reali. Le ricette con
-copertura insufficiente degli ingredienti vengono scartate: meglio
+Le ricette arrivano da due fonti, in quest'ordine:
+
+1. **Ricette Kilo** (`app/data/kilo_recipes.py`): italiane, con ogni dose in
+   grammi, quindi macro calcolati senza stime e senza chiamate al modello;
+2. **TheMealDB**, solo se le Ricette Kilo non bastano a riempire i
+   suggerimenti: quantità in linguaggio comune, convertite e dichiarate
+   come stima.
+
+Entrambe passano da `recipe_analyzer` per ottenere i macro reali. Le ricette
+con copertura insufficiente degli ingredienti vengono scartate: meglio
 proporne poche e affidabili che molte con numeri inventati.
 
 Filtro dietetico: TheMealDB ha categorie native "Vegan" e "Vegetarian", che
@@ -17,10 +24,12 @@ vengono usate direttamente quando il profilo lo richiede.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from app.data import kilo_recipes
 from app.models import DietType, UserProfile
 from app.services import recipe_analyzer, themealdb_client, translation
 from app.services.nutrition_targets import NutritionTargets
@@ -180,6 +189,80 @@ def _candidate_recipes(
     return themealdb_client.search_by_name("chicken")[:limit]
 
 
+# --- Ricette Kilo ---------------------------------------------------------------------
+
+
+def kilo_raw_recipe(ricetta: kilo_recipes.KiloRecipe) -> themealdb_client.RawRecipe:
+    """Una Ricetta Kilo nella forma che `recipe_analyzer` sa analizzare.
+
+    Le misure sono già in grammi ("150 g"): l'analisi le legge direttamente
+    e non passa mai dal modello.
+    """
+    return themealdb_client.RawRecipe(
+        meal_id=ricetta.meal_id,
+        name=ricetta.name,
+        category=ricetta.category,
+        area="Italian",
+        instructions=ricetta.steps,
+        thumbnail_url=None,
+        tags=list(ricetta.keywords),
+        ingredients=[
+            themealdb_client.RawRecipeIngredient(name=i.en, measure=f"{i.grams:g} g")
+            for i in ricetta.ingredients
+        ],
+    )
+
+
+def _dieta_compatibile(profile: UserProfile, ricetta: kilo_recipes.KiloRecipe) -> bool:
+    if profile.diet_type == DietType.VEGAN:
+        return ricetta.diet == kilo_recipes.VEGAN
+    if profile.diet_type == DietType.VEGETARIAN:
+        return ricetta.diet in (kilo_recipes.VEGETARIAN, kilo_recipes.VEGAN)
+    return True
+
+
+# Termini con cui si trova un'intera categoria. Non il nome della categoria:
+# "Pollo e tacchino" farebbe uscire le polpette di tacchino cercando "pollo".
+CATEGORY_TERMS: dict[str, tuple[str, ...]] = {
+    "Colazione": ("colazione",),
+    "Pollo e tacchino": ("carne bianca",),
+    "Pesce": ("pesce",),
+    "Carne rossa": ("carne rossa",),
+    "Legumi e vegetariane": ("vegetariano", "vegetariana"),
+    "Spuntini": ("spuntino", "merenda"),
+}
+
+
+def _radice(parola: str) -> str:
+    """Toglie la vocale finale: "uova" trova "uovo", "lenticchia" "lenticchie"."""
+    return parola[:-1] if len(parola) >= 4 and parola[-1] in "aeiou" else parola
+
+
+def kilo_candidates(profile: UserProfile, query: str | None) -> list[kilo_recipes.KiloRecipe]:
+    """Le Ricette Kilo compatibili con la dieta e, se c'è, con la ricerca.
+
+    La ricerca è in italiano, come le ricette: ogni parola deve comparire nel
+    nome, nella categoria, nelle parole chiave o negli ingredienti.
+    """
+    ricette = [r for r in kilo_recipes.RECIPES if _dieta_compatibile(profile, r)]
+    parole = [_radice(p) for p in re.findall(r"[a-zàèéìòù]+", (query or "").lower()) if len(p) >= 3]
+    if not parole:
+        return ricette
+
+    def testo(r: kilo_recipes.KiloRecipe) -> str:
+        return " ".join(
+            [r.name, *CATEGORY_TERMS.get(r.category, ()), *r.keywords, *(i.it for i in r.ingredients)]
+        ).lower()
+
+    # A inizio parola: la radice "poll" non deve trovare la "cipolla".
+    schemi = [re.compile(rf"\b{re.escape(p)}") for p in parole]
+    return [r for r in ricette if all(schema.search(testo(r)) for schema in schemi)]
+
+
+def is_kilo(meal_id: str | None) -> bool:
+    return kilo_recipes.get(meal_id) is not None
+
+
 def suggest_meals(
     db: Session,
     profile: UserProfile,
@@ -205,14 +288,22 @@ def suggest_meals(
         protein_rimaste * meal_share if consumed_protein_g == 0 else protein_rimaste
     )
 
-    try:
-        ricette = _candidate_recipes(db, profile, query, candidates)
-    except themealdb_client.MealDbError as e:
-        logger.warning("TheMealDB non disponibile: %s", e)
-        raise RecipeSourceUnavailable(
-            "Il servizio delle ricette (TheMealDB) non risponde in questo momento. "
-            "Riprova tra qualche minuto: diario e target funzionano comunque."
-        ) from e
+    kilo = kilo_candidates(profile, query)
+    porzioni = {r.meal_id: r.servings for r in kilo}
+    ricette = [kilo_raw_recipe(r) for r in kilo]
+
+    # TheMealDB serve solo quando le Ricette Kilo non bastano: è più lento
+    # (quantità da convertire con il modello) e i suoi valori sono stime.
+    if len(kilo) < top:
+        try:
+            ricette += _candidate_recipes(db, profile, query, candidates)
+        except themealdb_client.MealDbError as e:
+            logger.warning("TheMealDB non disponibile: %s", e)
+            if not kilo:
+                raise RecipeSourceUnavailable(
+                    "Il servizio delle ricette (TheMealDB) non risponde in questo momento. "
+                    "Riprova tra qualche minuto: diario e target funzionano comunque."
+                ) from e
     if not ricette:
         return []
 
@@ -222,7 +313,9 @@ def suggest_meals(
 
     suggerimenti: list[MealSuggestion] = []
     for ricetta in ricette:
-        analizzata = recipe_analyzer.analyze_recipe(db, ricetta)
+        analizzata = recipe_analyzer.analyze_recipe(
+            db, ricetta, servings=porzioni.get(ricetta.meal_id, 4)
+        )
 
         # Una ricetta di cui non si conoscono metà degli ingredienti produce
         # un totale che sembra un dato e non lo è: meglio non proporla.
@@ -240,5 +333,7 @@ def suggest_meals(
             MealSuggestion(analyzed=analizzata, fit_score=punteggio, reasons=motivi)
         )
 
-    suggerimenti.sort(key=lambda s: s.fit_score, reverse=True)
+    # Prima le Ricette Kilo (dosi esatte), poi le altre; dentro ciascun
+    # gruppo, quelle che avvicinano di più ai target.
+    suggerimenti.sort(key=lambda s: (is_kilo(s.analyzed.recipe.meal_id), s.fit_score), reverse=True)
     return suggerimenti[:top]

@@ -439,8 +439,10 @@ class RecipeSuggestionOut(BaseModel):
     # Id della ricetta nella fonte (TheMealDB): serve a salvarla.
     meal_id: str | None = None
     saved: bool = False
-    # "themealdb" oppure "import" per le ricette incollate dall'utente.
+    # "kilo" (raccolta curata, dosi esatte), "themealdb" (stime) oppure
+    # "import" per le ricette incollate dall'utente.
     source: str = "themealdb"
+    minutes: int | None = None
     name: str
     original_name: str | None = None
     category: str | None
@@ -463,7 +465,7 @@ class RecipeSuggestionOut(BaseModel):
 
 class SavedRecipeIn(RecipeSuggestionOut):
     meal_id: str = Field(min_length=1, max_length=64)
-    source: str = Field(default="themealdb", pattern="^(themealdb|import)$")
+    source: str = Field(default="themealdb", pattern="^(themealdb|import|kilo)$")
     name: str = Field(min_length=1, max_length=300)
     instructions: str | None = Field(default=None, max_length=20000)
     reasons: list[str] = Field(default_factory=list, max_length=20)
