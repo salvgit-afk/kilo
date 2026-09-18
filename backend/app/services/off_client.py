@@ -148,3 +148,122 @@ def get_product(barcode: str, *, timeout: float = 15.0) -> OffProduct:
     except ValueError as e:
         raise OffError("Risposta di Open Food Facts non valida") from e
     return parse_product(barcode, data)
+
+
+# --- Ricerca per nome ----------------------------------------------------------
+
+# Il motore di ricerca di Open Food Facts: risponde in meno di mezzo secondo e
+# accetta filtri. Si cercano solo i prodotti **venduti in Italia**, non una
+# sfilza di omonimi da mezzo mondo.
+#
+# Ordine: quello di pertinenza del motore. L'ordinamento per numero di
+# scansioni sembrava migliore con "kefir", ma con due parole ("petto di
+# pollo") portava in cima biscotti e creme spalmabili, i prodotti più
+# scansionati d'Italia.
+SEARCH_URL = "https://search.openfoodfacts.org/search"
+SEARCH_FIELDS = FIELDS + ",unique_scans_n"
+
+# Open Food Facts limita le ricerche per indirizzo IP, e dal server tutti gli
+# utenti escono con lo stesso. Tenersi sotto il limite qui evita di farsi
+# bloccare; oltre la soglia chi chiama usa la cache o un'altra fonte.
+SEARCHES_PER_MINUTE = 8
+
+
+class SearchRateLimited(OffError):
+    """Soglia di ricerche al minuto raggiunta: riprovare dopo."""
+
+
+_ricerche_recenti: list[float] = []
+
+
+def _consuma_ricerca(now: float | None = None) -> None:
+    import time
+
+    adesso = time.monotonic() if now is None else now
+    while _ricerche_recenti and adesso - _ricerche_recenti[0] > 60:
+        _ricerche_recenti.pop(0)
+    if len(_ricerche_recenti) >= SEARCHES_PER_MINUTE:
+        raise SearchRateLimited("Troppe ricerche su Open Food Facts in questo minuto")
+    _ricerche_recenti.append(adesso)
+
+
+def plausible(p: OffProduct) -> bool:
+    """Scarta i valori impossibili, frequenti nei dati inseriti a mano.
+
+    Due controlli: i macronutrienti non possono superare i 100 g per 100 g, e
+    le calorie dichiarate devono essere coerenti con quelle ricavate dai macro
+    (4-4-9 kcal/g). Sotto le 20 kcal (acqua, bibite zero) la differenza
+    relativa non vuol dire niente e non si controlla.
+    """
+    if p.protein_100g + p.carbs_100g + p.fat_100g > 101:
+        return False
+    stimate = 4 * p.protein_100g + 4 * p.carbs_100g + 9 * p.fat_100g
+    if max(p.kcal_100g, stimate) < 20:
+        return True
+    return abs(p.kcal_100g - stimate) / max(p.kcal_100g, stimate) <= 0.35
+
+
+def _query_sicura(testo: str) -> str:
+    """Solo lettere, cifre e spazi, in minuscolo: la ricerca accetta una
+    sintassi con virgolette, due punti e operatori in maiuscolo (AND, OR,
+    NOT), e il testo dell'utente non deve poterla usare."""
+    return " ".join(re.findall(r"[\wÀ-ÿ']+", (testo or "").lower()))[:80]
+
+
+def search_products(query: str, *, limit: int = 12, timeout: float = 8.0) -> list[OffProduct]:
+    """Prodotti venduti in Italia che corrispondono alla ricerca.
+
+    Restituisce solo prodotti con calorie e macro completi e plausibili: gli
+    altri non sono utilizzabili per un conteggio. Solleva `OffError` se il
+    servizio non risponde e `SearchRateLimited` oltre la soglia al minuto.
+    """
+    testo = _query_sicura(query)
+    if len(testo) < 2:
+        return []
+    _consuma_ricerca()
+    try:
+        resp = httpx.get(
+            SEARCH_URL,
+            params={
+                "q": f'{testo} countries_tags:"en:italy"',
+                "page_size": limit * 2,  # una parte viene scartata perché incompleta
+                "fields": SEARCH_FIELDS,
+            },
+            headers={"User-Agent": USER_AGENT},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        raise OffError(f"Ricerca Open Food Facts non raggiungibile: {e}") from e
+    if resp.status_code != 200:
+        raise OffError(f"La ricerca di Open Food Facts ha risposto {resp.status_code}")
+    try:
+        hits = resp.json().get("hits") or []
+    except ValueError as e:
+        raise OffError("Risposta della ricerca Open Food Facts non valida") from e
+
+    # Radici delle parole significative: "uova" trova "uovo".
+    parole = [
+        p[:-1] if len(p) >= 4 and p[-1] in "aeiou" else p
+        for p in testo.split()
+        if len(p) >= 3 and p not in {"con", "per", "alla", "allo", "agli", "dei", "del", "della"}
+    ]
+    prodotti: list[OffProduct] = []
+    for hit in hits:
+        codice = str(hit.get("code") or "")
+        marche = hit.get("brands")
+        if isinstance(marche, list):  # la ricerca le restituisce come lista
+            hit = {**hit, "brands": ",".join(m.strip() for m in marche if m)}
+        # Almeno una parola cercata nel nome del prodotto, marca esclusa:
+        # "Oat Original · Riso Scotti" non è un riso.
+        nome_proprio = (hit.get("product_name_it") or hit.get("product_name") or "").lower()
+        if parole and not any(re.search(rf"\b{re.escape(p)}", nome_proprio) for p in parole):
+            continue
+        try:
+            prodotto = parse_product(normalize_barcode(codice), {"status": 1, "product": hit})
+        except (ValueError, ProductNotFound, IncompleteProduct):
+            continue
+        if plausible(prodotto):
+            prodotti.append(prodotto)
+        if len(prodotti) >= limit:
+            break
+    return prodotti

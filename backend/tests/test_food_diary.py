@@ -55,12 +55,13 @@ def diario(db, monkeypatch):
     db.add_all([profilo, pollo, riso, marca])
     db.commit()
 
+    def _trova(nome, *ingredienti):
+        return [i for i in ingredienti if nome.lower().split()[0] in i.name.lower()]
+
     monkeypatch.setattr(
-        "app.services.catalog_sync.search_and_cache_ingredients",
-        lambda _db, nome, **kw: [
-            i for i in (pollo, riso, marca) if nome.lower().split()[0] in i.name.lower()
-        ],
+        fd, "_usda_and_fallback", lambda _db, nome, _en, **kw: (_trova(nome, pollo, riso), [])
     )
+    monkeypatch.setattr(fd, "_italian_products", lambda _db, nome, **kw: _trova(nome, marca))
     return db, profilo, pollo, riso, marca
 
 

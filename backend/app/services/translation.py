@@ -577,6 +577,15 @@ FOOD_TERMS_IT_EN = {
     "curry": "curry", "pizza": "pizza", "lasagne": "lasagne", "salsiccia": "sausage",
     "prosciutto": "ham", "anatra": "duck", "cozze": "mussels", "vegano": "vegan",
     "vegetariano": "vegetarian", "dolce": "dessert", "colazione": "breakfast",
+    # Alimenti di tutti i giorni cercati nel diario.
+    "yogurt": "yogurt", "greco": "greek", "kefir": "kefir", "latte": "milk",
+    "albume": "egg white", "albumi": "egg white", "mela": "apple", "mele": "apple",
+    "banana": "banana", "banane": "banana", "arancia": "orange", "fragole": "strawberries",
+    "mirtilli": "blueberries", "noci": "walnuts", "mandorle": "almonds", "burro": "butter",
+    "olio": "oil", "oliva": "olive", "arachidi": "peanut", "ricotta": "ricotta",
+    "mozzarella": "mozzarella", "parmigiano": "parmesan", "fesa": "breast",
+    "carote": "carrots", "carota": "carrot", "cipolla": "onion", "lattuga": "lettuce",
+    "integrale": "whole wheat", "fiocchi": "flakes", "quinoa": "quinoa", "farro": "spelt",
 }
 
 _STOPWORDS_IT = {"di", "con", "al", "alla", "allo", "ai", "e", "il", "la", "le", "lo", "i", "gli", "in"}
