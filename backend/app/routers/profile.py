@@ -14,6 +14,7 @@ from app.routers.auth import current_user
 from app.schemas import (
     AgentNoteOut,
     DailyRemindersOut,
+    WorkoutDueOut,
     NoteDismissIn,
     SupplementWeekOut,
     WeeklySummaryOut,
@@ -215,6 +216,7 @@ def reminders(
             for d, prese in promemoria.supplements
         ],
         meals_missing=promemoria.meals_missing,
+        workouts_due=[WorkoutDueOut(plan_id=p.id, plan_name=p.name) for p in promemoria.workouts_due],
     )
 
 

@@ -9,7 +9,7 @@
  * sezione a cui si accede, non un consiglio che arriva da solo.
  */
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { BrandMark } from "@/components/Mascot";
 
@@ -215,15 +215,39 @@ function useSwipeNavigation(
   }, [ref]);
 }
 
+/** Pallino sull'icona di una voce del menu: c'è qualcosa da segnare oggi. */
+function BadgeDot({ label }: { label?: string }) {
+  return (
+    <AnimatePresence>
+      {label && (
+        <motion.span
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          exit={{ scale: 0 }}
+          transition={{ type: "spring", stiffness: 500, damping: 26 }}
+          className="pointer-events-none absolute -right-1 -top-1 flex h-2.5 w-2.5"
+          aria-hidden
+        >
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-50 [animation-duration:2.4s]" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lime-400 ring-2 ring-ink-900" />
+        </motion.span>
+      )}
+    </AnimatePresence>
+  );
+}
+
 export function Shell({
   active,
   onNavigate,
   profileName,
+  badges = {},
   children,
 }: {
   active: SectionId;
   onNavigate: (id: SectionId) => void;
   profileName?: string;
+  /** Voci con qualcosa da segnare oggi, con il testo per i lettori di schermo. */
+  badges?: Partial<Record<SectionId, string>>;
   children: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -265,16 +289,19 @@ export function Shell({
                       transition={{ type: "spring", stiffness: 380, damping: 32 }}
                     />
                   )}
-                  <svg
-                    viewBox="0 0 24 24"
-                    className={`relative h-[18px] w-[18px] shrink-0 transition duration-200 ${
-                      isActive
-                        ? "fill-lime-400 drop-shadow-[0_0_6px_rgba(174,212,74,0.45)]"
-                        : "fill-current opacity-70 group-hover:fill-lime-300 group-hover:opacity-100 group-hover:drop-shadow-[0_0_8px_rgba(174,212,74,0.65)]"
-                    }`}
-                  >
-                    {s.icon}
-                  </svg>
+                  <span className="relative shrink-0">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`relative h-[18px] w-[18px] transition duration-200 ${
+                        isActive
+                          ? "fill-lime-400 drop-shadow-[0_0_6px_rgba(174,212,74,0.45)]"
+                          : "fill-current opacity-70 group-hover:fill-lime-300 group-hover:opacity-100 group-hover:drop-shadow-[0_0_8px_rgba(174,212,74,0.65)]"
+                      }`}
+                    >
+                      {s.icon}
+                    </svg>
+                    <BadgeDot label={badges[s.id]} />
+                  </span>
                   <span className="relative min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <span className="text-[13.5px] font-medium">{s.label}</span>
@@ -284,7 +311,7 @@ export function Shell({
                         </span>
                       )}
                     </span>
-                    <span className="block truncate text-[11px] text-white/30">{s.hint}</span>
+                    <span className="block truncate text-[11px] text-white/30">{badges[s.id] ?? s.hint}</span>
                   </span>
                 </button>
               );
@@ -314,7 +341,7 @@ export function Shell({
         <div ref={contentRef}>{children}</div>
       </main>
 
-      <MobileNav active={active} onNavigate={onNavigate} />
+      <MobileNav active={active} onNavigate={onNavigate} badges={badges} />
     </div>
   );
 }
@@ -332,9 +359,11 @@ export function Shell({
 function MobileNav({
   active,
   onNavigate,
+  badges,
 }: {
   active: SectionId;
   onNavigate: (id: SectionId) => void;
+  badges: Partial<Record<SectionId, string>>;
 }) {
   const navRef = useRef<HTMLElement>(null);
   const [preview, setPreview] = useState<SectionId | null>(null);
@@ -376,7 +405,7 @@ function MobileNav({
           <button
             key={s.id}
             onClick={() => onNavigate(s.id)}
-            aria-label={s.label}
+            aria-label={badges[s.id] ? `${s.label}: ${badges[s.id]}` : s.label}
             aria-current={s.id === active ? "page" : undefined}
             className={`-mx-0.5 flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-1 transition-colors duration-200 ${
               isActive ? "text-white" : "text-white/45"
@@ -390,16 +419,19 @@ function MobileNav({
                   transition={{ type: "spring", stiffness: 480, damping: 36 }}
                 />
               )}
-              <svg
-                viewBox="0 0 24 24"
-                className={`relative h-[19px] w-[19px] transition duration-200 ${
-                  isActive
-                    ? "scale-105 fill-lime-400 drop-shadow-[0_0_6px_rgba(174,212,74,0.45)]"
-                    : "fill-current"
-                }`}
-              >
-                {s.icon}
-              </svg>
+              <span className="relative">
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`relative h-[19px] w-[19px] transition duration-200 ${
+                    isActive
+                      ? "scale-105 fill-lime-400 drop-shadow-[0_0_6px_rgba(174,212,74,0.45)]"
+                      : "fill-current"
+                  }`}
+                >
+                  {s.icon}
+                </svg>
+                <BadgeDot label={badges[s.id]} />
+              </span>
             </span>
             <span className="max-w-[calc(100%+4px)] truncate text-[10px] font-medium leading-none tracking-[-0.03em]">{s.label}</span>
           </button>

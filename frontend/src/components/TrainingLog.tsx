@@ -31,6 +31,7 @@ import {
   api,
   exerciseName,
   localDate,
+  notifyLogged,
   type ExerciseHistory,
   type ExerciseSession,
   type PlanExercise,
@@ -508,6 +509,7 @@ export function SessionDialog({
       }
       update(s);
       setPhase("running");
+      notifyLogged(); // il pallino della Scheda sparisce: l'allenamento è iniziato
       return s;
     } catch (e) {
       creating.current = null;

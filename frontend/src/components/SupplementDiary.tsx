@@ -69,6 +69,11 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
 
   useEffect(() => {
     load();
+    // Tornando sull'app si ricarica: se nel frattempo è passata la mezzanotte
+    // "oggi", la settimana e il mese del calendario si spostano da soli.
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
   // Con una dose al giorno il tocco segna o toglie quel giorno; con più dosi
@@ -431,7 +436,7 @@ function DayPills({
               disabled={busy || st === "future"}
               onClick={() => onTap(d)}
               aria-label={`${shortDate(d)}: ${st === "taken" ? "preso" : st === "missed" ? "saltato" : "da segnare"}`}
-              className={`mx-auto grid h-8 w-8 place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
+              className={`mx-auto grid h-9 w-9 place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
                 d === selected && item.doses_required > 1 ? "ring-2 ring-white/60 ring-offset-2 ring-offset-ink-900" : ""
               }`}
             >
@@ -446,6 +451,10 @@ function DayPills({
     </div>
   );
 }
+
+// I mesi che devono ancora venire si possono guardare, spenti come i giorni
+// futuri: si vede cosa arriva, senza poter segnare niente.
+const MESI_AVANTI = 2;
 
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 
@@ -486,7 +495,7 @@ function MonthGrid({
   const freccia = (dir: -1 | 1) => (
     <button
       onClick={() => setScarto((n) => n + dir)}
-      disabled={dir < 0 ? scarto <= -mesiIndietro : scarto >= 0}
+      disabled={dir < 0 ? scarto <= -mesiIndietro : scarto >= MESI_AVANTI}
       aria-label={dir < 0 ? "Mese precedente" : "Mese successivo"}
       className="grid h-8 w-8 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-20"
     >

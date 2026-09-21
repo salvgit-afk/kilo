@@ -467,6 +467,8 @@ export type DailyReminders = {
     doses_required: number;
   }[];
   meals_missing: boolean;
+  /** Schede con allenamento previsto oggi e non ancora iniziato. */
+  workouts_due: { plan_id: number; plan_name: string }[];
 };
 
 /** Nota di Kilo: indicazione calcolata con una regola delle fonti. */

@@ -17,7 +17,7 @@
  * invece di ripartire sempre da A.
  */
 
-import { LayoutGroup, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { api, localDate, shiftDate, type WorkoutPlan, type WorkoutSessionLog } from "@/lib/api";
 import { Modal, ModalHeader } from "@/components/controls";
@@ -202,6 +202,12 @@ export function ScheduleDialog({
 
 // --- Linea della settimana ------------------------------------------------------------------
 
+// Apertura e chiusura dei giorni: una curva che accelera e rallenta in modo
+// simmetrico, uguale per la colonna che si allarga e per la pillola, così si
+// muovono insieme. Una curva sbilanciata in partenza faceva quasi tutto il
+// movimento nei primi 100 ms e la chiusura sembrava uno scatto.
+const MORBIDA = { duration: 0.6, ease: [0.45, 0, 0.2, 1] } as const;
+
 const ANELLO_OGGI = "ring-2 ring-white/60 ring-offset-1 ring-offset-ink-900";
 
 function colore(allenamento: boolean, fatto: boolean): string {
@@ -266,13 +272,19 @@ export function WeekLine({
             <motion.div
               key={data}
               layout
-              transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              transition={MORBIDA}
               className={`relative flex min-w-0 flex-col items-center ${espanso ? "flex-[3]" : "flex-1"}`}
             >
+              <AnimatePresence initial={false} mode="popLayout">
               {espanso ? (
                 <motion.div
                   layoutId={`giorno-${plan.id}-${g}`}
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  key="aperta"
+                  style={{ borderRadius: 999 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.35, ease: [0.45, 0, 0.2, 1] } }}
+                  transition={MORBIDA}
                   className={`relative z-10 flex h-[34px] w-full items-center overflow-hidden rounded-full border ${colore(allenamento, fatto)} ${oggiQui ? ANELLO_OGGI : ""}`}
                 >
                   {/* Tocco sulla pillola: si richiude, come nei giorni di riposo. */}
@@ -317,17 +329,28 @@ export function WeekLine({
               ) : (
                 <motion.button
                   layoutId={`giorno-${plan.id}-${g}`}
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  key="chiusa"
+                  style={{ borderRadius: 999 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.3, ease: [0.45, 0, 0.2, 1] } }}
+                  transition={MORBIDA}
                   onClick={() => setAperto(g)}
                   aria-expanded={false}
                   aria-label={`${WEEKDAY_NAMES[g]}: ${allenamento ? dayTitle(label) : "riposo"}${fatto ? ", fatto" : ""}`}
                   className={`relative z-10 grid h-[34px] w-[34px] place-items-center rounded-full border text-[12.5px] font-semibold ${colore(allenamento, fatto)} ${oggiQui ? ANELLO_OGGI : ""}`}
                 >
-                  {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                  {/* `layout` sul testo: senza, durante il restringimento la lettera
+                      si schiaccerebbe insieme al pallino. */}
+                  <motion.span layout transition={MORBIDA}>
+                    {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                  </motion.span>
                 </motion.button>
               )}
+              </AnimatePresence>
               <motion.span
                 layout="position"
+                transition={MORBIDA}
                 className={`mt-1.5 text-[11px] ${oggiQui ? "font-semibold text-white/80" : allenamento ? "text-lime-200/70" : "text-white/30"}`}
               >
                 {oggiQui ? "oggi" : WEEKDAY_LETTERS[g]}

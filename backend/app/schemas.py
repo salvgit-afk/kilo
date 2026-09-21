@@ -706,10 +706,17 @@ class PendingSupplementOut(BaseModel):
     doses_required: int
 
 
+class WorkoutDueOut(BaseModel):
+    plan_id: int
+    plan_name: str
+
+
 class DailyRemindersOut(BaseModel):
     date: dt.date
     supplements: list[PendingSupplementOut]
     meals_missing: bool
+    # Allenamenti previsti oggi (giorni della scheda) e non ancora iniziati.
+    workouts_due: list[WorkoutDueOut] = []
 
 
 class AgentNoteOut(BaseModel):

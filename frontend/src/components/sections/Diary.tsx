@@ -29,7 +29,7 @@ import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/co
 import { Mascot } from "@/components/Mascot";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { RecipeToDiaryDialog } from "@/components/RecipeToDiary";
-import { ApiError } from "@/lib/api";
+import { ApiError, notifyLogged } from "@/lib/api";
 import { KiloNote } from "@/components/KiloNote";
 
 const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
@@ -61,6 +61,8 @@ export function Diary({
     setData(await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}`));
     setLoading(false);
     loadGap();
+    // Banner e pallino del menu: il pasto di oggi potrebbe essere appena segnato.
+    notifyLogged();
   }, [profileId, loadGap]);
 
   useEffect(() => {

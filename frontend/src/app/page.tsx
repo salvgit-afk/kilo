@@ -23,6 +23,7 @@ import { Spinner } from "@/components/ui";
 import { ChatBubble } from "@/components/ChatBubble";
 import { ReminderBanner } from "@/components/ReminderBanner";
 import { NotesProvider } from "@/lib/notes";
+import { useSectionBadges } from "@/lib/badges";
 import { Auth } from "@/components/sections/Auth";
 import { Onboarding } from "@/components/sections/Onboarding";
 import { Today } from "@/components/sections/Today";
@@ -104,7 +105,7 @@ export default function Page() {
 
   return (
     <NotesProvider profileId={profile.id} section={section}>
-      <Shell active={section} onNavigate={setSection} profileName={profile.display_name}>
+      <ShellWithBadges profileId={profile.id} active={section} onNavigate={setSection} profileName={profile.display_name}>
         <ReminderBanner profileId={profile.id} section={section} onNavigate={setSection} />
         {/* Solo animazione d'entrata. Con un'uscita in modalità "wait", la
             sezione Integratori (schede animate dell'esploratore) restava
@@ -137,7 +138,7 @@ export default function Page() {
               />
             )}
           </motion.div>
-      </Shell>
+      </ShellWithBadges>
 
       <ChatBubble
         profileId={profile.id}
@@ -147,4 +148,14 @@ export default function Page() {
       />
     </NotesProvider>
   );
+}
+
+
+/** Il menu con i pallini di cosa c'è da segnare oggi. */
+function ShellWithBadges({
+  profileId,
+  ...props
+}: { profileId: number } & Omit<React.ComponentProps<typeof Shell>, "badges">) {
+  const badges = useSectionBadges(profileId);
+  return <Shell {...props} badges={badges} />;
 }

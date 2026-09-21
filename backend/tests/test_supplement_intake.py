@@ -276,3 +276,40 @@ def test_fase_con_nome_e_spiegazione():
     assert creatina[1] == "Fase di saturazione"
     # Il 28 non deve sembrare la fine dell'assunzione.
     assert "mantenimento" in creatina[2] and "non la fine" in creatina[2]
+
+
+# --- Promemoria dell'allenamento ------------------------------------------------------------
+
+
+def _piano(db, profilo, giorni: str):
+    from app.models import WorkoutPlan
+
+    piano = WorkoutPlan(
+        profile_id=profilo.id, name="Full body", goal="hypertrophy", days_per_week=len(giorni.split(",")),
+        training_weekdays_raw=giorni, started_at=OGGI - dt.timedelta(days=30),
+    )
+    db.add(piano)
+    db.commit()
+    return piano
+
+
+def test_allenamento_previsto_oggi_e_non_iniziato(db, profilo):
+    oggi = str(OGGI.weekday())
+    piano = _piano(db, profilo, oggi)
+    assert [p.id for p in daily_reminders.build(db, profilo, today=OGGI).workouts_due] == [piano.id]
+
+
+def test_giorno_di_riposo_nessun_promemoria(db, profilo):
+    domani = str((OGGI.weekday() + 1) % 7)
+    _piano(db, profilo, domani)
+    assert daily_reminders.build(db, profilo, today=OGGI).workouts_due == []
+
+
+def test_sessione_avviata_toglie_il_promemoria(db, profilo):
+    from app.models import WorkoutSession
+
+    piano = _piano(db, profilo, str(OGGI.weekday()))
+    db.add(WorkoutSession(profile_id=profilo.id, workout_plan_id=piano.id, date=OGGI, day_label="A",
+                          started_at=dt.datetime(2026, 9, 17, 18, 0, tzinfo=dt.timezone.utc)))
+    db.commit()
+    assert daily_reminders.build(db, profilo, today=OGGI).workouts_due == []
