@@ -41,7 +41,16 @@ import {
   type WorkoutPlan,
   type WorkoutSessionLog,
 } from "@/lib/api";
-import { CloseButton, Modal, ModalHeader, NumberField } from "@/components/controls";
+import {
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  NumberField,
+  OptionGroup,
+  Stepper,
+} from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
 
@@ -107,62 +116,6 @@ function sameParams(a: PlanExerciseParams, b: PlanExerciseParams): boolean {
 
 // --- Parametri ----------------------------------------------------------------------
 
-function Stepper({
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
-  format = String,
-  label,
-  compact = false,
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  min: number;
-  max: number;
-  step?: number;
-  format?: (n: number) => string;
-  label: string;
-  compact?: boolean;
-}) {
-  const bottone = (dir: 1 | -1) => (
-    <motion.button
-      type="button"
-      whileTap={{ scale: 0.88 }}
-      disabled={dir < 0 ? value <= min : value >= max}
-      onClick={() => onChange(Math.min(max, Math.max(min, value + dir * step)))}
-      aria-label={`${dir > 0 ? "Aumenta" : "Diminuisci"} ${label}`}
-      className={`grid shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/70 transition hover:border-lime-400/40 hover:text-lime-200 disabled:opacity-25 ${
-        compact ? "h-9 w-9" : "h-10 w-10"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round">
-        {dir > 0 ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
-      </svg>
-    </motion.button>
-  );
-  return (
-    <div className="flex items-center justify-between gap-2">
-      {bottone(-1)}
-      <span className="min-w-0 flex-1 whitespace-nowrap text-center font-mono text-[22px] font-semibold tabular-nums text-white">
-        {format(value)}
-      </span>
-      {bottone(1)}
-    </div>
-  );
-}
-
-function Tile({ title, hint, children, className = "" }: { title: string; hint?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 ${className}`}>
-      <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">{title}</p>
-      {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-white/35">{hint}</p>}
-      <div className="mt-3">{children}</div>
-    </div>
-  );
-}
-
 const RECUPERI = [60, 90, 120, 150, 180];
 
 export function ParamsEditor({
@@ -174,13 +127,13 @@ export function ParamsEditor({
 }) {
   const set = <K extends keyof PlanExerciseParams>(k: K, n: number) => onChange({ ...value, [k]: n });
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Tile title="Serie" className="col-span-2">
+    <div className="space-y-3">
+      <Field title="Serie">
         <div className="mx-auto max-w-[220px]">
           <Stepper value={value.target_sets} onChange={(n) => set("target_sets", n)} min={1} max={10} label="serie" />
         </div>
-      </Tile>
-      <Tile title="Ripetizioni" hint="Da quante a quante per serie." className="col-span-2">
+      </Field>
+      <Field title="Ripetizioni" hint="Da quante a quante per serie.">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="mb-1.5 text-center text-[11px] text-white/40">minime</p>
@@ -205,49 +158,26 @@ export function ParamsEditor({
             />
           </div>
         </div>
-      </Tile>
-      <Tile title="RIR" hint="Ripetizioni che tieni di riserva a fine serie: 0 è il cedimento." className="col-span-2">
-        <div className="grid grid-cols-6 gap-1.5">
-          {[0, 1, 2, 3, 4, 5].map((n) => (
-            <motion.button
-              key={n}
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => set("target_rir", n)}
-              aria-pressed={value.target_rir === n}
-              className={`h-11 rounded-xl border font-mono text-[16px] font-semibold transition ${
-                value.target_rir === n
-                  ? "border-lime-400/60 bg-lime-400 text-ink-900"
-                  : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
-              }`}
-            >
-              {n}
-            </motion.button>
-          ))}
-        </div>
-      </Tile>
-      <Tile title="Recupero tra le serie" className="col-span-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {RECUPERI.map((sec) => (
-            <motion.button
-              key={sec}
-              type="button"
-              whileTap={{ scale: 0.92 }}
-              onClick={() => set("rest_seconds", sec)}
-              aria-pressed={value.rest_seconds === sec}
-              className={`h-10 flex-1 rounded-xl border px-2 font-mono text-[14px] font-semibold transition ${
-                value.rest_seconds === sec
-                  ? "border-lime-400/60 bg-lime-400 text-ink-900"
-                  : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
-              }`}
-            >
-              {restLabel(sec)}
-            </motion.button>
-          ))}
-        </div>
-        {!RECUPERI.includes(value.rest_seconds) && (
-          <p className="mt-2 text-[12px] text-white/45">Attuale: {restLabel(value.rest_seconds)}</p>
-        )}
+      </Field>
+      <Field title="RIR" hint="Ripetizioni che tieni di riserva a fine serie: 0 è il cedimento.">
+        <OptionGroup
+          ariaLabel="RIR"
+          mono
+          columns="grid-cols-6"
+          value={value.target_rir}
+          onChange={(n) => set("target_rir", n)}
+          options={[0, 1, 2, 3, 4, 5].map((n) => ({ value: n, label: n }))}
+        />
+      </Field>
+      <Field title="Recupero tra le serie">
+        <OptionGroup
+          ariaLabel="Recupero"
+          mono
+          columns="grid-cols-5"
+          value={value.rest_seconds}
+          onChange={(n) => set("rest_seconds", n)}
+          options={RECUPERI.map((sec) => ({ value: sec, label: restLabel(sec) }))}
+        />
         <div className="mt-3">
           <Stepper
             value={value.rest_seconds}
@@ -259,8 +189,63 @@ export function ParamsEditor({
             format={restLabel}
           />
         </div>
-      </Tile>
+      </Field>
     </div>
+  );
+}
+
+/**
+ * La stessa finestra per cambiare i parametri, dalla scheda e durante
+ * l'allenamento. Nella scheda c'è un solo salvataggio; durante l'allenamento
+ * si sceglie se valgono solo per oggi o anche per le prossime volte.
+ */
+function ParamsDialog({
+  title,
+  subtitle,
+  initial,
+  saving,
+  error,
+  onClose,
+  onSaveToPlan,
+  onApplyToday,
+}: {
+  title: string;
+  subtitle: string;
+  initial: PlanExerciseParams;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSaveToPlan: (v: PlanExerciseParams) => void;
+  onApplyToday?: (v: PlanExerciseParams) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const cambiati = !sameParams(value, initial);
+  return (
+    <Modal onClose={onClose} className="max-w-lg" align="top" z={onApplyToday ? "z-[90]" : undefined}>
+      <ModalHeader eyebrow="Modifica l'esercizio" title={title} subtitle={subtitle} onClose={onClose} />
+      <ModalBody>
+        <ParamsEditor value={value} onChange={setValue} />
+        {error && <Notice>{error}</Notice>}
+      </ModalBody>
+      <ModalFooter>
+        {onApplyToday ? (
+          <button className="btn-ghost flex-1 justify-center whitespace-nowrap px-3" onClick={() => onApplyToday(value)} disabled={saving}>
+            Solo per oggi
+          </button>
+        ) : (
+          <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
+            Annulla
+          </button>
+        )}
+        <button
+          className="btn-primary flex-[1.6] justify-center whitespace-nowrap"
+          onClick={() => onSaveToPlan(value)}
+          disabled={saving || (!onApplyToday && !cambiati)}
+        >
+          {saving ? "Salvo…" : "Salva nella scheda"}
+        </button>
+      </ModalFooter>
+    </Modal>
   );
 }
 
@@ -276,12 +261,10 @@ export function PlanParamsDialog({
   onClose: () => void;
   onSaved: (plan: WorkoutPlan) => void;
 }) {
-  const [value, setValue] = useState(paramsOf(item));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cambiati = !sameParams(value, paramsOf(item));
 
-  async function save() {
+  async function save(value: PlanExerciseParams) {
     setSaving(true);
     setError(null);
     try {
@@ -294,30 +277,49 @@ export function PlanParamsDialog({
   }
 
   return (
-    <Modal onClose={onClose} className="max-w-lg" align="top">
-      <ModalHeader
-        eyebrow="Modifica l'esercizio"
-        title={exerciseName(item.exercise)}
-        subtitle="I valori di partenza vengono dalle fonti. Da qui in poi decidi tu: valgono per tutte le prossime sessioni."
-        onClose={onClose}
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
-        <ParamsEditor value={value} onChange={setValue} />
-        {error && (
-          <div className="mt-3">
-            <Notice>{error}</Notice>
-          </div>
-        )}
-      </div>
-      <div className="flex shrink-0 gap-2 border-t border-white/[0.06] p-4">
-        <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
-          Annulla
-        </button>
-        <button className="btn-primary flex-[1.7] justify-center whitespace-nowrap" onClick={save} disabled={saving || !cambiati}>
-          {saving ? "Salvo…" : "Salva nella scheda"}
-        </button>
-      </div>
-    </Modal>
+    <ParamsDialog
+      title={exerciseName(item.exercise)}
+      subtitle="I valori di partenza vengono dalle fonti. Da qui in poi decidi tu: valgono per tutte le prossime sessioni."
+      initial={paramsOf(item)}
+      saving={saving}
+      error={error}
+      onClose={onClose}
+      onSaveToPlan={save}
+    />
+  );
+}
+
+/** La riga dei parametri: la stessa nella scheda e nell'allenamento. */
+export function ParamsChips({
+  value,
+  changed = false,
+  onEdit,
+}: {
+  value: PlanExerciseParams;
+  changed?: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <button
+      onClick={onEdit}
+      className="group/params flex w-full flex-wrap items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-left transition hover:border-lime-400/35 hover:bg-lime-400/[0.04]"
+      aria-label="Modifica serie, ripetizioni, RIR e recupero"
+    >
+      {[
+        `${value.target_sets} serie`,
+        `${value.target_reps_min}-${value.target_reps_max} rip.`,
+        `RIR ${value.target_rir}`,
+        `rec. ${restLabel(value.rest_seconds)}`,
+      ].map((c) => (
+        <span key={c} className="rounded-full bg-white/[0.06] px-2.5 py-1 font-mono text-[12px] tabular-nums text-white/80">
+          {c}
+        </span>
+      ))}
+      <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime-400/15 px-2.5 py-1 text-[12px] font-medium text-lime-300 transition group-hover/params:bg-lime-400 group-hover/params:text-ink-900">
+        <PencilIcon />
+        {changed ? "Modificato" : "Modifica"}
+      </span>
+    </button>
   );
 }
 
@@ -416,7 +418,9 @@ export function SessionDialog({
     Object.fromEntries(exercises.map((e) => [e.id, paramsOf(e)]))
   );
   const [rows, setRows] = useState<Record<number, Row[]>>({});
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<PlanExercise | null>(null);
+  const [savingParams, setSavingParams] = useState(false);
+  const [paramsError, setParamsError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlanExercise | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; total: number } | null>(null);
@@ -599,15 +603,18 @@ export function SessionDialog({
     });
   }
 
-  async function saveTargetsToPlan(item: PlanExercise) {
+  async function saveTargetsToPlan(item: PlanExercise, v: PlanExerciseParams) {
+    setSavingParams(true);
+    setParamsError(null);
     try {
-      onPlanUpdated(
-        await api.patch<WorkoutPlan>(`/workout/plan-exercises/${item.id}?profile_id=${profileId}`, targets[item.id])
-      );
-      setBase((prev) => ({ ...prev, [item.id]: targets[item.id] }));
+      onPlanUpdated(await api.patch<WorkoutPlan>(`/workout/plan-exercises/${item.id}?profile_id=${profileId}`, v));
+      changeTargets(item, v);
+      setBase((prev) => ({ ...prev, [item.id]: v }));
       setEditing(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Non sono riuscito a salvare nella scheda.");
+      setParamsError(e instanceof Error ? e.message : "Non sono riuscito a salvare nella scheda.");
+    } finally {
+      setSavingParams(false);
     }
   }
 
@@ -620,23 +627,20 @@ export function SessionDialog({
   return (
     <>
       <Modal onClose={onClose} align="top" className="max-w-2xl">
-        {/* Intestazione: cosa si fa, e da quanto */}
-        <div className="relative shrink-0 overflow-hidden border-b border-white/[0.06] px-5 pb-4 pt-4">
-          <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-lime-400/[0.07] blur-3xl" />
-          <div className="relative flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-lime-400/80">
-                {plan.name}
-              </p>
-              <h2 className="mt-0.5 text-[20px] font-semibold tracking-tight text-white">
-                {dayLabel.length <= 2 ? `Giorno ${dayLabel}` : dayLabel}
-              </h2>
-            </div>
-            <CloseButton onClose={onClose} />
-          </div>
-
+        {/* Intestazione: la stessa degli altri pannelli, con il cronometro
+            sotto il titolo quando l'allenamento è in corso. */}
+        <ModalHeader
+          eyebrow={plan.name}
+          title={dayLabel.length <= 2 ? `Giorno ${dayLabel}` : dayLabel}
+          subtitle={
+            phase === "ready"
+              ? `${exercises.length} esercizi · ${tutte.length} serie · circa ${stimaMinuti} minuti${session?.ended_at ? " · già completato oggi" : ""}`
+              : undefined
+          }
+          onClose={onClose}
+        >
           {phase === "running" && (
-            <div className="relative mt-3 flex items-end justify-between gap-4">
+            <div className="mt-3 flex items-end justify-between gap-4">
               <div>
                 <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-lime-300/90">
                   <span className="relative flex h-2 w-2">
@@ -645,7 +649,7 @@ export function SessionDialog({
                   </span>
                   In corso
                 </p>
-                <p className="font-mono text-[34px] font-semibold leading-none tabular-nums text-white">{clock(elapsed)}</p>
+                <p className="font-mono text-[30px] font-semibold leading-none tabular-nums text-white">{clock(elapsed)}</p>
               </div>
               <div className="min-w-0 flex-1 pb-1">
                 <div className="mb-1 flex justify-between text-[11.5px] text-white/45">
@@ -664,16 +668,10 @@ export function SessionDialog({
               </div>
             </div>
           )}
-          {phase === "ready" && (
-            <p className="relative mt-1.5 text-[13px] text-white/50">
-              {exercises.length} esercizi · {tutte.length} serie · circa {stimaMinuti} minuti
-              {session?.ended_at && " · già completato oggi"}
-            </p>
-          )}
-        </div>
+        </ModalHeader>
 
         {/* Corpo */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {error && (
             <div className="mb-3">
               <Notice>{error}</Notice>
@@ -697,7 +695,7 @@ export function SessionDialog({
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: n * 0.04 }}
-                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-b from-white/[0.045] to-white/[0.015] p-4"
+                    className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5"
                   >
                     <div className="flex items-start gap-3">
                       <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/[0.07] font-mono text-[12px] text-white/60">
@@ -721,54 +719,10 @@ export function SessionDialog({
                       </div>
                     </div>
 
-                    {/* I parametri: una riga di pillole che si vede toccabile */}
-                    <button
-                      onClick={() => setEditing(editing === item.id ? null : item.id)}
-                      aria-expanded={editing === item.id}
-                      className={`mt-3 flex w-full flex-wrap items-center gap-1.5 rounded-2xl border px-2.5 py-2 text-left transition ${
-                        editing === item.id
-                          ? "border-lime-400/40 bg-lime-400/[0.07]"
-                          : "border-dashed border-white/15 hover:border-lime-400/35 hover:bg-white/[0.03]"
-                      }`}
-                    >
-                      {[
-                        `${t.target_sets} serie`,
-                        `${t.target_reps_min}-${t.target_reps_max} rip.`,
-                        `RIR ${t.target_rir}`,
-                        `rec. ${restLabel(t.rest_seconds)}`,
-                      ].map((c) => (
-                        <span key={c} className="rounded-full bg-white/[0.06] px-2.5 py-1 font-mono text-[12px] tabular-nums text-white/80">
-                          {c}
-                        </span>
-                      ))}
-                      <span className="ml-auto inline-flex items-center gap-1 pr-1 text-[12px] font-medium text-lime-300/85">
-                        <PencilIcon />
-                        {cambiati ? "modificato" : "modifica"}
-                      </span>
-                    </button>
-
-                    <AnimatePresence initial={false}>
-                      {editing === item.id && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="space-y-3 pt-3">
-                            <ParamsEditor value={t} onChange={(v) => changeTargets(item, v)} />
-                            <p className="text-[12px] leading-snug text-white/45">
-                              Valgono per questo allenamento.{cambiati && " Vuoi tenerli anche per i prossimi?"}
-                            </p>
-                            {cambiati && (
-                              <button className="btn-ghost w-full justify-center" onClick={() => saveTargetsToPlan(item)}>
-                                Salva anche nella scheda
-                              </button>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {/* I parametri: la stessa riga e la stessa finestra della scheda */}
+                    <div className="mt-3">
+                      <ParamsChips value={t} changed={cambiati} onEdit={() => setEditing(item)} />
+                    </div>
 
                     <div className="mt-4">
                       <div className="grid grid-cols-[34px_1fr_1fr_62px_46px] items-center gap-2 px-0.5 pb-1.5 text-[11px] uppercase tracking-wide text-white/35">
@@ -900,7 +854,7 @@ export function SessionDialog({
         </div>
 
         {/* Piede: avvio, recupero, fine */}
-        <div className="shrink-0 border-t border-white/[0.06] bg-ink-900/60">
+        <div className="shrink-0 border-t border-white/[0.06] bg-ink-900/50">
           <AnimatePresence mode="wait" initial={false}>
             {phase === "running" && rest ? (
               <motion.div
@@ -908,7 +862,7 @@ export function SessionDialog({
                 initial={{ y: 24, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 24, opacity: 0 }}
-                className="px-4 py-3"
+                className="px-4 py-3 sm:px-5"
               >
                 <div className="flex items-center gap-2.5">
                   <div className="min-w-0 flex-1">
@@ -935,16 +889,16 @@ export function SessionDialog({
                 </div>
               </motion.div>
             ) : phase === "running" ? (
-              <motion.div key="corso" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 p-3">
+              <motion.div key="corso" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 px-4 py-3 sm:px-5">
                 <button className="btn-ghost flex-1 justify-center py-3" onClick={onClose} title="L'allenamento continua: lo riapri dalla scheda">
                   Riduci
                 </button>
-                <button className="btn-primary flex-[1.6] justify-center py-3" onClick={finish} disabled={finishing}>
+                <button className="btn-primary flex-[2] justify-center whitespace-nowrap px-3 py-3" onClick={finish} disabled={finishing}>
                   {finishing ? "Chiudo…" : "Termina allenamento"}
                 </button>
               </motion.div>
             ) : phase === "ready" ? (
-              <motion.div key="pronto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-3">
+              <motion.div key="pronto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4 py-3 sm:px-5">
                 <button className="btn-primary w-full justify-center py-3.5 text-[15px]" onClick={start}>
                   <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
                     <path d="M8 5v14l11-7L8 5Z" />
@@ -953,7 +907,7 @@ export function SessionDialog({
                 </button>
               </motion.div>
             ) : phase === "done" ? (
-              <motion.div key="fine" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-3">
+              <motion.div key="fine" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4 py-3 sm:px-5">
                 <button className="btn-primary w-full justify-center py-3.5 text-[15px]" onClick={onClose}>
                   Chiudi
                 </button>
@@ -966,6 +920,22 @@ export function SessionDialog({
       {/* Fuori dal pannello: dentro un contenitore animato un elemento fixed
           si posizionerebbe rispetto a lui, non allo schermo. */}
       <AnimatePresence>
+        {editing && (
+          <ParamsDialog
+            key="params"
+            title={exerciseName(editing.exercise)}
+            subtitle="Scegli se valgono solo per l'allenamento di oggi o anche per le prossime volte."
+            initial={targets[editing.id]}
+            saving={savingParams}
+            error={paramsError}
+            onClose={() => setEditing(null)}
+            onApplyToday={(v) => {
+              changeTargets(editing, v);
+              setEditing(null);
+            }}
+            onSaveToPlan={(v) => saveTargetsToPlan(editing, v)}
+          />
+        )}
         {history && (
           <LoadHistoryDialog
             key="history"

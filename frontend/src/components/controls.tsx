@@ -10,6 +10,8 @@
  *    centrare) e chiusura anche con Esc — solo dell'overlay più in alto.
  *  - `NumberField`: sostituisce le freccette native di `type=number`, che
  *    producevano "065" digitando su un campo con 0 e passi da 0,1 sul peso.
+ *  - `ModalBody`, `ModalFooter`, `Field`, `Stepper`, `OptionGroup`, `Toggle`:
+ *    i mattoni comuni di pannelli e form (vedi la sezione più sotto).
  *  - `DemoAnimation`: alterna i fotogrammi di partenza e arrivo di un
  *    esercizio.
  */
@@ -153,6 +155,200 @@ export function CloseButton({
       >
         <path d="M6 6l12 12M18 6 6 18" />
       </svg>
+    </button>
+  );
+}
+
+// --- Mattoni dei pannelli e dei form -------------------------------------------------
+//
+// Ogni overlay e ogni menu di modifica usa gli stessi pezzi, così bottoni,
+// forme e scelte si riconoscono ovunque:
+//  - `ModalBody` / `ModalFooter`: contenuto che scorre e piede fisso, con
+//    "Annulla" a sinistra e l'azione principale, più larga, a destra;
+//  - `Field`: un riquadro con titolo e suggerimento per ogni valore;
+//  - `Stepper`: − valore + per i numeri piccoli (serie, ripetizioni);
+//  - `OptionGroup`: scelte a riquadri, la scelta attiva piena in lime come
+//    le linguette;
+//  - `Toggle`: interruttore al posto delle caselle di spunta.
+
+export function ModalBody({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+export function ModalFooter({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center gap-2 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+export function Field({
+  title,
+  hint,
+  children,
+  className = "",
+  action,
+}: {
+  title: ReactNode;
+  hint?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">{title}</p>
+          {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-white/35">{hint}</p>}
+        </div>
+        {action}
+      </div>
+      {children && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+export function Stepper({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  format = String,
+  label,
+  compact = false,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  format?: (n: number) => string;
+  label: string;
+  compact?: boolean;
+}) {
+  const bottone = (dir: 1 | -1) => (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.88 }}
+      disabled={dir < 0 ? value <= min : value >= max}
+      onClick={() => onChange(Math.min(max, Math.max(min, value + dir * step)))}
+      aria-label={`${dir > 0 ? "Aumenta" : "Diminuisci"} ${label}`}
+      className={`grid shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/70 transition hover:border-lime-400/40 hover:text-lime-200 disabled:opacity-25 ${
+        compact ? "h-9 w-9" : "h-10 w-10"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round">
+        {dir > 0 ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
+      </svg>
+    </motion.button>
+  );
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {bottone(-1)}
+      <span className="min-w-0 flex-1 whitespace-nowrap text-center font-mono text-[22px] font-semibold tabular-nums text-white">
+        {format(value)}
+      </span>
+      {bottone(1)}
+    </div>
+  );
+}
+
+export type Option<T> = { value: T; label: ReactNode; hint?: ReactNode };
+
+export function OptionGroup<T extends string | number>({
+  options,
+  value,
+  onChange,
+  columns,
+  mono = false,
+  ariaLabel,
+}: {
+  options: Option<T>[];
+  value: T;
+  onChange: (v: T) => void;
+  /** Colonne della griglia; senza, le scelte si dividono la riga. */
+  columns?: string;
+  mono?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={columns ? `grid gap-1.5 ${columns}` : "flex flex-wrap gap-1.5"}
+    >
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <motion.button
+            key={String(o.value)}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => onChange(o.value)}
+            className={`min-h-[42px] rounded-xl border px-3 py-2 text-center transition ${columns ? "" : "flex-1"} ${
+              mono ? "font-mono text-[15px] font-semibold tabular-nums" : "text-[13px] font-medium"
+            } ${
+              on
+                ? "border-lime-400/60 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900 shadow-[0_6px_16px_-10px_rgba(174,212,74,0.9)]"
+                : "border-white/10 bg-white/[0.03] text-white/65 hover:border-white/20 hover:text-white"
+            }`}
+          >
+            <span className="block leading-tight">{o.label}</span>
+            {o.hint && (
+              <span className={`mt-0.5 block text-[11px] font-normal leading-snug ${on ? "text-ink-900/70" : "text-white/35"}`}>
+                {o.hint}
+              </span>
+            )}
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: ReactNode;
+  hint?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-left transition hover:border-white/15"
+    >
+      <span className="min-w-0">
+        <span className="block text-[13.5px] font-medium text-white/85">{label}</span>
+        {hint && <span className="mt-0.5 block text-[11.5px] leading-snug text-white/40">{hint}</span>}
+      </span>
+      <span
+        className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
+          checked ? "border-lime-400/60 bg-lime-400" : "border-white/15 bg-white/[0.06]"
+        }`}
+      >
+        <motion.span
+          layout
+          transition={{ type: "spring", stiffness: 500, damping: 34 }}
+          className={`absolute top-[3px] h-5 w-5 rounded-full shadow ${checked ? "right-[3px] bg-ink-900" : "left-[3px] bg-white/70"}`}
+        />
+      </span>
     </button>
   );
 }

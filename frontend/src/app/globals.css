@@ -92,6 +92,9 @@ body::before {
   .btn-ghost {
     @apply btn border border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08] hover:text-white;
   }
+  .btn-danger {
+    @apply btn border border-rose-400/30 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20;
+  }
 
   .input {
     @apply w-full rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-sm

@@ -6,8 +6,9 @@
  * - **WeekdayPicker**: prima la frequenza, poi i giorni. Scegliere la
  *   frequenza propone giorni distanziati (3 → lunedì, mercoledì, venerdì);
  *   toccando i giorni si cambia la proposta, e la frequenza li segue.
- * - **WeekLine**: la settimana come una linea di pallini, verdi nei giorni di
- *   allenamento. Toccando un giorno il pallino si allarga e mostra
+ * - **WeekLine**: la settimana come una linea di pallini: un manubrio nei
+ *   giorni di allenamento, una luna in quelli di riposo, una spunta in quelli
+ *   fatti. Toccando un giorno il pallino si allarga e mostra
  *   l'allenamento di quel giorno; toccando di nuovo la pillola si richiude,
  *   e la freccia al suo interno apre quel giorno nella scheda.
  *
@@ -20,7 +21,7 @@
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { api, localDate, shiftDate, type WorkoutPlan, type WorkoutSessionLog } from "@/lib/api";
-import { Modal, ModalHeader } from "@/components/controls";
+import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/controls";
 import { Notice } from "@/components/ui";
 
 export const WEEKDAY_LETTERS = ["L", "M", "M", "G", "V", "S", "D"];
@@ -119,7 +120,7 @@ export function WeekdayPicker({ value, onChange }: { value: number[]; onChange: 
               aria-label={WEEKDAY_NAMES[g]}
               className={`mx-auto grid aspect-square w-full max-w-[48px] place-items-center rounded-full border text-[14px] font-semibold transition ${
                 on
-                  ? "border-lime-400/60 bg-lime-400/[0.16] text-lime-100 shadow-[0_0_16px_-6px_rgba(174,212,74,0.7)]"
+                  ? "border-lime-400/60 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900 shadow-[0_6px_16px_-10px_rgba(174,212,74,0.9)]"
                   : "border-white/10 bg-white/[0.03] text-white/45 hover:text-white/80"
               }`}
             >
@@ -176,26 +177,26 @@ export function ScheduleDialog({
         subtitle="Scegli quando ti alleni: la proposta distanzia gli allenamenti, ma decidi tu."
         onClose={onClose}
       />
-      <div className="space-y-4 overflow-y-auto p-5">
+      <ModalBody>
         <WeekdayPicker value={value} onChange={setValue} />
         {value.length > 0 && value.length !== allenamenti && (
-          <p className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-[12px] leading-snug text-white/50">
+          <p className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-[12px] leading-snug text-white/50">
             La scheda ha {allenamenti} {allenamenti === 1 ? "allenamento" : "allenamenti diversi"}
             {value.length > allenamenti
               ? `: con ${value.length} giorni si alternano di settimana in settimana.`
-              : `: con ${value.length} ${value.length === 1 ? "giorno" : "giorni"} a settimana ne fai una parte ogni settimana, a rotazione. Valuta di rigenerarla con la nuova frequenza.`}
+              : `: con ${value.length} ${value.length === 1 ? "giorno" : "giorni"} a settimana ne fai una parte ogni settimana, a rotazione. Valuta di crearne una nuova con la nuova frequenza.`}
           </p>
         )}
         {error && <Notice>{error}</Notice>}
-        <div className="flex gap-2">
-          <button className="btn-primary flex-1" onClick={save} disabled={saving || !value.length}>
-            {saving ? "Salvo…" : "Salva i giorni"}
-          </button>
-          <button className="btn-ghost" onClick={onClose}>
-            Annulla
-          </button>
-        </div>
-      </div>
+      </ModalBody>
+      <ModalFooter>
+        <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
+          Annulla
+        </button>
+        <button className="btn-primary flex-[1.6] justify-center" onClick={save} disabled={saving || !value.length}>
+          {saving ? "Salvo…" : "Salva i giorni"}
+        </button>
+      </ModalFooter>
     </Modal>
   );
 }
@@ -211,7 +212,7 @@ const MORBIDA = { duration: 0.6, ease: [0.45, 0, 0.2, 1] } as const;
 const ANELLO_OGGI = "ring-2 ring-white/60 ring-offset-1 ring-offset-ink-900";
 
 function colore(allenamento: boolean, fatto: boolean): string {
-  if (!allenamento) return "border-white/10 bg-ink-800 text-white/40";
+  if (!allenamento) return "border-white/10 bg-ink-800 text-white/30";
   return fatto
     ? "border-lime-400 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
     : "border-lime-400/55 bg-ink-800 text-lime-100 shadow-[0_0_18px_-6px_rgba(174,212,74,0.8)]";
@@ -342,8 +343,8 @@ export function WeekLine({
                 >
                   {/* `layout` sul testo: senza, durante il restringimento la lettera
                       si schiaccerebbe insieme al pallino. */}
-                  <motion.span layout transition={MORBIDA}>
-                    {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                  <motion.span layout transition={MORBIDA} className="grid place-items-center">
+                    {allenamento ? fatto ? <IconCheck /> : <IconDumbbell /> : <IconMoon />}
                   </motion.span>
                 </motion.button>
               )}
@@ -360,5 +361,31 @@ export function WeekLine({
         })}
       </div>
     </LayoutGroup>
+  );
+}
+
+// --- Icone dei giorni ------------------------------------------------------------------
+
+function IconDumbbell() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+      <path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" />
+    </svg>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[15px] w-[15px]" fill="currentColor">
+      <path d="M20 14.6A8 8 0 0 1 9.4 4a8 8 0 1 0 10.6 10.6Z" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" fill="none" stroke="currentColor" strokeWidth={3}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

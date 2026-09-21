@@ -18,6 +18,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import {
+  EXPERIENCE_LABELS,
+  GOAL_LABELS,
   MUSCLE_LABELS,
   SPLIT_HINTS,
   SPLIT_LABELS,
@@ -38,11 +40,22 @@ import { Card, CardHeader, Empty, Notice, SourceTags, Spinner } from "@/componen
 import { PageHeader } from "@/components/Shell";
 import { ExerciseDetailHost } from "@/components/ExerciseDetail";
 import { PreferencesDialog } from "@/components/PreferencesDialog";
-import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "@/components/controls";
+import {
+  AskCoachButton,
+  DemoAnimation,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  OptionGroup,
+  Stepper,
+  Toggle,
+} from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
-import { PlanParamsDialog, SessionDialog, clock, useElapsed } from "@/components/TrainingLog";
-import { ScheduleDialog, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
+import { ParamsChips, PlanParamsDialog, SessionDialog, clock, useElapsed } from "@/components/TrainingLog";
+import { ScheduleDialog, WEEKDAY_NAMES, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
 
 export { formatEquipment } from "@/lib/api";
 
@@ -231,25 +244,16 @@ export function Workout({
         action={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             {plan && (
-              <button className="btn-ghost col-span-2 justify-center" onClick={() => setFeedbackOpen(true)}>
+              <button className="btn-ghost justify-center whitespace-nowrap px-3" onClick={() => setFeedbackOpen(true)}>
                 Come sta andando?
-              </button>
-            )}
-            {plan && (
-              <button
-                className="btn-ghost justify-center"
-                onClick={() => setDialog({ replace: null })}
-                disabled={generating}
-              >
-                + Nuova scheda
               </button>
             )}
             <button
               className={`btn-primary justify-center ${plan ? "" : "col-span-2"}`}
-              onClick={() => setDialog({ replace: plan })}
+              onClick={() => setDialog({ replace: null })}
               disabled={generating}
             >
-              {generating ? "Genero…" : plan ? "Rigenera" : "Crea scheda"}
+              {generating ? "Genero…" : plan ? "+ Nuova scheda" : "Crea scheda"}
             </button>
           </div>
         }
@@ -484,9 +488,8 @@ export function Workout({
         {dialog && (
           <PlanDialog
             key="plan-dialog"
-            replacing={dialog.replace}
-            defaultSplit={profile.split_type ?? "auto"}
-            defaultDays={profile.training_days_per_week}
+            profile={profile}
+            current={plan}
             onClose={() => setDialog(null)}
             onGenerate={generate}
             onOpenPrefs={() => setPrefsOpen(true)}
@@ -559,147 +562,202 @@ export function Workout({
 }
 
 /**
- * Creazione o rigenerazione di una scheda.
+ * Creazione di una scheda, che prende anche il posto del vecchio «Rigenera».
  *
- * La scelta della divisione serve solo in questo momento: una volta creata,
- * la pagina lascia tutto lo spazio alla scheda. Serie e ripetizioni manuali
- * sono possibili, ma dichiarate come scelta dell'utente e non delle fonti.
+ * Due strade:
+ *  - **Kilo sceglie per te**: divisione, giorni, serie e ripetizioni dal
+ *    profilo e dai parametri delle fonti, senza altre domande;
+ *  - **Scelgo io**: giorni, divisione, esercizi preferiti ed eventualmente
+ *    serie e ripetizioni decise dall'utente (dichiarate come tali).
+ * Se c'è già una scheda si sceglie se affiancarla o sostituirla: quella
+ * sostituita resta nello storico dei progressi.
  */
 function PlanDialog({
-  replacing,
-  defaultSplit,
-  defaultDays,
+  profile,
+  current,
   onClose,
   onGenerate,
   onOpenPrefs,
 }: {
-  replacing: WorkoutPlan | null;
-  defaultSplit: string;
-  defaultDays: number;
+  profile: Profile;
+  current: WorkoutPlan | null;
   onClose: () => void;
   onGenerate: (opts: PlanOptions) => void;
   onOpenPrefs: () => void;
 }) {
-  const [split, setSplit] = useState(replacing?.split_type ?? defaultSplit);
-  const [weekdays, setWeekdays] = useState<number[]>(
-    replacing?.training_weekdays ?? defaultWeekdays(defaultDays)
-  );
+  const [mode, setMode] = useState<"kilo" | "custom">("kilo");
+  const [replace, setReplace] = useState(false);
+  const [split, setSplit] = useState(profile.split_type ?? "auto");
+  const giorniProfilo = defaultWeekdays(profile.training_days_per_week);
+  const [weekdays, setWeekdays] = useState<number[]>(current?.training_weekdays ?? giorniProfilo);
   const [manual, setManual] = useState(false);
-  const [sets, setSets] = useState<number | null>(3);
-  const [repsMin, setRepsMin] = useState<number | null>(6);
-  const [repsMax, setRepsMax] = useState<number | null>(8);
+  const [sets, setSets] = useState(3);
+  const [repsMin, setRepsMin] = useState(6);
+  const [repsMax, setRepsMax] = useState(8);
 
-  const rangeInvalido = repsMin !== null && repsMax !== null && repsMin > repsMax;
-  const invalido = !weekdays.length || (manual && (!sets || !repsMin || !repsMax || rangeInvalido));
+  const invalido = mode === "custom" && !weekdays.length;
+  const sostituisci = replace && current ? current.id : undefined;
+
+  function genera() {
+    if (mode === "kilo") {
+      onGenerate({ split: "auto", weekdays: giorniProfilo, replacePlanId: sostituisci });
+    } else {
+      onGenerate({
+        split,
+        weekdays,
+        replacePlanId: sostituisci,
+        sets: manual ? sets : null,
+        repsMin: manual ? repsMin : null,
+        repsMax: manual ? repsMax : null,
+      });
+    }
+  }
+
+  const riepilogo: [string, string][] = [
+    ["Obiettivo", GOAL_LABELS[profile.goal] ?? profile.goal],
+    ["Esperienza", EXPERIENCE_LABELS[profile.experience_level] ?? profile.experience_level],
+    ["Giorni", giorniProfilo.map((g) => WEEKDAY_NAMES[g].slice(0, 3)).join(", ")],
+    ["Attrezzatura", profile.available_equipment?.trim() || "palestra attrezzata"],
+  ];
 
   return (
     <Modal onClose={onClose} className="max-w-lg">
       <ModalHeader
-        eyebrow={replacing ? "Rigenera scheda" : "Nuova scheda"}
-        title={replacing ? `Rigenera «${planLabel(replacing)}»` : "Crea una scheda"}
-        subtitle={
-          replacing
-            ? "La nuova scheda prende il posto di questa. Quella attuale resta nello storico dei progressi."
-            : "Si aggiunge a quelle che hai già: puoi tenerne più di una, per esempio una full body e una push, pull, gambe."
-        }
+        eyebrow="Nuova scheda"
+        title="Crea una scheda"
+        subtitle="Lasciala costruire a Kilo dal tuo profilo, o decidi tu divisione, giorni ed esercizi."
         onClose={onClose}
       />
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
-        <WeekdayPicker value={weekdays} onChange={setWeekdays} />
+      <ModalBody>
+        <OptionGroup
+          ariaLabel="Come crearla"
+          columns="grid-cols-2"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "kilo", label: "Kilo sceglie per te", hint: "Dal profilo e dalle fonti" },
+            { value: "custom", label: "Scelgo io", hint: "Divisione, giorni, esercizi" },
+          ]}
+        />
 
-        <div>
-          <label className="label">Come vuoi dividere gli allenamenti</label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {Object.entries(SPLIT_LABELS).map(([value, label]) => (
-              <Choice
-                key={value}
-                active={split === value}
-                onClick={() => setSplit(value)}
-                label={label}
-              />
-            ))}
-          </div>
-          <p className="mt-2 text-[11.5px] leading-relaxed text-white/35">{SPLIT_HINTS[split]}</p>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-white/85">Esercizi preferiti</p>
-            <p className="text-[11.5px] leading-snug text-white/40">
-              Quelli che scegli entrano per primi nella scheda
-            </p>
-          </div>
-          <button className="btn-ghost shrink-0 px-3 py-2 text-[12.5px]" onClick={onOpenPrefs}>
-            Scegli
-          </button>
-        </div>
-
-        <div className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3">
-          <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-white/85">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-lime-400"
-              checked={manual}
-              onChange={(e) => setManual(e.target.checked)}
-            />
-            Decido io serie e ripetizioni
-          </label>
-          {manual ? (
-            <>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="label">Serie</label>
-                  <NumberField value={sets} onChange={setSets} min={1} max={10} ariaLabel="Serie per esercizio" />
-                </div>
-                <div>
-                  <label className="label">Rip. min</label>
-                  <NumberField value={repsMin} onChange={setRepsMin} min={1} max={50} ariaLabel="Ripetizioni minime" />
-                </div>
-                <div>
-                  <label className="label">Rip. max</label>
-                  <NumberField value={repsMax} onChange={setRepsMax} min={1} max={50} ariaLabel="Ripetizioni massime" />
-                </div>
-              </div>
-              {rangeInvalido && (
-                <p className="text-[11.5px] text-amber-200">
-                  Le ripetizioni minime non possono superare le massime
-                </p>
-              )}
-              <p className="text-[11.5px] leading-snug text-white/40">
-                Valgono per tutti gli esercizi e non seguono più i parametri delle fonti: la
-                scheda lo segnalerà. RIR e recuperi restano quelli calcolati.
+        {mode === "kilo" ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
+            <div className="flex items-start gap-3">
+              <span className="shrink-0">
+                <Mascot size={40} mood="happy" />
+              </span>
+              <p className="min-w-0 text-[12.5px] leading-relaxed text-white/60">
+                Scelgo la divisione adatta ai tuoi giorni e calcolo serie, ripetizioni, RIR e
+                recuperi dai documenti della knowledge base. Gli esercizi preferiti entrano per primi.
               </p>
-            </>
-          ) : (
-            <p className="text-[11.5px] leading-snug text-white/40">
-              Altrimenti le calcolo dai parametri delle fonti in base al tuo obiettivo e livello.
+            </div>
+            <dl className="mt-3 divide-y divide-white/[0.06] text-[13px]">
+              {riepilogo.map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-white/45">{k}</dt>
+                  <dd className="min-w-0 truncate text-right font-medium text-white/85">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-1 text-[11.5px] leading-snug text-white/35">
+              Sono i dati del Profilo: per cambiarli vai lì, oppure scegli «Scelgo io».
             </p>
-          )}
-        </div>
-      </div>
+          </div>
+        ) : (
+          <>
+            <Field title="Giorni di allenamento">
+              <WeekdayPicker value={weekdays} onChange={setWeekdays} />
+            </Field>
 
-      <div className="flex shrink-0 gap-2 border-t border-white/[0.06] px-5 py-4">
-        <button className="btn-ghost flex-1" onClick={onClose}>
+            <Field title="Divisione" hint={SPLIT_HINTS[split]}>
+              <OptionGroup
+                ariaLabel="Divisione"
+                columns="grid-cols-2"
+                value={split}
+                onChange={setSplit}
+                options={Object.entries(SPLIT_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            </Field>
+
+            <Field
+              title="Esercizi preferiti"
+              hint="Quelli che scegli entrano per primi nella scheda"
+              action={
+                <button className="btn-ghost shrink-0 px-3 py-2 text-[12.5px]" onClick={onOpenPrefs}>
+                  Scegli
+                </button>
+              }
+            />
+
+            <Toggle
+              checked={manual}
+              onChange={setManual}
+              label="Decido io serie e ripetizioni"
+              hint={
+                manual
+                  ? "Valgono per tutti gli esercizi e non seguono più le fonti: la scheda lo segnalerà. RIR e recuperi restano calcolati."
+                  : "Altrimenti le calcolo dalle fonti in base a obiettivo e livello."
+              }
+            />
+            {manual && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field title="Serie">
+                  <Stepper compact value={sets} onChange={setSets} min={1} max={10} label="serie per esercizio" />
+                </Field>
+                <Field title="Rip. min">
+                  <Stepper
+                    compact
+                    value={repsMin}
+                    onChange={(n) => {
+                      setRepsMin(n);
+                      setRepsMax((m) => Math.max(m, n));
+                    }}
+                    min={1}
+                    max={50}
+                    label="ripetizioni minime"
+                  />
+                </Field>
+                <Field title="Rip. max">
+                  <Stepper
+                    compact
+                    value={repsMax}
+                    onChange={(n) => {
+                      setRepsMax(n);
+                      setRepsMin((m) => Math.min(m, n));
+                    }}
+                    min={1}
+                    max={50}
+                    label="ripetizioni massime"
+                  />
+                </Field>
+              </div>
+            )}
+          </>
+        )}
+
+        {current && (
+          <Toggle
+            checked={replace}
+            onChange={setReplace}
+            label={`Sostituisci «${planLabel(current)}»`}
+            hint={
+              replace
+                ? "La nuova prende il suo posto; quella attuale resta nello storico dei progressi."
+                : "Altrimenti la nuova si aggiunge alle schede che hai già."
+            }
+          />
+        )}
+      </ModalBody>
+
+      <ModalFooter>
+        <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
           Annulla
         </button>
-        <button
-          className="btn-primary flex-1"
-          disabled={invalido}
-          onClick={() =>
-            onGenerate({
-              split,
-              weekdays,
-              replacePlanId: replacing?.id,
-              sets: manual ? sets : null,
-              repsMin: manual ? repsMin : null,
-              repsMax: manual ? repsMax : null,
-            })
-          }
-        >
-          {replacing ? "Rigenera" : "Genera scheda"}
+        <button className="btn-primary flex-[1.6] justify-center" disabled={invalido} onClick={genera}>
+          {replace && current ? "Sostituisci scheda" : "Genera scheda"}
         </button>
-      </div>
+      </ModalFooter>
     </Modal>
   );
 }
@@ -735,21 +793,19 @@ function DeletePlanDialog({
         subtitle="Sparisce dalle tue schede. Le sessioni già registrate restano nei progressi."
         onClose={onClose}
       />
-      <div className="space-y-3 p-5">
-        {error && <Notice>{error}</Notice>}
-        <div className="flex gap-2">
-          <button className="btn-ghost flex-1" onClick={onClose}>
-            Annulla
-          </button>
-          <button
-            className="flex-1 rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-[13px] font-semibold text-rose-200 transition hover:bg-rose-400/20 disabled:opacity-50"
-            disabled={busy}
-            onClick={confirm}
-          >
-            {busy ? "Elimino…" : "Elimina"}
-          </button>
-        </div>
-      </div>
+      {error && (
+        <ModalBody>
+          <Notice>{error}</Notice>
+        </ModalBody>
+      )}
+      <ModalFooter>
+        <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
+          Annulla
+        </button>
+        <button className="btn-danger flex-[1.6] justify-center" disabled={busy} onClick={confirm}>
+          {busy ? "Elimino…" : "Elimina"}
+        </button>
+      </ModalFooter>
     </Modal>
   );
 }
@@ -773,7 +829,6 @@ function ExerciseRow({
 }) {
   const ex = item.exercise;
   const nome = exerciseName(ex);
-  const schema = `${item.target_sets} × ${item.target_reps_min}-${item.target_reps_max}`;
 
   return (
     <motion.div
@@ -807,7 +862,7 @@ function ExerciseRow({
           className="group min-w-0 flex-1 text-left"
           title="Vedi come si esegue"
         >
-          <p className="truncate text-[14px] font-medium text-white underline-offset-4 group-hover:underline">
+          <p className="line-clamp-2 text-[14px] font-medium leading-snug text-white underline-offset-4 group-hover:underline">
             {nome}
           </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-white/40">
@@ -817,21 +872,6 @@ function ExerciseRow({
             <span className="text-white/15">•</span>
             <span className="truncate">{formatEquipment(ex.equipment)}</span>
           </div>
-        </button>
-
-        <button
-          onClick={() => onEdit(item)}
-          className="group/params hidden shrink-0 items-center gap-4 rounded-2xl border border-dashed border-white/15 px-3 py-1.5 transition hover:border-lime-400/40 hover:bg-lime-400/[0.05] sm:flex"
-          title="Modifica serie, ripetizioni, RIR e recupero"
-        >
-          <Metric value={schema} label="serie × rip." />
-          <Metric value={`RIR ${item.target_rir}`} label="intensità" />
-          <Metric value={`${item.rest_seconds}s`} label="recupero" />
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-lime-400/15 text-lime-300 transition group-hover/params:bg-lime-400 group-hover/params:text-ink-900">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-              <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
-            </svg>
-          </span>
         </button>
 
         <button
@@ -846,31 +886,10 @@ function ExerciseRow({
         </button>
       </div>
 
-      <button
-        onClick={() => onEdit(item)}
-        className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] items-center gap-4 rounded-2xl border border-dashed border-white/15 px-3 py-2 text-left transition active:bg-lime-400/[0.06] sm:hidden"
-        aria-label="Modifica serie, ripetizioni, RIR e recupero"
-      >
-        <Metric value={schema} label="serie × rip." />
-        <Metric value={`RIR ${item.target_rir}`} label="intensità" />
-        <Metric value={`${item.rest_seconds}s`} label="recupero" />
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime-400/15 px-2.5 py-1 text-[12px] font-medium text-lime-300">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-            <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
-          </svg>
-          Modifica
-        </span>
-      </button>
+      <div className="px-3.5 pb-3">
+        <ParamsChips value={item} onEdit={() => onEdit(item)} />
+      </div>
     </motion.div>
-  );
-}
-
-function Metric({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center">
-      <p className="font-mono text-[13px] tabular-nums leading-tight text-white/85">{value}</p>
-      <p className="text-[10px] uppercase tracking-wide text-white/30">{label}</p>
-    </div>
   );
 }
 
@@ -1110,8 +1129,8 @@ function FeedbackDialog({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {result ? (
-          <div className="space-y-3.5 p-5">
-            <div className={`rounded-xl border p-4 ${toneByAdjustment[result.adjustment]}`}>
+          <div className="space-y-3.5 px-4 py-4 sm:px-5">
+            <div className={`rounded-2xl border p-4 ${toneByAdjustment[result.adjustment]}`}>
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wider text-white/45">
                   {result.adjustment === "decrease"
@@ -1132,100 +1151,74 @@ function FeedbackDialog({
             ))}
 
             <SourceTags tags={result.knowledge_tags} />
-
-            <button className="btn-primary w-full" onClick={onClose}>
-              {result.applied ? "Scheda aggiornata" : "Chiudi"}
-            </button>
           </div>
         ) : (
-          <div className="space-y-4 p-5">
-            <div>
-              <label className="label">Vedi miglioramenti?</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { v: "none", l: "Nessuno" },
-                  { v: "slow", l: "Lenti" },
-                  { v: "good", l: "Buoni" },
-                ].map((o) => (
-                  <Choice key={o.v} active={progress === o.v} onClick={() => setProgress(o.v)} label={o.l} />
-                ))}
-              </div>
-            </div>
+          <div className="space-y-3 px-4 py-4 sm:px-5">
+            <Field title="Vedi miglioramenti?">
+              <OptionGroup
+                ariaLabel="Miglioramenti"
+                columns="grid-cols-3"
+                value={progress}
+                onChange={setProgress}
+                options={[
+                  { value: "none", label: "Nessuno" },
+                  { value: "slow", label: "Lenti" },
+                  { value: "good", label: "Buoni" },
+                ]}
+              />
+            </Field>
 
-            <div>
-              <label className="label">Come recuperi fra le sessioni?</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { v: "poor", l: "Male" },
-                  { v: "moderate", l: "Così così" },
-                  { v: "good", l: "Bene" },
-                ].map((o) => (
-                  <Choice key={o.v} active={recovery === o.v} onClick={() => setRecovery(o.v)} label={o.l} />
-                ))}
-              </div>
-            </div>
+            <Field title="Come recuperi fra le sessioni?">
+              <OptionGroup
+                ariaLabel="Recupero"
+                columns="grid-cols-3"
+                value={recovery}
+                onChange={setRecovery}
+                options={[
+                  { value: "poor", label: "Male" },
+                  { value: "moderate", label: "Così così" },
+                  { value: "good", label: "Bene" },
+                ]}
+              />
+            </Field>
 
-            <div>
-              <label className="label">Quanto durano i dolori — {domsHours}h</label>
-              <input
-                type="range"
+            <Field title="Quanto durano i dolori" hint="Oltre le 72 ore indicano che il recupero non sta bastando.">
+              <Stepper
+                value={domsHours}
+                onChange={setDomsHours}
                 min={0}
                 max={120}
                 step={12}
-                value={domsHours}
-                onChange={(e) => setDomsHours(Number(e.target.value))}
-                className="w-full"
+                label="durata dei dolori"
+                format={(h) => `${h} ore`}
               />
-              <p className="mt-1 text-[10.5px] text-white/25">
-                Oltre le 72 ore indicano che il recupero non sta bastando
-              </p>
-            </div>
+            </Field>
 
-            <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-white/70">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-amber-400"
-                checked={affects}
-                onChange={(e) => setAffects(e.target.checked)}
-              />
-              I dolori mi rovinano le sessioni successive
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-white/70">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-lime-400"
-                checked={apply}
-                onChange={(e) => setApply(e.target.checked)}
-              />
-              Applica subito la modifica alla scheda
-            </label>
-
-            <button className="btn-primary w-full" disabled={sending} onClick={submit}>
-              {sending ? "Valuto…" : "Dimmi cosa cambiare"}
-            </button>
+            <Toggle checked={affects} onChange={setAffects} label="I dolori mi rovinano le sessioni successive" />
+            <Toggle checked={apply} onChange={setApply} label="Applica subito la modifica alla scheda" />
           </div>
         )}
       </div>
+
+      <ModalFooter>
+        {result ? (
+          <button className="btn-primary flex-1 justify-center" onClick={onClose}>
+            {result.applied ? "Scheda aggiornata · Chiudi" : "Chiudi"}
+          </button>
+        ) : (
+          <>
+            <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
+              Annulla
+            </button>
+            <button className="btn-primary flex-[1.6] justify-center" disabled={sending} onClick={submit}>
+              {sending ? "Valuto…" : "Dimmi cosa cambiare"}
+            </button>
+          </>
+        )}
+      </ModalFooter>
     </Modal>
   );
 }
-
-function Choice({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-xl border px-3 py-2.5 text-[12.5px] font-medium transition ${
-        active
-          ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
-          : "border-white/[0.08] bg-white/[0.025] text-white/55 hover:bg-white/[0.06]"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 
 /** Il pulsante che prende il posto di "Inizia allenamento" mentre si è in corso. */
 function ActiveWorkoutPill({ session, onOpen }: { session: WorkoutSessionLog; onOpen: () => void }) {
