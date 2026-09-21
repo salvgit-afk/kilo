@@ -26,7 +26,7 @@
  * 28 px in su e rispettano "riduci movimento" del sistema.
  */
 
-import { useId, useState } from "react";
+import { useId, useRef } from "react";
 
 export type MascotMood = "idle" | "thinking" | "happy" | "goal" | "remind";
 
@@ -54,7 +54,18 @@ export function Mascot({
   className?: string;
 }) {
   const id = useId().replace(/:/g, "");
-  const [squish, setSquish] = useState(0);
+  // Il "rimbalzo" al tocco riparte sullo stesso elemento, senza ricrearlo:
+  // ricrearlo alla pressione (con una `key`) toglieva dalla pagina l'elemento
+  // toccato prima del rilascio, e il browser a volte non generava il click —
+  // la chat, per esempio, non si apriva.
+  const body = useRef<SVGGElement>(null);
+  const squish = () => {
+    const el = body.current;
+    if (!el) return;
+    el.classList.remove("m-squish");
+    void el.getBoundingClientRect(); // forza il riavvio dell'animazione
+    el.classList.add("m-squish");
+  };
 
   if (size < DETAIL_MIN_SIZE) return <FlatMascot size={size} mood={mood} className={className} />;
 
@@ -68,7 +79,7 @@ export function Mascot({
       width={size}
       height={size}
       aria-hidden="true"
-      onPointerDown={interactive ? () => setSquish((n) => n + 1) : undefined}
+      onPointerDown={interactive ? squish : undefined}
       className={`mascot mascot-${mood} ${animated ? "mascot-anim" : ""} ${
         interactive ? "mascot-interactive" : ""
       } ${className}`}
@@ -116,7 +127,11 @@ export function Mascot({
       {/* ombra al suolo: resta ferma mentre il corpo salta */}
       <ellipse className="m-shadow" cx="60" cy="110" rx="30" ry="5.5" fill="#000" opacity="0.45" filter={g("soft")} />
 
-      <g key={squish} className={`m-body ${squish ? "m-squish" : ""}`}>
+      <g
+        ref={body}
+        className="m-body"
+        onAnimationEnd={(e) => e.animationName === "mascot-squish" && e.currentTarget.classList.remove("m-squish")}
+      >
         {/* maniglia tubolare con il riflesso */}
         <path d="M39 52C33 20 87 20 81 52" fill="none" stroke={g("handle")} strokeWidth="12.5" strokeLinecap="round" />
         <path d="M39.5 48C35 25 85 25 80.5 48" fill="none" stroke="#9aa3c7" strokeOpacity="0.45" strokeWidth="2.4" strokeLinecap="round" />

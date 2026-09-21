@@ -246,6 +246,9 @@ export function ChatBubble({
         whileHover={{ scale: 1.07 }}
         className="chat-fab group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6"
         aria-label={open ? "Chiudi la chat con Kilo" : "Apri la chat con Kilo"}
+        // Un tocco con un minimo movimento del dito non deve diventare uno
+        // swipe fra le sezioni, che annullerebbe il click.
+        data-no-swipe
       >
         <span className="coach-fab block">
           <Mascot size={48} mood={busy ? "thinking" : pendingNotes.length ? "remind" : "idle"} interactive />
@@ -280,7 +283,10 @@ export function ChatBubble({
             // Su mobile il pannello parte sopra la mascotte (che sta sopra la
             // barra di navigazione): altrimenti la copriva e non si poteva
             // richiudere la chat toccandola.
-            className="glass fixed inset-x-3 bottom-[calc(168px+env(safe-area-inset-bottom))] z-[100] flex max-h-[calc(100dvh-190px-env(safe-area-inset-bottom))] flex-col overflow-hidden bg-ink-800/90 lg:inset-x-auto lg:bottom-[100px] lg:right-6 lg:h-[580px] lg:max-h-[75dvh] lg:w-[420px]"
+            // Niente sfocatura dello sfondo: animata insieme all'opacità, il
+            // browser la mostrava piena per un istante prima dell'apertura e
+            // dopo la chiusura. Il fondo quasi opaco la rende superflua.
+            className="glass fixed inset-x-3 bottom-[calc(168px+env(safe-area-inset-bottom))] z-[100] flex max-h-[calc(100dvh-190px-env(safe-area-inset-bottom))] flex-col overflow-hidden bg-ink-800/[0.97] backdrop-blur-none lg:inset-x-auto lg:bottom-[100px] lg:right-6 lg:h-[580px] lg:max-h-[75dvh] lg:w-[420px]"
           >
             <EscapeToClose onClose={() => setOpen(false)} />
 

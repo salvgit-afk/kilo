@@ -8,7 +8,8 @@
  *   toccando i giorni si cambia la proposta, e la frequenza li segue.
  * - **WeekLine**: la settimana come una linea di pallini, verdi nei giorni di
  *   allenamento. Toccando un giorno il pallino si allarga e mostra
- *   l'allenamento di quel giorno; toccando la pillola lo si apre.
+ *   l'allenamento di quel giorno; toccando di nuovo la pillola si richiude,
+ *   e la freccia al suo interno apre quel giorno nella scheda.
  *
  * Quale allenamento cade in quale giorno: gli allenamenti della scheda (A, B,
  * Push…) si susseguono nell'ordine dei giorni scelti, e se i giorni sono più
@@ -16,7 +17,7 @@
  * invece di ripartire sempre da A.
  */
 
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { LayoutGroup, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { api, localDate, shiftDate, type WorkoutPlan, type WorkoutSessionLog } from "@/lib/api";
 import { Modal, ModalHeader } from "@/components/controls";
@@ -201,6 +202,15 @@ export function ScheduleDialog({
 
 // --- Linea della settimana ------------------------------------------------------------------
 
+const ANELLO_OGGI = "ring-2 ring-white/60 ring-offset-1 ring-offset-ink-900";
+
+function colore(allenamento: boolean, fatto: boolean): string {
+  if (!allenamento) return "border-white/10 bg-ink-800 text-white/40";
+  return fatto
+    ? "border-lime-400 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
+    : "border-lime-400/55 bg-ink-800 text-lime-100 shadow-[0_0_18px_-6px_rgba(174,212,74,0.8)]";
+}
+
 export function WeekLine({
   plan,
   profileId,
@@ -245,7 +255,7 @@ export function WeekLine({
     <LayoutGroup id={`week-${plan.id}`}>
       <div className="relative flex items-start gap-1 py-1">
         {/* La linea che unisce i giorni, dietro ai pallini. */}
-        <div className="pointer-events-none absolute left-4 right-4 top-[21px] h-[2px] rounded-full bg-white/[0.08]" />
+        <div className="pointer-events-none absolute left-4 right-4 top-[20px] h-[2px] rounded-full bg-white/[0.08]" />
         {giorni.map((data, g) => {
           const label = assegnati[g];
           const allenamento = label !== undefined;
@@ -257,60 +267,65 @@ export function WeekLine({
               key={data}
               layout
               transition={{ type: "spring", stiffness: 420, damping: 34 }}
-              className={`relative flex min-w-0 flex-col items-center ${espanso ? "flex-[2.4]" : "flex-1"}`}
+              className={`relative flex min-w-0 flex-col items-center ${espanso ? "flex-[3]" : "flex-1"}`}
             >
-              <motion.button
-                layout
-                transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                onClick={() => {
-                  if (espanso && allenamento && onOpenDay) onOpenDay(label);
-                  else setAperto(espanso ? null : g);
-                }}
-                aria-expanded={espanso}
-                aria-label={`${WEEKDAY_NAMES[g]}: ${allenamento ? dayTitle(label) : "riposo"}${fatto ? ", fatto" : ""}`}
-                className={`relative z-10 flex h-9 items-center justify-center overflow-hidden border transition-colors ${
-                  espanso ? "w-full rounded-[18px] px-2" : "w-9 rounded-full"
-                } ${
-                  allenamento
-                    ? fatto
-                      ? "border-lime-400 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
-                      : "border-lime-400/55 bg-ink-800 text-lime-100 shadow-[0_0_18px_-6px_rgba(174,212,74,0.8)]"
-                    : "border-white/10 bg-ink-800 text-white/35"
-                } ${oggiQui ? "ring-2 ring-white/60 ring-offset-1 ring-offset-ink-900" : ""}`}
-              >
-                <AnimatePresence mode="popLayout" initial={false}>
-                  {espanso ? (
+              {espanso ? (
+                <motion.div
+                  layoutId={`giorno-${plan.id}-${g}`}
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  className={`relative z-10 flex h-[34px] w-full items-center overflow-hidden rounded-full border ${colore(allenamento, fatto)} ${oggiQui ? ANELLO_OGGI : ""}`}
+                >
+                  {/* Tocco sulla pillola: si richiude, come nei giorni di riposo. */}
+                  <button
+                    onClick={() => setAperto(null)}
+                    aria-label={`Chiudi ${WEEKDAY_NAMES[g]}`}
+                    className="flex h-full min-w-0 flex-1 flex-col items-center justify-center pl-2 pr-1 leading-tight"
+                  >
                     <motion.span
-                      key="aperto"
                       initial={{ opacity: 0, scale: 0.85 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.85 }}
-                      className="flex min-w-0 flex-col items-center leading-tight"
+                      className="max-w-full truncate text-[12px] font-semibold"
                     >
-                      <span className="max-w-full truncate text-[12.5px] font-semibold">
-                        {allenamento ? dayTitle(label) : "Riposo"}
-                      </span>
-                      <span className={`max-w-full truncate text-[10.5px] ${fatto ? "text-ink-900/70" : "text-white/50"}`}>
-                        {allenamento
-                          ? fatto
-                            ? "fatto ✓"
-                            : `${esercizi(label)} esercizi`
-                          : "recupero"}
-                      </span>
+                      {allenamento ? dayTitle(label) : "Riposo"}
                     </motion.span>
-                  ) : (
                     <motion.span
-                      key="chiuso"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="text-[13px] font-semibold"
+                      className={`max-w-full truncate text-[10px] ${fatto ? "text-ink-900/70" : "text-white/50"}`}
                     >
-                      {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                      {allenamento ? (fatto ? "fatto ✓" : `${esercizi(label)} esercizi`) : "recupero"}
                     </motion.span>
+                  </button>
+                  {/* La freccia apre quel giorno nella scheda. */}
+                  {allenamento && onOpenDay && (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.6 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.08 }}
+                      onClick={() => onOpenDay(label)}
+                      aria-label={`Apri ${dayTitle(label)} nella scheda`}
+                      className={`mr-[3px] grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full ${
+                        fatto ? "bg-ink-900/85 text-lime-300" : "bg-lime-400 text-ink-900"
+                      }`}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3}>
+                        <path d="M5 12h13m-5-6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </motion.button>
                   )}
-                </AnimatePresence>
-              </motion.button>
+                </motion.div>
+              ) : (
+                <motion.button
+                  layoutId={`giorno-${plan.id}-${g}`}
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  onClick={() => setAperto(g)}
+                  aria-expanded={false}
+                  aria-label={`${WEEKDAY_NAMES[g]}: ${allenamento ? dayTitle(label) : "riposo"}${fatto ? ", fatto" : ""}`}
+                  className={`relative z-10 grid h-[34px] w-[34px] place-items-center rounded-full border text-[12.5px] font-semibold ${colore(allenamento, fatto)} ${oggiQui ? ANELLO_OGGI : ""}`}
+                >
+                  {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                </motion.button>
+              )}
               <motion.span
                 layout="position"
                 className={`mt-1.5 text-[11px] ${oggiQui ? "font-semibold text-white/80" : allenamento ? "text-lime-200/70" : "text-white/30"}`}
