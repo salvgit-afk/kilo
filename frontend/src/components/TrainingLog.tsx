@@ -1,22 +1,28 @@
 "use client";
 
 /**
- * Allenamento in corso, storico dei carichi e parametri della scheda.
+ * Allenamento: avvio, serie, fine. E i parametri della scheda.
  *
- * - **Parametri** (serie, ripetizioni, RIR, recupero): si cambiano sia nella
- *   scheda sia durante l'allenamento. Durante l'allenamento valgono per la
- *   sessione, e con "Salva anche nella scheda" diventano il nuovo modello.
+ * L'allenamento ha tre stati, e il pannello li mostra in modo diverso:
+ * - **pronto**: cosa ti aspetta oggi e un grande "Avvia allenamento";
+ * - **in corso**: il cronometro, le serie una a una e il recupero. Chiudendo
+ *   il pannello l'allenamento continua: nella pagina il pulsante diventa
+ *   "Allenamento in corso" con il tempo che scorre, e lo si riapre da lì;
+ * - **completato**: il riepilogo (durata, serie, chili, record).
+ *
+ * Le serie: i valori dell'ultima volta sono un **suggerimento in grigio**
+ * dentro i campi, non numeri già scritti. Diventano tuoi quando li confermi
+ * con ✓ (anche lasciando il campo vuoto, se il suggerimento va bene) o li
+ * cambi. Ogni serie confermata si salva subito e dice com'è andata rispetto
+ * all'ultima volta.
+ *
+ * I parametri (serie, ripetizioni, RIR, recupero) si cambiano con riquadri
+ * grandi: nella scheda valgono per sempre, durante l'allenamento per la
+ * sessione, con "Salva anche nella scheda" per tenerli.
+ *
  * `exercises` va passato stabile (una copia fatta all'apertura): la sessione
  * si carica una volta sola, e un nuovo array a ogni render della pagina la
  * ricaricherebbe azzerando le serie in corso.
- *
- * - **Sessione**: ogni serie si salva appena la si conferma, non a fine
- *   allenamento: se il telefono si blocca a metà non si perde niente, e
- *   riaprendo si ritrovano le serie già segnate. I campi partono dalla serie
- *   precedente o da quella dell'ultima volta; dopo ogni serie parte il
- *   recupero.
- * - **Storico**: ogni sessione ha le sue serie. Correggere un carico cambia
- *   solo quella serie, così la progressione resta leggibile.
  */
 
 import { AnimatePresence, motion } from "framer-motion";
@@ -24,16 +30,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   exerciseName,
+  localDate,
   type ExerciseHistory,
   type ExerciseSession,
   type PlanExercise,
   type PlanExerciseParams,
   type SessionSet,
+  type SessionSummary,
   type WorkoutPlan,
   type WorkoutSessionLog,
 } from "@/lib/api";
-import { Modal, ModalHeader, NumberField } from "@/components/controls";
+import { CloseButton, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
+import { Mascot } from "@/components/Mascot";
 
 // --- Formati ----------------------------------------------------------------------
 
@@ -50,6 +59,31 @@ function restLabel(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
+/** Durata in forma di cronometro: 4:05, 1:02:10. */
+export function clock(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const mm = h ? String(m).padStart(2, "0") : String(m);
+  return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
+}
+
+/** Le date del server senza fuso (SQLite) sono in UTC. */
+export function serverTime(iso: string): number {
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`).getTime();
+}
+
+/** Secondi trascorsi da `startedAt`, aggiornati ogni secondo. */
+export function useElapsed(startedAt: string | null | undefined): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!startedAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [startedAt]);
+  return startedAt ? Math.max(0, Math.floor((now - serverTime(startedAt)) / 1000)) : 0;
 }
 
 export function setsSummary(sets: SessionSet[]): string {
@@ -72,6 +106,64 @@ function sameParams(a: PlanExerciseParams, b: PlanExerciseParams): boolean {
 
 // --- Parametri ----------------------------------------------------------------------
 
+function Stepper({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  format = String,
+  label,
+  compact = false,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  format?: (n: number) => string;
+  label: string;
+  compact?: boolean;
+}) {
+  const bottone = (dir: 1 | -1) => (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.88 }}
+      disabled={dir < 0 ? value <= min : value >= max}
+      onClick={() => onChange(Math.min(max, Math.max(min, value + dir * step)))}
+      aria-label={`${dir > 0 ? "Aumenta" : "Diminuisci"} ${label}`}
+      className={`grid shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/70 transition hover:border-lime-400/40 hover:text-lime-200 disabled:opacity-25 ${
+        compact ? "h-9 w-9" : "h-10 w-10"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round">
+        {dir > 0 ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
+      </svg>
+    </motion.button>
+  );
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {bottone(-1)}
+      <span className="min-w-0 flex-1 whitespace-nowrap text-center font-mono text-[22px] font-semibold tabular-nums text-white">
+        {format(value)}
+      </span>
+      {bottone(1)}
+    </div>
+  );
+}
+
+function Tile({ title, hint, children, className = "" }: { title: string; hint?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 ${className}`}>
+      <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">{title}</p>
+      {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-white/35">{hint}</p>}
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
+const RECUPERI = [60, 90, 120, 150, 180];
+
 export function ParamsEditor({
   value,
   onChange,
@@ -79,32 +171,94 @@ export function ParamsEditor({
   value: PlanExerciseParams;
   onChange: (v: PlanExerciseParams) => void;
 }) {
-  const set = (k: keyof PlanExerciseParams) => (n: number | null) =>
-    n !== null && onChange({ ...value, [k]: n });
-  const campi: [keyof PlanExerciseParams, string, number, number, number, string?][] = [
-    ["target_sets", "Serie", 1, 10, 1],
-    ["target_reps_min", "Rip. min", 1, 50, 1],
-    ["target_reps_max", "Rip. max", 1, 50, 1],
-    ["target_rir", "RIR", 0, 5, 1],
-    ["rest_seconds", "Recupero", 15, 600, 15, "s"],
-  ];
+  const set = <K extends keyof PlanExerciseParams>(k: K, n: number) => onChange({ ...value, [k]: n });
   return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 sm:grid-cols-5">
-      {campi.map(([k, label, min, max, step, suffix]) => (
-        <label key={k} className={k === "rest_seconds" ? "col-span-2 sm:col-span-1" : ""}>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-white/40">{label}</span>
-          <NumberField
-            value={value[k]}
-            onChange={set(k)}
-            min={min}
-            max={max}
-            step={step}
-            suffix={suffix}
-            size="sm"
-            ariaLabel={label}
+    <div className="grid grid-cols-2 gap-3">
+      <Tile title="Serie" className="col-span-2">
+        <div className="mx-auto max-w-[220px]">
+          <Stepper value={value.target_sets} onChange={(n) => set("target_sets", n)} min={1} max={10} label="serie" />
+        </div>
+      </Tile>
+      <Tile title="Ripetizioni" hint="Da quante a quante per serie." className="col-span-2">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="mb-1.5 text-center text-[11px] text-white/40">minime</p>
+            <Stepper
+              compact
+              value={value.target_reps_min}
+              onChange={(n) => onChange({ ...value, target_reps_min: n, target_reps_max: Math.max(n, value.target_reps_max) })}
+              min={1}
+              max={50}
+              label="ripetizioni minime"
+            />
+          </div>
+          <div>
+            <p className="mb-1.5 text-center text-[11px] text-white/40">massime</p>
+            <Stepper
+              compact
+              value={value.target_reps_max}
+              onChange={(n) => onChange({ ...value, target_reps_max: n, target_reps_min: Math.min(n, value.target_reps_min) })}
+              min={1}
+              max={50}
+              label="ripetizioni massime"
+            />
+          </div>
+        </div>
+      </Tile>
+      <Tile title="RIR" hint="Ripetizioni che tieni di riserva a fine serie: 0 è il cedimento." className="col-span-2">
+        <div className="grid grid-cols-6 gap-1.5">
+          {[0, 1, 2, 3, 4, 5].map((n) => (
+            <motion.button
+              key={n}
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => set("target_rir", n)}
+              aria-pressed={value.target_rir === n}
+              className={`h-11 rounded-xl border font-mono text-[16px] font-semibold transition ${
+                value.target_rir === n
+                  ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                  : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
+              }`}
+            >
+              {n}
+            </motion.button>
+          ))}
+        </div>
+      </Tile>
+      <Tile title="Recupero tra le serie" className="col-span-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {RECUPERI.map((sec) => (
+            <motion.button
+              key={sec}
+              type="button"
+              whileTap={{ scale: 0.92 }}
+              onClick={() => set("rest_seconds", sec)}
+              aria-pressed={value.rest_seconds === sec}
+              className={`h-10 flex-1 rounded-xl border px-2 font-mono text-[14px] font-semibold transition ${
+                value.rest_seconds === sec
+                  ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                  : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
+              }`}
+            >
+              {restLabel(sec)}
+            </motion.button>
+          ))}
+        </div>
+        {!RECUPERI.includes(value.rest_seconds) && (
+          <p className="mt-2 text-[12px] text-white/45">Attuale: {restLabel(value.rest_seconds)}</p>
+        )}
+        <div className="mt-3">
+          <Stepper
+            value={value.rest_seconds}
+            onChange={(n) => set("rest_seconds", n)}
+            min={15}
+            max={600}
+            step={15}
+            label="recupero"
+            format={restLabel}
           />
-        </label>
-      ))}
+        </div>
+      </Tile>
     </div>
   );
 }
@@ -124,7 +278,7 @@ export function PlanParamsDialog({
   const [value, setValue] = useState(paramsOf(item));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const invalid = value.target_reps_min > value.target_reps_max;
+  const cambiati = !sameParams(value, paramsOf(item));
 
   async function save() {
     setSaving(true);
@@ -139,39 +293,42 @@ export function PlanParamsDialog({
   }
 
   return (
-    <Modal onClose={onClose} className="max-w-lg">
+    <Modal onClose={onClose} className="max-w-lg" align="top">
       <ModalHeader
-        eyebrow="Modifica scheda"
+        eyebrow="Modifica l'esercizio"
         title={exerciseName(item.exercise)}
-        subtitle="I valori iniziali vengono dalle fonti; da qui in poi sono una tua scelta."
+        subtitle="I valori di partenza vengono dalle fonti. Da qui in poi decidi tu: valgono per tutte le prossime sessioni."
         onClose={onClose}
       />
-      <div className="space-y-4 overflow-y-auto p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
         <ParamsEditor value={value} onChange={setValue} />
-        {invalid && <Notice>Le ripetizioni minime non possono superare le massime.</Notice>}
-        {error && <Notice>{error}</Notice>}
-        <div className="flex gap-2">
-          <button className="btn-primary flex-1" onClick={save} disabled={saving || invalid}>
-            {saving ? "Salvo…" : "Salva nella scheda"}
-          </button>
-          <button className="btn-ghost" onClick={onClose}>
-            Annulla
-          </button>
-        </div>
+        {error && (
+          <div className="mt-3">
+            <Notice>{error}</Notice>
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 gap-2 border-t border-white/[0.06] p-4">
+        <button className="btn-ghost flex-1 justify-center" onClick={onClose}>
+          Annulla
+        </button>
+        <button className="btn-primary flex-[1.7] justify-center whitespace-nowrap" onClick={save} disabled={saving || !cambiati}>
+          {saving ? "Salvo…" : "Salva nella scheda"}
+        </button>
       </div>
     </Modal>
   );
 }
 
-// --- Allenamento in corso -----------------------------------------------------------
+// --- Allenamento ----------------------------------------------------------------------
 
 type Row = {
   key: string;
   setId: number | null;
+  // null = campo vuoto: vale il suggerimento mostrato in grigio.
   kg: number | null;
   reps: number | null;
   rir: number | null;
-  // Valori salvati: se diversi da quelli nei campi, la serie va risalvata.
   saved: { kg: number; reps: number; rir: number | null } | null;
   busy?: boolean;
   confirmDelete?: boolean;
@@ -180,12 +337,11 @@ type Row = {
 let rowSeq = 0;
 const newKey = () => `r${++rowSeq}`;
 
-function rowsFor(
-  item: PlanExercise,
-  target: PlanExerciseParams,
-  logged: SessionSet[],
-  last: ExerciseSession | undefined
-): Row[] {
+function emptyRow(): Row {
+  return { key: newKey(), setId: null, kg: null, reps: null, rir: null, saved: null };
+}
+
+function rowsFor(target: PlanExerciseParams, logged: SessionSet[]): Row[] {
   const rows: Row[] = logged.map((s) => ({
     key: newKey(),
     setId: s.id,
@@ -194,23 +350,41 @@ function rowsFor(
     rir: s.rir,
     saved: { kg: s.weight_kg, reps: s.reps, rir: s.rir },
   }));
-  while (rows.length < target.target_sets) rows.push(prefill(rows, rows.length, target, last));
+  while (rows.length < target.target_sets) rows.push(emptyRow());
   return rows;
 }
 
-/** La serie successiva parte dalla precedente, o da quella dell'ultima volta. */
-function prefill(rows: Row[], index: number, target: PlanExerciseParams, last?: ExerciseSession): Row {
-  const prima = rows[index - 1];
-  const volta = last?.sets[index] ?? last?.sets[last.sets.length - 1];
-  return {
-    key: newKey(),
-    setId: null,
-    kg: prima?.kg ?? volta?.weight_kg ?? null,
-    reps: prima?.reps ?? volta?.reps ?? target.target_reps_max,
-    rir: prima?.rir ?? target.target_rir,
-    saved: null,
-  };
+type Hint = { kg: number | null; reps: number; rir: number };
+
+/** Il suggerimento di ogni riga: la serie prima, o quella dell'ultima volta. */
+function hintsFor(rows: Row[], target: PlanExerciseParams, last?: ExerciseSession): Hint[] {
+  const out: Hint[] = [];
+  rows.forEach((r, i) => {
+    const volta = last?.sets[i] ?? last?.sets[last.sets.length - 1];
+    const prima = i > 0 ? out[i - 1] : null;
+    const primaRiga = i > 0 ? rows[i - 1] : null;
+    out.push({
+      kg: primaRiga?.kg ?? prima?.kg ?? volta?.weight_kg ?? null,
+      reps: primaRiga?.reps ?? prima?.reps ?? volta?.reps ?? target.target_reps_max,
+      rir: primaRiga?.rir ?? prima?.rir ?? target.target_rir,
+    });
+  });
+  return out;
 }
+
+/** Com'è andata la serie rispetto alla stessa serie dell'ultima volta. */
+function compare(saved: { kg: number; reps: number }, prev?: SessionSet): { text: string; better: boolean | null } | null {
+  if (!prev) return null;
+  const dKg = Math.round((saved.kg - prev.weight_kg) * 100) / 100;
+  if (dKg > 0) return { text: `+${kg(dKg)} kg`, better: true };
+  if (dKg < 0) return { text: `${kg(dKg)} kg`, better: false };
+  const dReps = saved.reps - prev.reps;
+  if (dReps > 0) return { text: `+${dReps} rip.`, better: true };
+  if (dReps < 0) return { text: `${dReps} rip.`, better: false };
+  return { text: "come l'ultima volta", better: null };
+}
+
+type Phase = "loading" | "ready" | "running" | "done";
 
 export function SessionDialog({
   profileId,
@@ -219,6 +393,7 @@ export function SessionDialog({
   exercises,
   onClose,
   onPlanUpdated,
+  onSessionChange,
 }: {
   profileId: number;
   plan: WorkoutPlan;
@@ -226,33 +401,39 @@ export function SessionDialog({
   exercises: PlanExercise[];
   onClose: () => void;
   onPlanUpdated: (plan: WorkoutPlan) => void;
+  /** L'allenamento in corso (o null quando termina): per il pulsante nella pagina. */
+  onSessionChange?: (session: WorkoutSessionLog | null) => void;
 }) {
+  const [phase, setPhase] = useState<Phase>("loading");
   const [session, setSession] = useState<WorkoutSessionLog | null>(null);
+  const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [last, setLast] = useState<Record<number, ExerciseSession>>({});
   const [targets, setTargets] = useState<Record<number, PlanExerciseParams>>(() =>
     Object.fromEntries(exercises.map((e) => [e.id, paramsOf(e)]))
   );
-  // I parametri della scheda: dopo "Salva anche nella scheda" diventano i nuovi.
   const [base, setBase] = useState<Record<number, PlanExerciseParams>>(() =>
     Object.fromEntries(exercises.map((e) => [e.id, paramsOf(e)]))
   );
-  const [rows, setRows] = useState<Record<number, Row[]> | null>(null);
+  const [rows, setRows] = useState<Record<number, Row[]>>({});
   const [editing, setEditing] = useState<number | null>(null);
   const [history, setHistory] = useState<PlanExercise | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; total: number } | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [finishing, setFinishing] = useState(false);
   const creating = useRef<Promise<WorkoutSessionLog> | null>(null);
   const sessionRef = useRef<WorkoutSessionLog | null>(null);
   sessionRef.current = session;
+  const elapsed = useElapsed(phase === "running" ? session?.started_at : null);
+  const oggi = useMemo(() => localDate(), []);
 
-  // Sessione di oggi (se già iniziata) e ultima volta di ogni esercizio.
+  // La sessione di oggi (se c'è) e l'ultima volta di ogni esercizio.
   useEffect(() => {
     let annullato = false;
     (async () => {
       try {
         const corrente = await api.get<WorkoutSessionLog | null>(
-          `/workout/sessions/current?profile_id=${profileId}&day_label=${encodeURIComponent(dayLabel)}&plan_id=${plan.id}`
+          `/workout/sessions/current?profile_id=${profileId}&day_label=${encodeURIComponent(dayLabel)}&plan_id=${plan.id}&today=${oggi}`
         );
         const params = new URLSearchParams({ profile_id: String(profileId) });
         exercises.forEach((e) => params.append("exercise_ids", String(e.exercise.id)));
@@ -266,26 +447,25 @@ export function SessionDialog({
             exercises.map((e) => [
               e.id,
               rowsFor(
-                e,
                 paramsOf(e),
                 (corrente?.sets ?? [])
                   .filter((s) => s.exercise_id === e.exercise.id)
-                  .sort((a, b) => a.set_number - b.set_number),
-                ultime[e.exercise.id]
+                  .sort((a, b) => a.set_number - b.set_number)
               ),
             ])
           )
         );
+        setPhase(corrente?.started_at && !corrente.ended_at ? "running" : "ready");
       } catch (e) {
-        if (!annullato) setError(e instanceof Error ? e.message : "Non riesco a caricare la sessione.");
+        if (!annullato) setError(e instanceof Error ? e.message : "Non riesco a caricare l'allenamento.");
       }
     })();
     return () => {
       annullato = true;
     };
-  }, [profileId, plan.id, dayLabel, exercises]);
+  }, [profileId, plan.id, dayLabel, exercises, oggi]);
 
-  // Il timer del recupero.
+  // Recupero.
   useEffect(() => {
     if (!rest) return;
     const t = setInterval(() => setNow(Date.now()), 250);
@@ -303,36 +483,76 @@ export function SessionDialog({
     }
   }, [rest, remaining]);
 
-  const ensureSession = useCallback(async () => {
-    if (sessionRef.current) return sessionRef.current;
-    if (!creating.current) {
-      creating.current = api.post<WorkoutSessionLog>(`/workout/sessions?profile_id=${profileId}`, {
-        day_label: dayLabel,
-        workout_plan_id: plan.id,
-      });
-    }
-    const s = await creating.current;
+  function update(s: WorkoutSessionLog | null) {
     setSession(s);
-    return s;
-  }, [profileId, dayLabel, plan.id]);
-
-  function patchRow(itemId: number, key: string, change: Partial<Row>) {
-    setRows((prev) =>
-      prev ? { ...prev, [itemId]: prev[itemId].map((r) => (r.key === key ? { ...r, ...change } : r)) } : prev
-    );
+    onSessionChange?.(s && s.started_at && !s.ended_at ? s : null);
   }
 
-  async function saveRow(item: PlanExercise, row: Row, index: number) {
-    if (row.kg === null || row.reps === null || row.reps < 1) return;
+  /** Avvia l'allenamento: crea la sessione di oggi, o riapre quella chiusa. */
+  const start = useCallback(async () => {
+    setError(null);
+    try {
+      let s = sessionRef.current;
+      if (s) {
+        s = await api.post<WorkoutSessionLog>(`/workout/sessions/${s.id}/start`);
+      } else {
+        if (!creating.current) {
+          creating.current = api.post<WorkoutSessionLog>(`/workout/sessions?profile_id=${profileId}`, {
+            day_label: dayLabel,
+            workout_plan_id: plan.id,
+            date: oggi,
+            start: true,
+          });
+        }
+        s = await creating.current;
+      }
+      update(s);
+      setPhase("running");
+      return s;
+    } catch (e) {
+      creating.current = null;
+      setError(e instanceof Error ? e.message : "Non sono riuscito ad avviare l'allenamento.");
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId, dayLabel, plan.id, oggi]);
+
+  async function finish() {
+    const s = sessionRef.current;
+    if (!s) return;
+    setFinishing(true);
+    try {
+      const r = await api.post<SessionSummary>(`/workout/sessions/${s.id}/finish`);
+      setSummary(r);
+      update(r.session);
+      setRest(null);
+      setPhase("done");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito a chiudere l'allenamento.");
+    } finally {
+      setFinishing(false);
+    }
+  }
+
+  function patchRow(itemId: number, key: string, change: Partial<Row>) {
+    setRows((prev) => ({ ...prev, [itemId]: prev[itemId].map((r) => (r.key === key ? { ...r, ...change } : r)) }));
+  }
+
+  async function saveRow(item: PlanExercise, row: Row, index: number, hint: Hint) {
+    const pesi = row.kg ?? hint.kg;
+    const ripetizioni = row.reps ?? hint.reps;
+    const rir = row.rir ?? hint.rir;
+    if (pesi === null || !ripetizioni) return;
     patchRow(item.id, row.key, { busy: true });
     setError(null);
     try {
-      const corpo = { weight_kg: row.kg, reps: row.reps, rir: row.rir };
+      const corpo = { weight_kg: pesi, reps: ripetizioni, rir };
       let id = row.setId;
       if (id) {
         await api.patch(`/workout/sets/${id}`, corpo);
       } else {
-        const s = await ensureSession();
+        const s = sessionRef.current?.started_at && !sessionRef.current.ended_at ? sessionRef.current : await start();
+        if (!s) throw new Error("allenamento non avviato");
         const creata = await api.post<SessionSet>(`/workout/sessions/${s.id}/sets`, {
           ...corpo,
           exercise_id: item.exercise.id,
@@ -342,11 +562,7 @@ export function SessionDialog({
         const recupero = targets[item.id].rest_seconds;
         setRest({ endsAt: Date.now() + recupero * 1000, total: recupero });
       }
-      patchRow(item.id, row.key, {
-        setId: id,
-        busy: false,
-        saved: { kg: row.kg, reps: row.reps, rir: row.rir },
-      });
+      patchRow(item.id, row.key, { setId: id, busy: false, kg: pesi, reps: ripetizioni, rir, saved: { kg: pesi, reps: ripetizioni, rir } });
     } catch (e) {
       patchRow(item.id, row.key, { busy: false });
       setError(e instanceof Error ? `Serie non salvata: ${e.message}` : "Serie non salvata.");
@@ -368,28 +584,14 @@ export function SessionDialog({
         return;
       }
     }
-    setRows((prev) => (prev ? { ...prev, [item.id]: prev[item.id].filter((r) => r.key !== row.key) } : prev));
-  }
-
-  function addRow(item: PlanExercise) {
-    setRows((prev) =>
-      prev
-        ? {
-            ...prev,
-            [item.id]: [...prev[item.id], prefill(prev[item.id], prev[item.id].length, targets[item.id], last[item.exercise.id])],
-          }
-        : prev
-    );
+    setRows((prev) => ({ ...prev, [item.id]: prev[item.id].filter((r) => r.key !== row.key) }));
   }
 
   function changeTargets(item: PlanExercise, v: PlanExerciseParams) {
     setTargets((prev) => ({ ...prev, [item.id]: v }));
-    // Più serie: righe in più già precompilate. Meno serie: si tolgono solo
-    // quelle non ancora salvate.
     setRows((prev) => {
-      if (!prev) return prev;
       let righe = [...prev[item.id]];
-      while (righe.length < v.target_sets) righe.push(prefill(righe, righe.length, v, last[item.exercise.id]));
+      while (righe.length < v.target_sets) righe.push(emptyRow());
       while (righe.length > v.target_sets && righe[righe.length - 1].setId === null) righe = righe.slice(0, -1);
       return { ...prev, [item.id]: righe };
     });
@@ -407,287 +609,434 @@ export function SessionDialog({
     }
   }
 
-  const done = rows ? Object.values(rows).flat().filter((r) => r.setId).length : 0;
-  const total = rows ? Object.values(rows).flat().length : 0;
+  const tutte = Object.values(rows).flat();
+  const fatte = tutte.filter((r) => r.setId).length;
+  const stimaMinuti = Math.round(
+    exercises.reduce((t, e) => t + targets[e.id].target_sets * (targets[e.id].rest_seconds + 45), 0) / 60
+  );
 
   return (
     <>
-    <Modal onClose={onClose} align="top" className="max-w-2xl">
-      <ModalHeader
-        eyebrow={`Allenamento · ${plan.name}`}
-        title={`Giorno ${dayLabel}`}
-        subtitle={
-          rows
-            ? `${done} di ${total} serie segnate · ogni serie si salva appena la confermi`
-            : "Carico la sessione…"
-        }
-        onClose={onClose}
-      />
+      <Modal onClose={onClose} align="top" className="max-w-2xl">
+        {/* Intestazione: cosa si fa, e da quanto */}
+        <div className="relative shrink-0 overflow-hidden border-b border-white/[0.06] px-5 pb-4 pt-4">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-lime-400/[0.07] blur-3xl" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-lime-400/80">
+                {plan.name}
+              </p>
+              <h2 className="mt-0.5 text-[20px] font-semibold tracking-tight text-white">
+                {dayLabel.length <= 2 ? `Giorno ${dayLabel}` : dayLabel}
+              </h2>
+            </div>
+            <CloseButton onClose={onClose} />
+          </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4">
-        {error && <Notice>{error}</Notice>}
-        {!rows && !error && <Spinner label="Carico la sessione…" />}
-
-        {rows &&
-          exercises.map((item) => {
-            const t = targets[item.id];
-            const volta = last[item.exercise.id];
-            const cambiati = !sameParams(t, base[item.id]);
-            return (
-              <div key={item.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.025]">
-                <div className="flex items-start gap-3 px-3.5 pt-3 sm:px-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-semibold leading-snug text-white">{exerciseName(item.exercise)}</p>
-                    <p className="mt-0.5 font-mono text-[12px] tabular-nums text-white/50">
-                      {t.target_sets} × {t.target_reps_min}-{t.target_reps_max} · RIR {t.target_rir} · rec.{" "}
-                      {restLabel(t.rest_seconds)}
-                      {cambiati && <span className="ml-1.5 text-amber-200/80">modificato</span>}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <IconButton
-                      label="Modifica serie, ripetizioni, RIR e recupero"
-                      active={editing === item.id}
-                      onClick={() => setEditing(editing === item.id ? null : item.id)}
-                      path="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"
-                    />
-                    <IconButton
-                      label="Storico dei carichi"
-                      onClick={() => setHistory(item)}
-                      path="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3Zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12Z"
-                    />
-                  </div>
-                </div>
-
-                <AnimatePresence initial={false}>
-                  {editing === item.id && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mx-3.5 mt-3 space-y-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 sm:mx-4">
-                        <ParamsEditor value={t} onChange={(v) => changeTargets(item, v)} />
-                        <p className="text-[11.5px] leading-snug text-white/40">
-                          Valgono per questa sessione.{" "}
-                          {cambiati ? "Vuoi tenerli anche per le prossime?" : ""}
-                        </p>
-                        {cambiati && (
-                          <button
-                            className="btn-ghost w-full text-[12.5px]"
-                            disabled={t.target_reps_min > t.target_reps_max}
-                            onClick={() => saveTargetsToPlan(item)}
-                          >
-                            Salva anche nella scheda
-                          </button>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <p className="px-3.5 pt-2 text-[12px] text-white/40 sm:px-4">
-                  {volta ? (
-                    <>
-                      Ultima volta ({shortDate(volta.date)}):{" "}
-                      <span className="font-mono tabular-nums text-white/60">{setsSummary(volta.sets)}</span>
-                    </>
-                  ) : (
-                    "Prima volta: scegli un carico con cui arrivi al RIR indicato."
-                  )}
+          {phase === "running" && (
+            <div className="relative mt-3 flex items-end justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-lime-300/90">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-70" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-lime-400" />
+                  </span>
+                  In corso
                 </p>
+                <p className="font-mono text-[34px] font-semibold leading-none tabular-nums text-white">{clock(elapsed)}</p>
+              </div>
+              <div className="min-w-0 flex-1 pb-1">
+                <div className="mb-1 flex justify-between text-[11.5px] text-white/45">
+                  <span>serie</span>
+                  <span className="font-mono tabular-nums text-white/70">
+                    {fatte}/{tutte.length}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-lime-500 to-lime-400"
+                    animate={{ width: `${tutte.length ? (fatte / tutte.length) * 100 : 0}%` }}
+                    transition={{ duration: 0.4 }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          {phase === "ready" && (
+            <p className="relative mt-1.5 text-[13px] text-white/50">
+              {exercises.length} esercizi · {tutte.length} serie · circa {stimaMinuti} minuti
+              {session?.ended_at && " · già completato oggi"}
+            </p>
+          )}
+        </div>
 
-                <div className="px-2 pb-2 pt-2 sm:px-3">
-                  <div className="grid grid-cols-[32px_1fr_1fr_60px_44px] items-center gap-1.5 px-1 pb-1 text-[10.5px] uppercase tracking-wide text-white/30 sm:gap-2">
-                    <span className="text-center">#</span>
-                    <span className="text-center">kg</span>
-                    <span className="text-center">rip.</span>
-                    <span className="text-center">RIR</span>
-                    <span />
-                  </div>
-                  {rows[item.id].map((row, i) => {
-                    const salvata = row.saved !== null;
-                    const modificata =
-                      salvata && (row.kg !== row.saved!.kg || row.reps !== row.saved!.reps || row.rir !== row.saved!.rir);
-                    return (
-                      <div
-                        key={row.key}
-                        className={`grid grid-cols-[32px_1fr_1fr_60px_44px] items-center gap-1.5 rounded-xl px-1 py-1 transition sm:gap-2 ${
-                          salvata && !modificata ? "bg-lime-400/[0.06]" : ""
-                        }`}
-                      >
+        {/* Corpo */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+          {error && (
+            <div className="mb-3">
+              <Notice>{error}</Notice>
+            </div>
+          )}
+          {phase === "loading" && !error && <Spinner label="Preparo l'allenamento…" />}
+
+          {phase === "done" && summary && <Summary summary={summary} />}
+
+          {(phase === "ready" || phase === "running") && (
+            <div className="space-y-4">
+              {exercises.map((item, n) => {
+                const t = targets[item.id];
+                const volta = last[item.exercise.id];
+                const cambiati = !sameParams(t, base[item.id]);
+                const righe = rows[item.id] ?? [];
+                const suggerimenti = hintsFor(righe, t, volta);
+                return (
+                  <motion.section
+                    key={item.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: n * 0.04 }}
+                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-b from-white/[0.045] to-white/[0.015] p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/[0.07] font-mono text-[12px] text-white/60">
+                        {n + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-[16px] font-semibold leading-snug text-white">{exerciseName(item.exercise)}</h3>
                         <button
-                          onClick={() => deleteRow(item, row)}
-                          aria-label={row.confirmDelete ? "Conferma: elimina la serie" : `Serie ${i + 1}: tocca per eliminarla`}
-                          title="Elimina la serie"
-                          className={`grid h-9 place-items-center rounded-lg font-mono text-[12.5px] tabular-nums transition ${
-                            row.confirmDelete
-                              ? "bg-rose-500/80 text-white"
-                              : "text-white/45 hover:bg-white/[0.06]"
-                          }`}
+                          onClick={() => setHistory(item)}
+                          className="mt-0.5 text-left text-[12.5px] leading-snug text-white/45 transition hover:text-white/75"
                         >
-                          {row.confirmDelete ? "✕" : i + 1}
-                        </button>
-                        <NumberField
-                          value={row.kg}
-                          onChange={(v) => patchRow(item.id, row.key, { kg: v })}
-                          min={0}
-                          max={1000}
-                          step={2.5}
-                          decimals={2}
-                          size="sm"
-                          steppers="sm"
-                          placeholder="kg"
-                          ariaLabel={`Carico serie ${i + 1}`}
-                        />
-                        <NumberField
-                          value={row.reps}
-                          onChange={(v) => patchRow(item.id, row.key, { reps: v })}
-                          min={1}
-                          max={100}
-                          size="sm"
-                          steppers="sm"
-                          placeholder="rip."
-                          ariaLabel={`Ripetizioni serie ${i + 1}`}
-                          onEnter={() => saveRow(item, row, i)}
-                        />
-                        <select
-                          value={row.rir ?? ""}
-                          onChange={(e) =>
-                            patchRow(item.id, row.key, { rir: e.target.value === "" ? null : Number(e.target.value) })
-                          }
-                          aria-label={`RIR serie ${i + 1}`}
-                          className="h-9 rounded-xl border border-white/10 bg-black/30 px-1 text-center font-mono text-[13px] text-white outline-none focus:border-lime-400/50"
-                        >
-                          <option value="">—</option>
-                          {[0, 1, 2, 3, 4, 5].map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => saveRow(item, row, i)}
-                          disabled={row.busy || row.kg === null || !row.reps || (salvata && !modificata)}
-                          aria-label={salvata && !modificata ? `Serie ${i + 1} salvata` : `Salva la serie ${i + 1}`}
-                          className={`grid h-9 w-11 place-items-center rounded-xl border transition ${
-                            salvata && !modificata
-                              ? "border-lime-400/60 bg-lime-400 text-ink-900"
-                              : "border-lime-400/40 bg-lime-400/[0.1] text-lime-200 hover:bg-lime-400/20 disabled:border-white/10 disabled:bg-transparent disabled:text-white/25"
-                          }`}
-                        >
-                          {row.busy ? (
-                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          {volta ? (
+                            <>
+                              Ultima volta, {shortDate(volta.date)}:{" "}
+                              <span className="font-mono tabular-nums text-white/65">{setsSummary(volta.sets)}</span>
+                            </>
                           ) : (
-                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={3}>
-                              <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                            "Prima volta: scegli un carico con cui arrivi al RIR indicato"
                           )}
                         </button>
                       </div>
-                    );
-                  })}
-                  <button
-                    onClick={() => addRow(item)}
-                    className="mt-1 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:bg-white/[0.04] hover:text-white/80"
-                  >
-                    + Aggiungi serie
+                    </div>
+
+                    {/* I parametri: una riga di pillole che si vede toccabile */}
+                    <button
+                      onClick={() => setEditing(editing === item.id ? null : item.id)}
+                      aria-expanded={editing === item.id}
+                      className={`mt-3 flex w-full flex-wrap items-center gap-1.5 rounded-2xl border px-2.5 py-2 text-left transition ${
+                        editing === item.id
+                          ? "border-lime-400/40 bg-lime-400/[0.07]"
+                          : "border-dashed border-white/15 hover:border-lime-400/35 hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      {[
+                        `${t.target_sets} serie`,
+                        `${t.target_reps_min}-${t.target_reps_max} rip.`,
+                        `RIR ${t.target_rir}`,
+                        `rec. ${restLabel(t.rest_seconds)}`,
+                      ].map((c) => (
+                        <span key={c} className="rounded-full bg-white/[0.06] px-2.5 py-1 font-mono text-[12px] tabular-nums text-white/80">
+                          {c}
+                        </span>
+                      ))}
+                      <span className="ml-auto inline-flex items-center gap-1 pr-1 text-[12px] font-medium text-lime-300/85">
+                        <PencilIcon />
+                        {cambiati ? "modificato" : "modifica"}
+                      </span>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {editing === item.id && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="space-y-3 pt-3">
+                            <ParamsEditor value={t} onChange={(v) => changeTargets(item, v)} />
+                            <p className="text-[12px] leading-snug text-white/45">
+                              Valgono per questo allenamento.{cambiati && " Vuoi tenerli anche per i prossimi?"}
+                            </p>
+                            {cambiati && (
+                              <button className="btn-ghost w-full justify-center" onClick={() => saveTargetsToPlan(item)}>
+                                Salva anche nella scheda
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className="mt-4">
+                      <div className="grid grid-cols-[34px_1fr_1fr_62px_46px] items-center gap-2 px-0.5 pb-1.5 text-[11px] uppercase tracking-wide text-white/35">
+                        <span className="text-center">#</span>
+                        <span className="text-center">kg</span>
+                        <span className="text-center">rip.</span>
+                        <span className="text-center">RIR</span>
+                        <span />
+                      </div>
+                      <div className="space-y-2">
+                        {righe.map((row, i) => {
+                          const h = suggerimenti[i];
+                          const salvata = row.saved !== null;
+                          const effettivo = { kg: row.kg ?? h.kg, reps: row.reps ?? h.reps, rir: row.rir ?? h.rir };
+                          const modificata =
+                            salvata &&
+                            (effettivo.kg !== row.saved!.kg || effettivo.reps !== row.saved!.reps || effettivo.rir !== row.saved!.rir);
+                          const confronto = salvata && !modificata ? compare(row.saved!, volta?.sets[i] ?? volta?.sets[volta.sets.length - 1]) : null;
+                          return (
+                            <div key={row.key}>
+                              <div
+                                className={`grid grid-cols-[34px_1fr_1fr_62px_46px] items-center gap-2 rounded-2xl p-0.5 transition ${
+                                  salvata && !modificata ? "bg-lime-400/[0.07]" : ""
+                                }`}
+                              >
+                                <button
+                                  onClick={() => deleteRow(item, row)}
+                                  aria-label={row.confirmDelete ? "Conferma: elimina la serie" : `Serie ${i + 1}: tocca per eliminarla`}
+                                  className={`grid h-11 place-items-center rounded-xl font-mono text-[13px] tabular-nums transition ${
+                                    row.confirmDelete ? "bg-rose-500/80 text-white" : "text-white/50 hover:bg-white/[0.06]"
+                                  }`}
+                                >
+                                  {row.confirmDelete ? "✕" : i + 1}
+                                </button>
+                                <NumberField
+                                  value={row.kg}
+                                  onChange={(v) => patchRow(item.id, row.key, { kg: v })}
+                                  min={0}
+                                  max={1000}
+                                  step={2.5}
+                                  decimals={2}
+                                  steppers="sm"
+                                  placeholder={h.kg !== null ? kg(h.kg) : "kg"}
+                                  ariaLabel={`Carico serie ${i + 1}`}
+                                />
+                                <NumberField
+                                  value={row.reps}
+                                  onChange={(v) => patchRow(item.id, row.key, { reps: v })}
+                                  min={1}
+                                  max={100}
+                                  steppers="sm"
+                                  placeholder={String(h.reps)}
+                                  ariaLabel={`Ripetizioni serie ${i + 1}`}
+                                  onEnter={() => saveRow(item, row, i, h)}
+                                />
+                                <select
+                                  value={row.rir ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(item.id, row.key, { rir: e.target.value === "" ? null : Number(e.target.value) })
+                                  }
+                                  aria-label={`RIR serie ${i + 1}`}
+                                  className={`h-11 rounded-xl border border-white/10 bg-black/30 px-1 text-center font-mono text-[14px] outline-none focus:border-lime-400/50 ${
+                                    row.rir === null ? "text-white/35" : "text-white"
+                                  }`}
+                                >
+                                  <option value="">{h.rir}</option>
+                                  {[0, 1, 2, 3, 4, 5].map((v) => (
+                                    <option key={v} value={v}>
+                                      {v}
+                                    </option>
+                                  ))}
+                                </select>
+                                <motion.button
+                                  whileTap={{ scale: 0.88 }}
+                                  onClick={() => saveRow(item, row, i, h)}
+                                  disabled={row.busy || effettivo.kg === null || !effettivo.reps || (salvata && !modificata)}
+                                  aria-label={salvata && !modificata ? `Serie ${i + 1} salvata` : `Salva la serie ${i + 1}`}
+                                  className={`grid h-11 w-[46px] place-items-center rounded-xl border transition ${
+                                    salvata && !modificata
+                                      ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                                      : "border-lime-400/45 bg-lime-400/[0.12] text-lime-200 hover:bg-lime-400/25 disabled:border-white/10 disabled:bg-transparent disabled:text-white/25"
+                                  }`}
+                                >
+                                  {row.busy ? (
+                                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={3}>
+                                      <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  )}
+                                </motion.button>
+                              </div>
+                              <AnimatePresence>
+                                {confronto && (
+                                  <motion.p
+                                    initial={{ opacity: 0, y: -4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0 }}
+                                    className={`mt-1 pr-1 text-right text-[11.5px] font-medium ${
+                                      confronto.better === true
+                                        ? "text-lime-300"
+                                        : confronto.better === false
+                                          ? "text-white/40"
+                                          : "text-white/45"
+                                    }`}
+                                  >
+                                    {confronto.better === true && "↑ "}
+                                    {confronto.text}
+                                    {confronto.better !== null && " rispetto all'ultima volta"}
+                                  </motion.p>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button
+                        onClick={() => setRows((prev) => ({ ...prev, [item.id]: [...prev[item.id], emptyRow()] }))}
+                        className="mt-2 w-full rounded-2xl py-2.5 text-[13px] font-medium text-white/45 transition hover:bg-white/[0.04] hover:text-white/80"
+                      >
+                        + Aggiungi serie
+                      </button>
+                    </div>
+                  </motion.section>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Piede: avvio, recupero, fine */}
+        <div className="shrink-0 border-t border-white/[0.06] bg-ink-900/60">
+          <AnimatePresence mode="wait" initial={false}>
+            {phase === "running" && rest ? (
+              <motion.div
+                key="recupero"
+                initial={{ y: 24, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 24, opacity: 0 }}
+                className="px-4 py-3"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-wide text-white/40">Recupero</p>
+                    <p className="font-mono text-[26px] font-semibold leading-none tabular-nums text-white">
+                      {restLabel(remaining)}
+                    </p>
+                  </div>
+                  <button className="btn-ghost h-11 px-3" onClick={() => setRest({ ...rest, endsAt: rest.endsAt - 15000 })}>
+                    −15s
+                  </button>
+                  <button className="btn-ghost h-11 px-3" onClick={() => setRest({ ...rest, endsAt: rest.endsAt + 15000 })}>
+                    +15s
+                  </button>
+                  <button className="btn-primary h-11 px-4" onClick={() => setRest(null)}>
+                    Salta
                   </button>
                 </div>
-              </div>
-            );
-          })}
-      </div>
+                <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.08]">
+                  <div
+                    className="h-full rounded-full bg-lime-400 transition-[width] duration-300"
+                    style={{ width: `${Math.min(100, (remaining / rest.total) * 100)}%` }}
+                  />
+                </div>
+              </motion.div>
+            ) : phase === "running" ? (
+              <motion.div key="corso" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 p-3">
+                <button className="btn-ghost flex-1 justify-center py-3" onClick={onClose} title="L'allenamento continua: lo riapri dalla scheda">
+                  Riduci
+                </button>
+                <button className="btn-primary flex-[1.6] justify-center py-3" onClick={finish} disabled={finishing}>
+                  {finishing ? "Chiudo…" : "Termina allenamento"}
+                </button>
+              </motion.div>
+            ) : phase === "ready" ? (
+              <motion.div key="pronto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-3">
+                <button className="btn-primary w-full justify-center py-3.5 text-[15px]" onClick={start}>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                    <path d="M8 5v14l11-7L8 5Z" />
+                  </svg>
+                  {session?.ended_at ? "Riprendi l'allenamento" : "Avvia allenamento"}
+                </button>
+              </motion.div>
+            ) : phase === "done" ? (
+              <motion.div key="fine" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-3">
+                <button className="btn-primary w-full justify-center py-3.5 text-[15px]" onClick={onClose}>
+                  Chiudi
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </Modal>
 
+      {/* Fuori dal pannello: dentro un contenitore animato un elemento fixed
+          si posizionerebbe rispetto a lui, non allo schermo. */}
       <AnimatePresence>
-        {rest && (
-          <motion.div
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 40, opacity: 0 }}
-            className="shrink-0 border-t border-white/[0.08] bg-ink-900/95 px-4 py-3 backdrop-blur"
-          >
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] uppercase tracking-wide text-white/40">Recupero</p>
-                <p className="font-mono text-[24px] font-semibold leading-none tabular-nums text-white">
-                  {restLabel(remaining)}
-                </p>
-              </div>
-              <button className="btn-ghost h-10 px-3 text-[13px]" onClick={() => setRest({ ...rest, endsAt: rest.endsAt - 15000 })}>
-                −15s
-              </button>
-              <button className="btn-ghost h-10 px-3 text-[13px]" onClick={() => setRest({ ...rest, endsAt: rest.endsAt + 15000 })}>
-                +15s
-              </button>
-              <button className="btn-primary h-10 px-4 text-[13px]" onClick={() => setRest(null)}>
-                Salta
-              </button>
-            </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.08]">
-              <div
-                className="h-full rounded-full bg-lime-400 transition-[width] duration-300"
-                style={{ width: `${Math.min(100, (remaining / rest.total) * 100)}%` }}
-              />
-            </div>
-          </motion.div>
+        {history && (
+          <LoadHistoryDialog
+            key="history"
+            profileId={profileId}
+            exerciseId={history.exercise.id}
+            onClose={() => setHistory(null)}
+          />
         )}
       </AnimatePresence>
-
-      {!rest && (
-        <div className="shrink-0 border-t border-white/[0.06] p-3">
-          <button className="btn-primary w-full" onClick={onClose}>
-            {done > 0 ? "Fine allenamento" : "Chiudi"}
-          </button>
-        </div>
-      )}
-
-    </Modal>
-
-    {/* Fuori dal pannello: dentro un contenitore animato un elemento fixed
-        si posizionerebbe rispetto a lui, non allo schermo. */}
-    <AnimatePresence>
-      {history && (
-        <LoadHistoryDialog
-          key="history"
-          profileId={profileId}
-          exerciseId={history.exercise.id}
-          onClose={() => setHistory(null)}
-        />
-      )}
-    </AnimatePresence>
     </>
   );
 }
 
-function IconButton({
-  label,
-  path,
-  onClick,
-  active = false,
-}: {
-  label: string;
-  path: string;
-  onClick: () => void;
-  active?: boolean;
-}) {
+function PencilIcon() {
   return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      aria-pressed={active}
-      className={`grid h-10 w-10 place-items-center rounded-xl border transition ${
-        active
-          ? "border-lime-400/50 bg-lime-400/15 text-lime-200"
-          : "border-white/10 bg-white/[0.04] text-white/55 hover:text-white"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-current">
-        <path d={path} />
-      </svg>
-    </button>
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+      <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+    </svg>
+  );
+}
+
+/** Il riepilogo a fine allenamento. */
+function Summary({ summary }: { summary: SessionSummary }) {
+  const numeri: [string, string][] = [
+    ["Durata", summary.duration_seconds !== null ? clock(summary.duration_seconds) : "—"],
+    ["Serie", String(summary.sets_count)],
+    ["Esercizi", String(summary.exercises_count)],
+    ["Kg sollevati", kg(Math.round(summary.volume_kg))],
+  ];
+  return (
+    <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="py-2">
+      <div className="flex flex-col items-center text-center">
+        <Mascot size={72} mood={summary.records.length ? "goal" : "happy"} />
+        <h3 className="mt-3 text-[20px] font-semibold tracking-tight text-white">Allenamento completato</h3>
+        <p className="mt-1 text-[13px] text-white/50">
+          {summary.sets_count ? "Ecco com'è andata." : "Nessuna serie segnata questa volta."}
+        </p>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-2.5">
+        {numeri.map(([label, value], i) => (
+          <motion.div
+            key={label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 + i * 0.05 }}
+            className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5"
+          >
+            <p className="text-[11.5px] uppercase tracking-wide text-white/40">{label}</p>
+            <p className="mt-1 font-mono text-[22px] font-semibold tabular-nums text-white">{value}</p>
+          </motion.div>
+        ))}
+      </div>
+      {summary.records.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-lime-400/25 bg-lime-400/[0.07] p-4">
+          <p className="text-[13px] font-semibold text-lime-200">
+            {summary.records.length === 1 ? "Un nuovo record" : `${summary.records.length} nuovi record`}
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {summary.records.map((r) => (
+              <li key={r.exercise_id} className="flex items-baseline justify-between gap-3 text-[13px]">
+                <span className="min-w-0 truncate text-white/80">{r.exercise_name}</span>
+                <span className="shrink-0 font-mono tabular-nums text-lime-300">
+                  {kg(r.weight_kg)} kg
+                  {r.previous_best_kg !== null && (
+                    <span className="ml-1.5 text-white/35">prima {kg(r.previous_best_kg)}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </motion.div>
   );
 }
 

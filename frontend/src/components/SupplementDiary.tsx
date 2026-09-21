@@ -274,7 +274,6 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
                   >
                     <MonthGrid
                       item={item}
-                      days={days}
                       today={today}
                       selected={selected}
                       busy={busy}
@@ -333,7 +332,7 @@ const DAY_STYLE: Record<DayState, string> = {
 
 function Check() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={3}>
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3.2}>
       <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -422,7 +421,7 @@ function DayPills({
   onTap: (date: string) => void;
 }) {
   return (
-    <div className="mt-4 grid grid-cols-7 gap-1.5 sm:gap-2">
+    <div className="mx-auto mt-4 grid max-w-[340px] grid-cols-7 gap-1">
       {days.map((d) => {
         const st = dayState(item, d, today);
         return (
@@ -432,13 +431,13 @@ function DayPills({
               disabled={busy || st === "future"}
               onClick={() => onTap(d)}
               aria-label={`${shortDate(d)}: ${st === "taken" ? "preso" : st === "missed" ? "saltato" : "da segnare"}`}
-              className={`grid h-10 w-full place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
+              className={`mx-auto grid h-8 w-8 place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
                 d === selected && item.doses_required > 1 ? "ring-2 ring-white/60 ring-offset-2 ring-offset-ink-900" : ""
               }`}
             >
               {st === "taken" ? <Check /> : st === "partial" ? <span className="text-[11px] font-semibold">½</span> : null}
             </motion.button>
-            <span className={`mt-1.5 block text-[11px] ${d === today ? "font-semibold text-white/70" : "text-white/35"}`}>
+            <span className={`mt-1 block text-[10.5px] ${d === today ? "font-semibold text-white/70" : "text-white/35"}`}>
               {d === today ? "oggi" : weekdayLetter(d)}
             </span>
           </div>
@@ -448,53 +447,105 @@ function DayPills({
   );
 }
 
-/** Le ultime 4 settimane come calendario: righe per settimana, colonne L-D. */
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+function iso(y: number, m: number, d: number): string {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Il calendario di un mese vero (dall'1 all'ultimo giorno), sfogliabile con
+ * le frecce. Colonne da lunedì a domenica; i giorni futuri si vedono ma sono
+ * spenti, quelli prima dell'inizio appena accennati.
+ */
 function MonthGrid({
   item,
-  days,
   today,
   selected,
   busy,
   onTap,
 }: {
   item: SupplementIntake;
-  days: string[];
   today: string;
   selected: string;
   busy: boolean;
   onTap: (date: string) => void;
 }) {
-  const [y, m, dd] = days[0].split("-").map(Number);
-  const vuoti = (new Date(y, m - 1, dd).getDay() + 6) % 7; // lunedì = 0
+  const [ty, tm] = today.split("-").map(Number);
+  const [scarto, setScarto] = useState(0); // 0 = mese corrente, -1 = precedente
+  const base = new Date(ty, tm - 1 + scarto, 1);
+  const anno = base.getFullYear();
+  const mese = base.getMonth();
+  const giorni = new Date(anno, mese + 1, 0).getDate();
+  const vuoti = (base.getDay() + 6) % 7; // lunedì = 0
+  // Si torna indietro fino al mese del primo giorno segnato (al massimo 3 mesi).
+  const inizio = item.tracked_days ? firstDay(item, today) : today;
+  const [iy, im] = inizio.split("-").map(Number);
+  const mesiIndietro = Math.min(3, (ty - iy) * 12 + (tm - im));
+
+  const freccia = (dir: -1 | 1) => (
+    <button
+      onClick={() => setScarto((n) => n + dir)}
+      disabled={dir < 0 ? scarto <= -mesiIndietro : scarto >= 0}
+      aria-label={dir < 0 ? "Mese precedente" : "Mese successivo"}
+      className="grid h-8 w-8 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-20"
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+        <path d={dir < 0 ? "M15.4 7.4 14 6l-6 6 6 6 1.4-1.4-4.6-4.6 4.6-4.6Z" : "M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6-4.6 4.6Z"} />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="mt-2 grid grid-cols-7 gap-1.5 sm:gap-2">
-      {["L", "M", "M", "G", "V", "S", "D"].map((l, i) => (
-        <span key={i} className="text-center text-[11px] text-white/30">
-          {l}
-        </span>
-      ))}
-      {Array.from({ length: vuoti }, (_, i) => (
-        <span key={`v${i}`} />
-      ))}
-      {days.map((d) => {
-        const st = dayState(item, d, today);
-        return (
-          <button
-            key={d}
-            disabled={busy || st === "future"}
-            onClick={() => onTap(d)}
-            aria-label={shortDate(d)}
-            className={`grid aspect-square w-full place-items-center rounded-full border text-[12px] font-medium tabular-nums transition disabled:opacity-60 ${DAY_STYLE[st]} ${
-              d === selected && item.doses_required > 1 ? "ring-2 ring-white/60" : ""
-            }`}
-          >
-            {Number(d.slice(8))}
-          </button>
-        );
-      })}
+    <div className="mx-auto mt-2 max-w-[300px]">
+      <div className="mb-1.5 flex items-center justify-between">
+        {freccia(-1)}
+        <p className="text-[13px] font-medium capitalize text-white/75">
+          {MESI[mese]} {anno !== ty ? anno : ""}
+        </p>
+        {freccia(1)}
+      </div>
+      <div className="grid grid-cols-7 gap-y-1">
+        {["L", "M", "M", "G", "V", "S", "D"].map((l, k) => (
+          <span key={k} className="pb-0.5 text-center text-[10.5px] text-white/30">
+            {l}
+          </span>
+        ))}
+        {Array.from({ length: vuoti }, (_, k) => (
+          <span key={`v${k}`} />
+        ))}
+        {Array.from({ length: giorni }, (_, k) => {
+          const d = iso(anno, mese, k + 1);
+          const st = dayState(item, d, today);
+          return (
+            <div key={d} className="grid place-items-center">
+              <button
+                disabled={busy || st === "future"}
+                onClick={() => onTap(d)}
+                aria-label={shortDate(d)}
+                className={`grid h-7 w-7 place-items-center rounded-full border text-[10.5px] font-medium tabular-nums transition disabled:cursor-default ${MINI_STYLE[st]} ${
+                  d === selected && item.doses_required > 1 ? "ring-2 ring-white/60" : ""
+                }`}
+              >
+                {k + 1}
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+// Nel calendario i giorni sono piccoli: pieni solo quelli presi.
+const MINI_STYLE: Record<DayState, string> = {
+  taken: "border-transparent bg-lime-400 text-ink-900",
+  partial: "border-lime-400/50 bg-lime-400/20 text-lime-100",
+  missed: "border-rose-400/40 text-rose-200/70",
+  before: "border-transparent text-white/25",
+  today: "border-white/60 text-white",
+  future: "border-transparent text-white/15",
+};
 
 /** La fase indicata dalle fonti, con il suo nome e cosa succede dopo. */
 function Phase({ item }: { item: SupplementIntake }) {

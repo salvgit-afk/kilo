@@ -177,7 +177,20 @@ export type WorkoutSessionLog = {
   workout_plan_id: number | null;
   perceived_fatigue: number | null;
   note: string | null;
+  /** Avvio e fine dell'allenamento (ISO); nulli per le sessioni più vecchie. */
+  started_at: string | null;
+  ended_at: string | null;
   sets: SessionSet[];
+};
+
+/** Riepilogo di fine allenamento. */
+export type SessionSummary = {
+  session: WorkoutSessionLog;
+  duration_seconds: number | null;
+  sets_count: number;
+  exercises_count: number;
+  volume_kg: number;
+  records: { exercise_id: number; exercise_name: string; weight_kg: number; previous_best_kg: number | null }[];
 };
 
 /** Le serie di un esercizio in una sessione dello storico. */

@@ -30,6 +30,8 @@ import {
   type Profile,
   type VolumeRecommendation,
   type WorkoutPlan,
+  type WorkoutSessionLog,
+  localDate,
 } from "@/lib/api";
 import type { Intent } from "@/lib/coach";
 import { Card, CardHeader, Empty, Notice, SourceTags, Spinner } from "@/components/ui";
@@ -39,7 +41,7 @@ import { PreferencesDialog } from "@/components/PreferencesDialog";
 import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
-import { PlanParamsDialog, SessionDialog } from "@/components/TrainingLog";
+import { PlanParamsDialog, SessionDialog, clock, useElapsed } from "@/components/TrainingLog";
 import { ScheduleDialog, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
 
 export { formatEquipment } from "@/lib/api";
@@ -98,7 +100,9 @@ export function Workout({
   const [editingSchedule, setEditingSchedule] = useState(false);
   // Copia degli esercizi fatta all'apertura: la sessione non deve ricaricarsi
   // (e azzerare le serie in corso) a ogni render della pagina.
-  const [sessionDay, setSessionDay] = useState<{ day: string; exercises: PlanExercise[] } | null>(null);
+  const [sessionDay, setSessionDay] = useState<{ plan: WorkoutPlan; day: string; exercises: PlanExercise[] } | null>(null);
+  // L'allenamento avviato e non terminato: il pulsante diventa "in corso".
+  const [activeSession, setActiveSession] = useState<WorkoutSessionLog | null>(null);
   // Overlay di creazione: `replace` è la scheda da rigenerare, null per una nuova.
   const [dialog, setDialog] = useState<{ replace: WorkoutPlan | null } | null>(null);
   const [deleting, setDeleting] = useState<WorkoutPlan | null>(null);
@@ -180,6 +184,15 @@ export function Workout({
     setDeleting(null);
   }
 
+  // L'allenamento in corso, se c'è. Prima di ogni return anticipato: gli hook
+  // devono essere sempre gli stessi, in ogni render.
+  useEffect(() => {
+    api
+      .get<WorkoutSessionLog | null>(`/workout/sessions/active?profile_id=${profile.id}&today=${localDate()}`)
+      .then(setActiveSession)
+      .catch(() => setActiveSession(null));
+  }, [profile.id]);
+
   if (plans === null) return <Spinner label="Carico le schede…" />;
 
   const plan = plans.find((p) => p.id === selectedId) ?? null;
@@ -187,6 +200,17 @@ export function Workout({
   const labels = planTabLabels(plans);
   const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
   const dayExercises = plan?.exercises.filter((e) => e.day_label === activeDay) ?? [];
+
+  function openActive() {
+    if (!activeSession) return;
+    const suo = plans?.find((p) => p.id === activeSession.workout_plan_id) ?? plan;
+    if (!suo || !activeSession.day_label) return;
+    setSessionDay({
+      plan: suo,
+      day: activeSession.day_label,
+      exercises: suo.exercises.filter((e) => e.day_label === activeSession.day_label),
+    });
+  }
 
   function replacePlan(aggiornata: WorkoutPlan) {
     setPlans((correnti) => (correnti ?? []).map((p) => (p.id === aggiornata.id ? aggiornata : p)));
@@ -359,17 +383,29 @@ export function Workout({
               ))}
             </div>
 
-            {activeDay && dayExercises.length > 0 && (
-              <button
-                onClick={() => setSessionDay({ day: activeDay, exercises: dayExercises })}
-                className="btn-primary w-full justify-center py-3 text-[14px] sm:w-auto sm:px-6"
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                  <path d="M8 5v14l11-7L8 5Z" />
-                </svg>
-                Inizia allenamento · giorno {activeDay}
-              </button>
-            )}
+            <AnimatePresence mode="wait" initial={false}>
+              {activeSession ? (
+                <ActiveWorkoutPill key="in-corso" session={activeSession} onOpen={openActive} />
+              ) : (
+                activeDay &&
+                plan &&
+                dayExercises.length > 0 && (
+                  <motion.button
+                    key="inizia"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    onClick={() => setSessionDay({ plan, day: activeDay, exercises: dayExercises })}
+                    className="btn-primary w-full justify-center py-3.5 text-[14px] sm:w-auto sm:px-6"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                      <path d="M8 5v14l11-7L8 5Z" />
+                    </svg>
+                    Inizia allenamento · giorno {activeDay}
+                  </motion.button>
+                )
+              )}
+            </AnimatePresence>
 
             <div className="space-y-2.5">
               <AnimatePresence mode="popLayout">
@@ -485,15 +521,16 @@ export function Workout({
             onSaved={replacePlan}
           />
         )}
-        {sessionDay && plan && (
+        {sessionDay && (
           <SessionDialog
             key="session"
             profileId={profile.id}
-            plan={plan}
+            plan={sessionDay.plan}
             dayLabel={sessionDay.day}
             exercises={sessionDay.exercises}
             onClose={() => setSessionDay(null)}
             onPlanUpdated={replacePlan}
+            onSessionChange={setActiveSession}
           />
         )}
         {swapping && (
@@ -784,12 +821,17 @@ function ExerciseRow({
 
         <button
           onClick={() => onEdit(item)}
-          className="hidden shrink-0 items-center gap-4 rounded-xl px-2 py-1 transition hover:bg-white/[0.05] sm:flex"
+          className="group/params hidden shrink-0 items-center gap-4 rounded-2xl border border-dashed border-white/15 px-3 py-1.5 transition hover:border-lime-400/40 hover:bg-lime-400/[0.05] sm:flex"
           title="Modifica serie, ripetizioni, RIR e recupero"
         >
           <Metric value={schema} label="serie × rip." />
           <Metric value={`RIR ${item.target_rir}`} label="intensità" />
           <Metric value={`${item.rest_seconds}s`} label="recupero" />
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-lime-400/15 text-lime-300 transition group-hover/params:bg-lime-400 group-hover/params:text-ink-900">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+              <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+            </svg>
+          </span>
         </button>
 
         <button
@@ -806,13 +848,13 @@ function ExerciseRow({
 
       <button
         onClick={() => onEdit(item)}
-        className="flex w-full items-center gap-4 border-t border-white/[0.05] px-4 py-2.5 text-left sm:hidden"
+        className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] items-center gap-4 rounded-2xl border border-dashed border-white/15 px-3 py-2 text-left transition active:bg-lime-400/[0.06] sm:hidden"
         aria-label="Modifica serie, ripetizioni, RIR e recupero"
       >
         <Metric value={schema} label="serie × rip." />
         <Metric value={`RIR ${item.target_rir}`} label="intensità" />
         <Metric value={`${item.rest_seconds}s`} label="recupero" />
-        <span className="ml-auto inline-flex items-center gap-1 text-[12px] text-white/45">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime-400/15 px-2.5 py-1 text-[12px] font-medium text-lime-300">
           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
             <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
           </svg>
@@ -1181,5 +1223,37 @@ function Choice({ active, onClick, label }: { active: boolean; onClick: () => vo
     >
       {label}
     </button>
+  );
+}
+
+
+/** Il pulsante che prende il posto di "Inizia allenamento" mentre si è in corso. */
+function ActiveWorkoutPill({ session, onOpen }: { session: WorkoutSessionLog; onOpen: () => void }) {
+  const secondi = useElapsed(session.started_at);
+  const giorno = session.day_label ?? "";
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 380, damping: 28 }}
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-full border border-lime-400/50 bg-gradient-to-r from-lime-400/[0.18] to-lime-400/[0.06] py-2 pl-4 pr-2 text-left shadow-[0_0_28px_-10px_rgba(174,212,74,0.8)] transition hover:border-lime-400/80 sm:w-auto sm:min-w-[340px]"
+      aria-label="Riapri l'allenamento in corso"
+    >
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-70" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lime-400" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13.5px] font-semibold text-lime-100">Allenamento in corso</span>
+        <span className="block truncate text-[11.5px] text-white/50">
+          {giorno.length <= 2 ? `Giorno ${giorno}` : giorno} · tocca per riaprirlo
+        </span>
+      </span>
+      <span className="rounded-full bg-ink-900/70 px-3 py-1.5 font-mono text-[16px] font-semibold tabular-nums text-white">
+        {clock(secondi)}
+      </span>
+    </motion.button>
   );
 }

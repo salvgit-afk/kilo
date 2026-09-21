@@ -23,6 +23,8 @@ from app.models import SupplementDeclaration, SupplementIntake, SupplementKind, 
 # note di Kilo. È impaginazione, non una durata dell'integratore: la
 # schermata mostra "N su M giorni" sul periodo reale (`tracked_days`).
 HISTORY_DAYS = 28
+# Giorni di storico mandati alla schermata: il calendario si sfoglia per mese.
+CALENDAR_DAYS = 120
 MAX_DOSES_PER_DAY = 20
 
 # Durate documentate nelle fonti, per mostrare a che punto è l'utente. Non
@@ -176,7 +178,9 @@ def summarize(
         tracked_days=(
             0 if not presi else (today - min(presi)).days + (1 if today in presi else 0)
         ),
-        history={d: n for d, n in presi.items() if d >= finestra_inizio},
+        history={
+            d: n for d, n in presi.items() if d >= today - dt.timedelta(days=CALENDAR_DAYS - 1)
+        },
         milestone=Milestone(*traguardo) if traguardo else None,
     )
 
