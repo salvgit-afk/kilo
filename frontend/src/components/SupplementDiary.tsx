@@ -262,13 +262,32 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
                 onTap={(d) => tapDay(item, d)}
               />
 
-              <button
-                onClick={() => setMonthOpen((m) => ({ ...m, [item.supplement_id]: !m[item.supplement_id] }))}
-                className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:bg-white/[0.04] hover:text-white/80"
-                aria-expanded={!!monthOpen[item.supplement_id]}
-              >
-                {monthOpen[item.supplement_id] ? "Nascondi il mese" : "Vedi il mese"}
-              </button>
+              <div className="mt-4 flex justify-center">
+                <button
+                  onClick={() => setMonthOpen((m) => ({ ...m, [item.supplement_id]: !m[item.supplement_id] }))}
+                  className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-[13px] font-medium transition ${
+                    monthOpen[item.supplement_id]
+                      ? "border-white/15 bg-white/[0.05] text-white/75 hover:text-white"
+                      : "border-lime-400/35 bg-lime-400/[0.08] text-lime-200 hover:border-lime-400/60 hover:bg-lime-400/[0.14]"
+                  }`}
+                  aria-expanded={!!monthOpen[item.supplement_id]}
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                    <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+                    <path d="M3.5 10h17M8 3v4M16 3v4" />
+                  </svg>
+                  {monthOpen[item.supplement_id] ? "Nascondi il calendario" : "Vedi il calendario del mese"}
+                  <svg
+                    viewBox="0 0 24 24"
+                    className={`h-4 w-4 transition-transform duration-300 ${monthOpen[item.supplement_id] ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.4}
+                  >
+                    <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
               <AnimatePresence initial={false}>
                 {monthOpen[item.supplement_id] && (
                   <motion.div
@@ -287,7 +306,7 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <p className="mt-1 text-center text-[11.5px] text-white/30">
+              <p className="mt-3 text-center text-[11.5px] text-white/30">
                 {item.doses_required === 1
                   ? "Tocca un giorno per segnarlo o toglierlo"
                   : "Tocca un giorno per sceglierlo, poi segna le dosi in alto"}
@@ -337,7 +356,7 @@ const DAY_STYLE: Record<DayState, string> = {
 
 function Check() {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3.2}>
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth={3.2}>
       <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -426,7 +445,7 @@ function DayPills({
   onTap: (date: string) => void;
 }) {
   return (
-    <div className="mx-auto mt-4 grid max-w-[340px] grid-cols-7 gap-1">
+    <div className="mx-auto mt-4 grid max-w-[340px] grid-cols-7 gap-1 sm:max-w-[460px] sm:gap-2 lg:max-w-[600px]">
       {days.map((d) => {
         const st = dayState(item, d, today);
         return (
@@ -436,13 +455,13 @@ function DayPills({
               disabled={busy || st === "future"}
               onClick={() => onTap(d)}
               aria-label={`${shortDate(d)}: ${st === "taken" ? "preso" : st === "missed" ? "saltato" : "da segnare"}`}
-              className={`mx-auto grid h-9 w-9 place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
+              className={`mx-auto grid h-9 w-9 place-items-center rounded-full border transition disabled:opacity-60 sm:h-12 sm:w-12 lg:h-16 lg:w-16 ${DAY_STYLE[st]} ${
                 d === selected && item.doses_required > 1 ? "ring-2 ring-white/60 ring-offset-2 ring-offset-ink-900" : ""
               }`}
             >
               {st === "taken" ? <Check /> : st === "partial" ? <span className="text-[11px] font-semibold">½</span> : null}
             </motion.button>
-            <span className={`mt-1 block text-[10.5px] ${d === today ? "font-semibold text-white/70" : "text-white/35"}`}>
+            <span className={`mt-1 block text-[10.5px] sm:mt-1.5 sm:text-[12px] ${d === today ? "font-semibold text-white/70" : "text-white/35"}`}>
               {d === today ? "oggi" : weekdayLetter(d)}
             </span>
           </div>
@@ -506,7 +525,7 @@ function MonthGrid({
   );
 
   return (
-    <div className="mx-auto mt-2 max-w-[300px]">
+    <div className="mx-auto mt-3 max-w-[300px] sm:max-w-[400px]">
       <div className="mb-1.5 flex items-center justify-between">
         {freccia(-1)}
         <p className="text-[13px] font-medium capitalize text-white/75">
@@ -532,7 +551,7 @@ function MonthGrid({
                 disabled={busy || st === "future"}
                 onClick={() => onTap(d)}
                 aria-label={shortDate(d)}
-                className={`grid h-7 w-7 place-items-center rounded-full border text-[10.5px] font-medium tabular-nums transition disabled:cursor-default ${MINI_STYLE[st]} ${
+                className={`grid h-7 w-7 place-items-center rounded-full border text-[10.5px] font-medium tabular-nums transition disabled:cursor-default sm:h-10 sm:w-10 sm:text-[12.5px] ${MINI_STYLE[st]} ${
                   d === selected && item.doses_required > 1 ? "ring-2 ring-white/60" : ""
                 }`}
               >

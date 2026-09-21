@@ -19,7 +19,7 @@ import {
   type Profile,
 } from "@/lib/api";
 import { Card, CardHeader, Notice } from "@/components/ui";
-import { NumberField } from "@/components/controls";
+import { Field, NumberField, OptionGroup } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
 import { REMINDER_HOUR, reminderSettings } from "@/components/ReminderBanner";
 
@@ -36,15 +36,7 @@ export function ProfileSection({
   onUpdated: (p: Profile) => void;
   onReset: () => void;
 }) {
-  const [form, setForm] = useState({
-    weight_kg: profile.weight_kg,
-    goal: profile.goal,
-    experience_level: profile.experience_level,
-    activity_level: profile.activity_level,
-    training_days_per_week: profile.training_days_per_week,
-    diet_type: profile.diet_type,
-    available_equipment: profile.available_equipment ?? "",
-  });
+  const [form, setForm] = useState(() => initialForm(profile));
   const [saving, setSaving] = useState(false);
   const [catalog, setCatalog] = useState<CatalogStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -107,19 +99,14 @@ export function ProfileSection({
             subtitle="Cambiarli aggiorna target calorici, proteici e volume"
             action={
               dirty ? (
-                <button
-                  className="btn-primary px-3 py-1.5"
-                  disabled={saving || !form.weight_kg}
-                  onClick={save}
-                >
+                <button className="btn-primary px-4 py-2" disabled={saving || !form.weight_kg} onClick={save}>
                   {saving ? "Salvo…" : "Salva"}
                 </button>
               ) : undefined
             }
           />
-          <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <div>
-              <label className="label">Peso attuale</label>
+          <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            <Field title="Peso attuale">
               <NumberField
                 value={form.weight_kg}
                 onChange={(v) => set("weight_kg", v)}
@@ -129,89 +116,78 @@ export function ProfileSection({
                 suffix="kg"
                 ariaLabel="Peso attuale in chilogrammi"
               />
-            </div>
-            <div>
-              <label className="label">Obiettivo</label>
-              <select
-                className="input"
-                value={form.goal}
-                onChange={(e) => set("goal", e.target.value)}
-              >
-                {Object.entries(GOAL_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Esperienza</label>
-              <select
-                className="input"
+            </Field>
+            <Field title="Esperienza">
+              <OptionGroup
+                ariaLabel="Esperienza"
+                columns="grid-cols-3"
                 value={form.experience_level}
-                onChange={(e) => set("experience_level", e.target.value)}
-              >
-                {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Attività fuori palestra</label>
-              <select
-                className="input"
-                value={form.activity_level}
-                onChange={(e) => set("activity_level", e.target.value)}
-              >
-                {Object.entries(ACTIVITY_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Alimentazione</label>
-              <select
-                className="input"
-                value={form.diet_type}
-                onChange={(e) => set("diet_type", e.target.value)}
-              >
-                {Object.entries(DIET_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">
-                Giorni a settimana — {form.training_days_per_week}
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={7}
-                value={form.training_days_per_week}
-                onChange={(e) => set("training_days_per_week", Number(e.target.value))}
-                className="mt-3 w-full accent-lime-400"
+                onChange={(v) => set("experience_level", v)}
+                options={Object.entries(EXPERIENCE_LABELS).map(([value, label]) => ({ value, label }))}
               />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="label">Attrezzatura disponibile</label>
+            </Field>
+            <Field title="Obiettivo" className="sm:col-span-2">
+              <OptionGroup
+                ariaLabel="Obiettivo"
+                columns="grid-cols-2 sm:grid-cols-3"
+                value={form.goal}
+                onChange={(v) => set("goal", v)}
+                options={Object.entries(GOAL_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            </Field>
+            <Field title="Attività fuori palestra" className="sm:col-span-2">
+              <OptionGroup
+                ariaLabel="Attività fuori palestra"
+                columns="grid-cols-2 sm:grid-cols-3"
+                value={form.activity_level}
+                onChange={(v) => set("activity_level", v)}
+                options={Object.entries(ACTIVITY_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            </Field>
+            <Field title="Alimentazione">
+              <OptionGroup
+                ariaLabel="Alimentazione"
+                columns="grid-cols-3"
+                value={form.diet_type}
+                onChange={(v) => set("diet_type", v)}
+                options={Object.entries(DIET_LABELS).map(([value, label]) => ({ value, label }))}
+              />
+            </Field>
+            <Field title="Giorni di allenamento a settimana">
+              <OptionGroup
+                ariaLabel="Giorni a settimana"
+                mono
+                columns="grid-cols-7"
+                value={form.training_days_per_week}
+                onChange={(v) => set("training_days_per_week", v)}
+                options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n }))}
+              />
+            </Field>
+            <Field
+              title="Attrezzatura disponibile"
+              hint="Gli esercizi a corpo libero restano sempre disponibili."
+              className="sm:col-span-2"
+            >
               <input
                 className="input"
                 value={form.available_equipment}
                 onChange={(e) => set("available_equipment", e.target.value)}
                 placeholder="vuoto = palestra attrezzata"
               />
-              <p className="mt-1.5 text-[11px] text-white/30">
-                Gli esercizi a corpo libero restano sempre disponibili.
-              </p>
-            </div>
+            </Field>
           </div>
+          {/* Con qualcosa da salvare: "Salva" in alto e, in fondo, lo stesso
+              piede dei pannelli. */}
+          {dirty && (
+            <div className="flex items-center gap-2 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5">
+              <button className="btn-ghost flex-1 justify-center" onClick={() => setForm(initialForm(profile))} disabled={saving}>
+                Annulla
+              </button>
+              <button className="btn-primary flex-[1.6] justify-center" disabled={saving || !form.weight_kg} onClick={save}>
+                {saving ? "Salvo…" : "Salva le modifiche"}
+              </button>
+            </div>
+          )}
         </Card>
 
         <div className="space-y-4">
@@ -309,4 +285,16 @@ export function ProfileSection({
       </div>
     </>
   );
+}
+
+function initialForm(profile: Profile) {
+  return {
+    weight_kg: profile.weight_kg as number | null,
+    goal: profile.goal,
+    experience_level: profile.experience_level,
+    activity_level: profile.activity_level,
+    training_days_per_week: profile.training_days_per_week,
+    diet_type: profile.diet_type,
+    available_equipment: profile.available_equipment ?? "",
+  };
 }

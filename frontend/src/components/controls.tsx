@@ -294,7 +294,7 @@ export function OptionGroup<T extends string | number>({
             aria-checked={on}
             whileTap={{ scale: 0.95 }}
             onClick={() => onChange(o.value)}
-            className={`min-h-[42px] rounded-xl border px-3 py-2 text-center transition ${columns ? "" : "flex-1"} ${
+            className={`min-h-[42px] rounded-xl border px-2 py-2 text-center transition sm:px-3 ${columns ? "" : "flex-1"} ${
               mono ? "font-mono text-[15px] font-semibold tabular-nums" : "text-[13px] font-medium"
             } ${
               on

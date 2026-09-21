@@ -30,7 +30,16 @@ import {
 } from "@/lib/api";
 import { Card, EvidenceBadge, Notice, SourceTags, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
-import { AskCoachButton, Modal, ModalHeader, NumberField } from "@/components/controls";
+import {
+  AskCoachButton,
+  Field,
+  Modal,
+  ModalFooter,
+  ModalHeader,
+  NumberField,
+  OptionGroup,
+  Stepper,
+} from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { SupplementDiary } from "@/components/SupplementDiary";
 import { KiloNote } from "@/components/KiloNote";
@@ -523,8 +532,7 @@ function AddDialog({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="grid gap-5 p-5 md:grid-cols-2">
           <div className="space-y-3.5">
-            <div>
-              <label className="label">Quale</label>
+            <Field title="Quale">
               <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
                 {kinds.map((k) => (
                   <option key={k} value={k}>
@@ -532,21 +540,19 @@ function AddDialog({
                   </option>
                 ))}
               </select>
-            </div>
+            </Field>
 
-            <div>
-              <label className="label">Nome del prodotto (facoltativo)</label>
+            <Field title="Nome del prodotto" hint="Facoltativo">
               <input
                 className="input"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
                 placeholder="es. Creatina monoidrato Xyz"
               />
-            </div>
+            </Field>
 
-            <div className="grid grid-cols-[1fr_92px] gap-3">
-              <div>
-                <label className="label">La tua dose</label>
+            <Field title="La tua dose">
+              <div className="space-y-2">
                 <NumberField
                   value={dose}
                   onChange={setDose}
@@ -557,28 +563,25 @@ function AddDialog({
                   placeholder="—"
                   ariaLabel="Dose"
                 />
+                <OptionGroup
+                  ariaLabel="Unità"
+                  columns="grid-cols-3"
+                  value={unit}
+                  onChange={setUnit}
+                  options={[
+                    { value: "g", label: "g" },
+                    { value: "mg", label: "mg" },
+                    { value: "mcg", label: "µg" },
+                  ]}
+                />
               </div>
-              <div>
-                <label className="label">Unità</label>
-                <select className="input" value={unit} onChange={(e) => setUnit(e.target.value)}>
-                  <option value="g">g</option>
-                  <option value="mg">mg</option>
-                  <option value="mcg">µg</option>
-                </select>
-              </div>
-            </div>
+            </Field>
 
-            <div>
-              <label className="label">Volte al giorno</label>
-              <NumberField
-                value={perDay}
-                onChange={setPerDay}
-                min={1}
-                max={10}
-                ariaLabel="Volte al giorno"
-                className="w-40"
-              />
-            </div>
+            <Field title="Volte al giorno">
+              <div className="mx-auto max-w-[220px]">
+                <Stepper value={perDay ?? 1} onChange={setPerDay} min={1} max={10} label="volte al giorno" />
+              </div>
+            </Field>
 
             {kind === "protein_powder" && (
               <div>
@@ -641,17 +644,17 @@ function AddDialog({
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col gap-2 border-t border-white/[0.06] p-4 sm:flex-row">
-        {error && <p className="flex-1 self-center text-[12px] text-rose-200/80">{error}</p>}
-        <div className="flex gap-2.5 sm:ml-auto">
-          <button className="btn-ghost" onClick={onClose}>
-            Annulla
-          </button>
-          <button className="btn-primary" disabled={saving} onClick={save}>
-            {saving ? "Salvo…" : "Aggiungi ai miei integratori"}
-          </button>
-        </div>
-      </div>
+      {error && (
+        <p className="shrink-0 border-t border-white/[0.06] px-5 pt-3 text-[12px] text-rose-200/80">{error}</p>
+      )}
+      <ModalFooter>
+        <button className="btn-ghost flex-1 justify-center sm:flex-none" onClick={onClose}>
+          Annulla
+        </button>
+        <button className="btn-primary flex-[1.6] justify-center sm:ml-auto sm:flex-none" disabled={saving} onClick={save}>
+          {saving ? "Salvo…" : "Aggiungi"}
+        </button>
+      </ModalFooter>
     </Modal>
   );
 }
