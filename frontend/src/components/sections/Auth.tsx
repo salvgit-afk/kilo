@@ -124,13 +124,27 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (s: AuthSession) =>
             </p>
           )}
 
-          <button type="submit" className="btn-primary w-full" disabled={!canSubmit || busy}>
-            {busy
-              ? "Un attimo…"
-              : mode === "login"
-                ? "Accedi"
-                : "Crea il mio account"}
-          </button>
+          {/* Pulsante compatto e centrato, con la freccia che invita ad
+              andare avanti: una barra a tutta larghezza sembrava un campo. */}
+          <div className="flex justify-center pt-1">
+            <motion.button
+              type="submit"
+              whileTap={{ scale: 0.96 }}
+              className="btn-primary group h-12 rounded-full pl-7 pr-2 text-[14.5px] shadow-[0_10px_30px_-12px_rgba(174,212,74,0.65)]"
+              disabled={!canSubmit || busy}
+            >
+              {busy ? "Un attimo…" : mode === "login" ? "Accedi" : "Crea il mio account"}
+              <span className="ml-1 grid h-8 w-8 place-items-center rounded-full bg-ink-900/90 text-lime-300 transition-transform duration-300 group-hover:translate-x-0.5">
+                {busy ? (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6}>
+                    <path d="M5 12h13m-5-6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+            </motion.button>
+          </div>
         </form>
       </motion.div>
 

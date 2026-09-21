@@ -3,11 +3,10 @@
 @tailwind utilities;
 
 /*
-  La profondità qui non viene da ombre generiche ma da tre livelli
-  sovrapposti: un fondo con sorgenti luminose sfocate, superfici in vetro
-  semitrasparente che lasciano intravedere quel fondo, e bordi chiari solo
-  sul lato superiore — come se la luce arrivasse dall'alto. È ciò che
-  distingue un'interfaccia con volume da una piatta.
+  Fondo minimale: un nero appena caldo, con una leggera schiarita verso
+  l'alto che dà un orizzonte senza sorgenti di luce né reticoli. Il volume
+  lo danno le superfici in vetro (bordo chiaro in alto, ombra in basso),
+  non il fondo.
 */
 
 :root {
@@ -28,34 +27,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Sorgenti luminose del fondo: restano fisse mentre il contenuto scorre,
-   così le superfici sembrano muoversi *sopra* la luce. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background:
-    radial-gradient(52rem 34rem at 10% -12%, rgba(126, 116, 200, 0.13), transparent 62%),
-    radial-gradient(42rem 28rem at 94% 4%, rgba(160, 190, 90, 0.06), transparent 64%),
-    radial-gradient(40rem 40rem at 50% 112%, rgba(96, 86, 170, 0.09), transparent 62%);
-}
-
-/* Reticolo appena percettibile: dà una superficie di riferimento alla
-   profondità, altrimenti il fondo scuro sembra vuoto. */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.35;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 100%);
+  background: linear-gradient(180deg, #0d0f18 0%, #07080d 55%);
 }
 
 @layer components {
