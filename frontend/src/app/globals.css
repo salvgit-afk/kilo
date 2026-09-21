@@ -371,3 +371,15 @@ input[type="range"] {
     opacity: 1;
   }
 }
+
+/* Con una finestra aperta (allenamento, ricerca alimenti, storico) il
+   pulsante della chat coprirebbe i controlli in basso a destra. Il pannello
+   della chat, se aperto da dentro una finestra, resta sopra. */
+body:has([role="dialog"][aria-modal="true"]) .chat-fab {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.8);
+}
+.chat-fab {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}

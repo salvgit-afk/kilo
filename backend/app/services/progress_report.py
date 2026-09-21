@@ -270,7 +270,9 @@ def build_report(
     per_esercizio: dict[str, list[tuple[dt.date, SessionSet]]] = {}
     for sessione in sessioni:
         for s in sessione.sets:
-            nome = s.exercise.name if s.exercise else "?"
+            # Il nome italiano, come nella scheda: il resoconto non deve
+            # parlare di "Lateral Raise: Dumbbell" se la scheda dice "Alzate laterali".
+            nome = (s.exercise.name_it or s.exercise.name) if s.exercise else "?"
             per_esercizio.setdefault(nome, []).append((sessione.date, s))
 
     pesate = db.scalars(

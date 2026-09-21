@@ -192,7 +192,7 @@ export function Today({
               {item.action && (
                 <button
                   onClick={item.action.run}
-                  className="mt-2.5 self-start text-[12.5px] font-medium text-lime-300 transition hover:translate-x-0.5 hover:text-lime-200"
+                  className="-mb-1.5 mt-1 self-start py-1.5 text-[13px] font-medium text-lime-300 transition hover:translate-x-0.5 hover:text-lime-200"
                 >
                   {item.action.label} →
                 </button>
@@ -216,14 +216,14 @@ export function Today({
 
       <WeeklySummaryCard profileId={profile.id} />
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
         <Card hover>
           <CardHeader
             title="Nutrizione di oggi"
             action={
               <button
                 onClick={() => onNavigate("diario")}
-                className="text-[12.5px] text-lime-300/80 transition hover:text-lime-200"
+                className="-my-2 py-2 text-[13px] text-lime-300/80 transition hover:text-lime-200"
               >
                 Apri diario →
               </button>
@@ -252,7 +252,7 @@ export function Today({
             action={
               <button
                 onClick={() => onNavigate("scheda")}
-                className="text-[12.5px] text-lime-300/80 transition hover:text-lime-200"
+                className="-my-2 py-2 text-[13px] text-lime-300/80 transition hover:text-lime-200"
               >
                 Apri scheda →
               </button>

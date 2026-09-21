@@ -186,6 +186,7 @@ export function NumberField({
   className = "",
   inputRef,
   onEnter,
+  steppers = "always",
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
@@ -200,6 +201,9 @@ export function NumberField({
   className?: string;
   inputRef?: React.Ref<HTMLInputElement>;
   onEnter?: () => void;
+  /** "sm": pulsanti +/− solo da tablet in su; sul telefono si digita, con il
+   * tastierino numerico, e i campi di una riga ci stanno affiancati. */
+  steppers?: "always" | "sm";
 }) {
   // Il testo è separato dal numero: mentre si digita "65" il campo deve
   // mostrare esattamente ciò che si scrive, non una rilettura del numero.
@@ -255,7 +259,7 @@ export function NumberField({
       onPointerUp={stopHold}
       onPointerLeave={stopHold}
       onPointerCancel={stopHold}
-      className={`grid w-9 shrink-0 place-items-center text-white/45 transition hover:bg-lime-400/10 hover:text-lime-300 active:bg-lime-400/20 disabled:pointer-events-none disabled:opacity-25 ${
+      className={`${steppers === "sm" ? "hidden sm:grid" : "grid"} w-9 shrink-0 place-items-center text-white/45 transition hover:bg-lime-400/10 hover:text-lime-300 active:bg-lime-400/20 disabled:pointer-events-none disabled:opacity-25 ${
         direction > 0 ? "border-l" : "border-r"
       } border-white/[0.07]`}
     >

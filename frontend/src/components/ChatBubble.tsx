@@ -244,7 +244,7 @@ export function ChatBubble({
         }}
         whileTap={{ scale: 0.93 }}
         whileHover={{ scale: 1.07 }}
-        className="group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6"
+        className="chat-fab group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6"
         aria-label={open ? "Chiudi la chat con Kilo" : "Apri la chat con Kilo"}
       >
         <span className="coach-fab block">

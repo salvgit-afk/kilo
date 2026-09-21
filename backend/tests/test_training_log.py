@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
+from app.services import rate_limit
 from app.models import Exercise, WorkoutPlan, WorkoutPlanExercise, WorkoutSession
 
 PASSWORD = "passwordlunga1"
@@ -40,6 +41,10 @@ def ambiente(monkeypatch):
 
     monkeypatch.setattr(get_settings(), "secret_key", "chiave-di-test-" + "x" * 40)
     monkeypatch.setattr(get_settings(), "gemini_api_key", "")
+    # I limiti per indirizzo sono in memoria e condivisi fra i test: senza
+    # azzerarli, le registrazioni dei test precedenti ricevono un 429.
+    for finestra in (rate_limit.LOGIN_PER_IP, rate_limit.LOGIN_FAILURES_PER_EMAIL, rate_limit.REGISTER_PER_IP):
+        finestra.reset()
     app.dependency_overrides[get_db] = _db
     yield TestClient(app), db
     app.dependency_overrides.clear()

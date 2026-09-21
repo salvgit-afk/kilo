@@ -160,6 +160,58 @@ export type ExerciseGuidance = {
   knowledge_tags: string[];
 };
 
+/** Una serie eseguita, con il carico usato. */
+export type SessionSet = {
+  id: number;
+  exercise_id: number;
+  set_number: number;
+  reps: number;
+  weight_kg: number;
+  rir: number | null;
+};
+
+export type WorkoutSessionLog = {
+  id: number;
+  date: string;
+  day_label: string | null;
+  workout_plan_id: number | null;
+  perceived_fatigue: number | null;
+  note: string | null;
+  sets: SessionSet[];
+};
+
+/** Le serie di un esercizio in una sessione dello storico. */
+export type ExerciseSession = {
+  session_id: number;
+  date: string;
+  day_label: string | null;
+  sets: SessionSet[];
+  top_weight_kg: number;
+  best_e1rm: number;
+  volume_kg: number;
+};
+
+export type ExerciseHistory = {
+  exercise_id: number;
+  exercise_name: string;
+  sessions: ExerciseSession[];
+};
+
+export type LoggedExercise = {
+  exercise_id: number;
+  exercise_name: string;
+  sessions: number;
+  last_date: string;
+};
+
+export type PlanExerciseParams = {
+  target_sets: number;
+  target_reps_min: number;
+  target_reps_max: number;
+  target_rir: number;
+  rest_seconds: number;
+};
+
 export type PlanExercise = {
   id: number;
   day_label: string;

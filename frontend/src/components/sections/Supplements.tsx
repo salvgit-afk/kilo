@@ -348,7 +348,7 @@ function Explorer({
         </div>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {visibili.map((s, i) => {
           const isOpen = open === s.kind;
           const inEvidenza = domain ? s.benefits.find((b) => b.domain === domain) : null;

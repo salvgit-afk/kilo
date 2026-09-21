@@ -378,7 +378,7 @@ function MobileNav({
             onClick={() => onNavigate(s.id)}
             aria-label={s.label}
             aria-current={s.id === active ? "page" : undefined}
-            className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-1 transition-colors duration-200 ${
+            className={`-mx-0.5 flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl py-1 transition-colors duration-200 ${
               isActive ? "text-white" : "text-white/45"
             }`}
           >
@@ -401,7 +401,7 @@ function MobileNav({
                 {s.icon}
               </svg>
             </span>
-            <span className="max-w-full truncate text-[9px] font-medium leading-none">{s.label}</span>
+            <span className="max-w-[calc(100%+4px)] truncate text-[10px] font-medium leading-none tracking-[-0.03em]">{s.label}</span>
           </button>
         );
       })}

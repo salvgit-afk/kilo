@@ -39,6 +39,7 @@ import { PreferencesDialog } from "@/components/PreferencesDialog";
 import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
+import { PlanParamsDialog, SessionDialog } from "@/components/TrainingLog";
 
 export { formatEquipment } from "@/lib/api";
 
@@ -91,6 +92,10 @@ export function Workout({
   const [detailId, setDetailId] = useState<number | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
+  const [editingParams, setEditingParams] = useState<PlanExercise | null>(null);
+  // Copia degli esercizi fatta all'apertura: la sessione non deve ricaricarsi
+  // (e azzerare le serie in corso) a ogni render della pagina.
+  const [sessionDay, setSessionDay] = useState<{ day: string; exercises: PlanExercise[] } | null>(null);
   // Overlay di creazione: `replace` è la scheda da rigenerare, null per una nuova.
   const [dialog, setDialog] = useState<{ replace: WorkoutPlan | null } | null>(null);
   const [deleting, setDeleting] = useState<WorkoutPlan | null>(null);
@@ -179,6 +184,10 @@ export function Workout({
   const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
   const dayExercises = plan?.exercises.filter((e) => e.day_label === activeDay) ?? [];
 
+  function replacePlan(aggiornata: WorkoutPlan) {
+    setPlans((correnti) => (correnti ?? []).map((p) => (p.id === aggiornata.id ? aggiornata : p)));
+  }
+
   return (
     <>
       <PageHeader
@@ -192,15 +201,15 @@ export function Workout({
             : "Genero una scheda sui parametri del tuo profilo, presi dai documenti della knowledge base."
         }
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             {plan && (
-              <button className="btn-ghost" onClick={() => setFeedbackOpen(true)}>
+              <button className="btn-ghost col-span-2 justify-center" onClick={() => setFeedbackOpen(true)}>
                 Come sta andando?
               </button>
             )}
             {plan && (
               <button
-                className="btn-ghost"
+                className="btn-ghost justify-center"
                 onClick={() => setDialog({ replace: null })}
                 disabled={generating}
               >
@@ -208,7 +217,7 @@ export function Workout({
               </button>
             )}
             <button
-              className="btn-primary"
+              className={`btn-primary justify-center ${plan ? "" : "col-span-2"}`}
               onClick={() => setDialog({ replace: plan })}
               disabled={generating}
             >
@@ -299,7 +308,7 @@ export function Workout({
           </Card>
         )
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {days.map((d) => (
@@ -324,6 +333,18 @@ export function Workout({
               ))}
             </div>
 
+            {activeDay && dayExercises.length > 0 && (
+              <button
+                onClick={() => setSessionDay({ day: activeDay, exercises: dayExercises })}
+                className="btn-primary w-full justify-center py-3 text-[14px] sm:w-auto sm:px-6"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M8 5v14l11-7L8 5Z" />
+                </svg>
+                Inizia allenamento · giorno {activeDay}
+              </button>
+            )}
+
             <div className="space-y-2.5">
               <AnimatePresence mode="popLayout">
                 {dayExercises.map((ex, i) => (
@@ -333,6 +354,7 @@ export function Workout({
                     index={i}
                     onOpenDetail={setDetailId}
                     onSwap={setSwapping}
+                    onEdit={setEditingParams}
                   />
                 ))}
               </AnimatePresence>
@@ -416,6 +438,26 @@ export function Workout({
             plan={deleting}
             onClose={() => setDeleting(null)}
             onConfirm={() => removePlan(deleting)}
+          />
+        )}
+        {editingParams && (
+          <PlanParamsDialog
+            key="params"
+            item={editingParams}
+            profileId={profile.id}
+            onClose={() => setEditingParams(null)}
+            onSaved={replacePlan}
+          />
+        )}
+        {sessionDay && plan && (
+          <SessionDialog
+            key="session"
+            profileId={profile.id}
+            plan={plan}
+            dayLabel={sessionDay.day}
+            exercises={sessionDay.exercises}
+            onClose={() => setSessionDay(null)}
+            onPlanUpdated={replacePlan}
           />
         )}
         {swapping && (
@@ -640,11 +682,13 @@ function ExerciseRow({
   index,
   onOpenDetail,
   onSwap,
+  onEdit,
 }: {
   item: PlanExercise;
   index: number;
   onOpenDetail: (id: number) => void;
   onSwap: (item: PlanExercise) => void;
+  onEdit: (item: PlanExercise) => void;
 }) {
   const ex = item.exercise;
   const nome = exerciseName(ex);
@@ -694,11 +738,15 @@ function ExerciseRow({
           </div>
         </button>
 
-        <div className="hidden shrink-0 items-center gap-4 sm:flex">
+        <button
+          onClick={() => onEdit(item)}
+          className="hidden shrink-0 items-center gap-4 rounded-xl px-2 py-1 transition hover:bg-white/[0.05] sm:flex"
+          title="Modifica serie, ripetizioni, RIR e recupero"
+        >
           <Metric value={schema} label="serie × rip." />
           <Metric value={`RIR ${item.target_rir}`} label="intensità" />
           <Metric value={`${item.rest_seconds}s`} label="recupero" />
-        </div>
+        </button>
 
         <button
           onClick={() => onSwap(item)}
@@ -712,11 +760,21 @@ function ExerciseRow({
         </button>
       </div>
 
-      <div className="flex items-center gap-4 px-4 pb-3 sm:hidden">
+      <button
+        onClick={() => onEdit(item)}
+        className="flex w-full items-center gap-4 border-t border-white/[0.05] px-4 py-2.5 text-left sm:hidden"
+        aria-label="Modifica serie, ripetizioni, RIR e recupero"
+      >
         <Metric value={schema} label="serie × rip." />
         <Metric value={`RIR ${item.target_rir}`} label="intensità" />
         <Metric value={`${item.rest_seconds}s`} label="recupero" />
-      </div>
+        <span className="ml-auto inline-flex items-center gap-1 text-[12px] text-white/45">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+            <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+          </svg>
+          Modifica
+        </span>
+      </button>
     </motion.div>
   );
 }

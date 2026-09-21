@@ -116,7 +116,7 @@ export function KiloNote({
               )}
               <button
                 onClick={() => dismiss(note.key)}
-                className="ml-auto rounded-lg px-2 py-1.5 text-[12px] text-white/40 transition hover:bg-white/[0.06] hover:text-white/80"
+                className="ml-auto rounded-lg px-3 py-2 text-[12.5px] text-white/40 transition hover:bg-white/[0.06] hover:text-white/80"
               >
                 Ho capito
               </button>

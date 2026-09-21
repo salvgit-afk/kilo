@@ -218,7 +218,7 @@ export function Recipes({
             </div>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {salvate.map((r, i) => (
               <RecipeCard
                 key={r.meal_id ?? `${r.name}-${i}`}
@@ -264,7 +264,7 @@ export function Recipes({
                     setQuery(s);
                     search(s);
                   }}
-                  className="rounded-lg border border-white/[0.08] px-2.5 py-1 text-[12px] text-white/55 transition hover:border-lime-400/30 hover:bg-lime-400/[0.07] hover:text-lime-200 disabled:opacity-40"
+                  className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-[12.5px] text-white/55 transition hover:border-lime-400/30 hover:bg-lime-400/[0.07] hover:text-lime-200 disabled:opacity-40"
                 >
                   {s}
                 </button>
@@ -313,7 +313,7 @@ export function Recipes({
             </Card>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {!loading &&
               recipes?.map((r, i) => (
                 <RecipeCard

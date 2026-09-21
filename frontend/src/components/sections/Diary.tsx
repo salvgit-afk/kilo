@@ -90,7 +90,7 @@ export function Diary({
 
       <KiloNote section="diario" />
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_350px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_350px]">
         <div className="space-y-3">
           {MEAL_ORDER.map((type) => {
             const meal = byType[type];
@@ -109,7 +109,7 @@ export function Diary({
                     <button
                       onClick={() => setAddingRecipe(type)}
                       title="Aggiungi una ricetta salvata con tutti i suoi ingredienti"
-                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-iris-400/40 hover:bg-iris-400/[0.09] hover:text-iris-200"
+                      className="flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 text-[12.5px] text-white/60 transition hover:border-iris-400/40 hover:bg-iris-400/[0.09] hover:text-iris-200"
                     >
                       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
                         <path d="M4 3h13a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3V3Zm2 2v13a1 1 0 0 0 1 1h11V6a1 1 0 0 0-1-1H6Zm3 3h7v2H9V8Zm0 4h7v2H9v-2Z" />
@@ -118,7 +118,7 @@ export function Diary({
                     </button>
                     <button
                       onClick={() => setAdding({ meal: type })}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
+                      className="flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
                     >
                       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
                         <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
@@ -593,7 +593,7 @@ function FoodSearchDialog({
             <button
               key={m}
               onClick={() => setMeal(m)}
-              className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition ${
+              className={`rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
                 meal === m
                   ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
                   : "border-white/[0.08] text-white/45 hover:text-white/80"
@@ -687,10 +687,8 @@ function FoodSearchDialog({
                     {nome}
                   </p>
                   <span
-                    className={`pill mt-1 border ${
-                      r.is_generic
-                        ? "border-lime-400/20 bg-lime-400/[0.08] text-lime-200/80"
-                        : "border-white/10 bg-white/[0.05] text-white/45"
+                    className={`mt-0.5 block truncate text-[11.5px] ${
+                      r.is_generic ? "text-lime-200/70" : "text-white/40"
                     }`}
                   >
                     {r.source_label}

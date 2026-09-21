@@ -97,7 +97,7 @@ export function RecipeToDiaryDialog({
             <button
               key={m}
               onClick={() => setMeal(m)}
-              className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition ${
+              className={`rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
                 meal === m
                   ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
                   : "border-white/[0.08] text-white/45 hover:text-white/80"
