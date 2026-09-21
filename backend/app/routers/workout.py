@@ -22,7 +22,7 @@ from app.models import (
     WorkoutSession,
 )
 from app.routers.auth import current_user
-from app.routers.profile import owned_profile
+from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
     AlternativeOut,
     ChatActionOut,
@@ -34,8 +34,15 @@ from app.schemas import (
     PreferenceOut,
     FeedbackIn,
     PlanGenerationOut,
+    ExerciseHistoryOut,
+    ExerciseSessionOut,
+    PlanExerciseUpdate,
     SessionIn,
     SessionOut,
+    SessionSetIn,
+    SessionSetOut,
+    SessionSetUpdate,
+    SessionUpdate,
     SwapIn,
     VolumeRecommendationOut,
     WorkoutPlanOut,
@@ -47,6 +54,7 @@ from app.services import (
     exercise_library,
     exercise_swap,
     rate_limit,
+    training_log,
     translation,
     workout_generator,
 )
@@ -282,7 +290,7 @@ def log_session(
     Sono questi i dati su cui si basano i report di progressione, e non
     dipendono da nessuna API esterna.
     """
-    piano = _active_plan(db, profile.id)
+    piano = _plan_for(db, profile.id, payload.workout_plan_id)
 
     sessione = WorkoutSession(
         profile_id=profile.id,
@@ -305,6 +313,198 @@ def log_session(
     db.commit()
     db.refresh(sessione)
     return sessione
+
+
+# --- Parametri della scheda -------------------------------------------------------
+
+
+@router.patch("/plan-exercises/{plan_exercise_id}", response_model=WorkoutPlanOut)
+def update_plan_exercise(
+    plan_exercise_id: int,
+    payload: PlanExerciseUpdate,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutPlan:
+    """Serie, ripetizioni, RIR e recupero di un esercizio della scheda.
+
+    I valori generati vengono dalle fonti; da qui in poi sono una scelta
+    dell'utente, che li conosce meglio di un generatore dopo qualche settimana.
+    """
+    riga = _plan_row(db, profile, plan_exercise_id)
+    cambi = payload.model_dump(exclude_unset=True, exclude_none=True)
+    minimo = cambi.get("target_reps_min", riga.target_reps_min)
+    massimo = cambi.get("target_reps_max", riga.target_reps_max)
+    if minimo > massimo:
+        raise HTTPException(
+            status_code=422,
+            detail="Le ripetizioni minime non possono superare le massime.",
+        )
+    for campo, valore in cambi.items():
+        setattr(riga, campo, valore)
+    db.commit()
+    return db.get(WorkoutPlan, riga.workout_plan_id)
+
+
+# --- Sessioni e serie ----------------------------------------------------------------
+
+
+def _owned_session(db: Session, session_id: int, user: User) -> WorkoutSession:
+    sessione = db.get(WorkoutSession, session_id)
+    if sessione is None:
+        raise HTTPException(status_code=404, detail="Sessione non trovata")
+    ensure_owner(db, sessione.profile_id, user, "Sessione non trovata")
+    return sessione
+
+
+def _owned_set(db: Session, set_id: int, user: User) -> SessionSet:
+    serie = db.get(SessionSet, set_id)
+    if serie is None:
+        raise HTTPException(status_code=404, detail="Serie non trovata")
+    ensure_owner(db, serie.session.profile_id, user, "Serie non trovata")
+    return serie
+
+
+@router.get("/sessions/current", response_model=SessionOut | None)
+def current_session(
+    day_label: str = Query(max_length=32),
+    plan_id: int | None = None,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutSession | None:
+    """La sessione di oggi per quel giorno della scheda, se è già iniziata.
+
+    Riaprendo la pagina a metà allenamento si ritrovano le serie già segnate.
+    """
+    piano = _plan_for(db, profile.id, plan_id)
+    query = select(WorkoutSession).where(
+        WorkoutSession.profile_id == profile.id,
+        WorkoutSession.date == dt.date.today(),
+        WorkoutSession.day_label == day_label,
+    )
+    if piano is not None:
+        query = query.where(WorkoutSession.workout_plan_id == piano.id)
+    return db.scalar(query.order_by(WorkoutSession.id.desc()).limit(1))
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionOut)
+def update_session(
+    session_id: int,
+    payload: SessionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> WorkoutSession:
+    sessione = _owned_session(db, session_id, user)
+    for campo, valore in payload.model_dump(exclude_unset=True).items():
+        if campo == "date" and valore is None:
+            continue
+        setattr(sessione, campo, valore)
+    db.commit()
+    db.refresh(sessione)
+    return sessione
+
+
+@router.delete("/sessions/{session_id}", status_code=204, response_model=None)
+def delete_session(
+    session_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> None:
+    sessione = _owned_session(db, session_id, user)
+    db.delete(sessione)
+    db.commit()
+
+
+@router.post("/sessions/{session_id}/sets", response_model=SessionSetOut, status_code=201)
+def add_set(
+    session_id: int,
+    payload: SessionSetIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> SessionSet:
+    """Una serie appena eseguita: si salva subito, non a fine allenamento,
+    così niente va perso se il telefono si blocca a metà."""
+    sessione = _owned_session(db, session_id, user)
+    if db.get(Exercise, payload.exercise_id) is None:
+        raise HTTPException(status_code=404, detail="Esercizio non trovato")
+    serie = SessionSet(workout_session_id=sessione.id, **payload.model_dump())
+    db.add(serie)
+    db.commit()
+    db.refresh(serie)
+    return serie
+
+
+@router.patch("/sets/{set_id}", response_model=SessionSetOut)
+def update_set(
+    set_id: int,
+    payload: SessionSetUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> SessionSet:
+    """Corregge una serie, anche settimane dopo: cambia solo quella serie,
+    lo storico delle altre sessioni resta com'è."""
+    serie = _owned_set(db, set_id, user)
+    for campo, valore in payload.model_dump(exclude_unset=True).items():
+        if campo in ("reps", "weight_kg") and valore is None:
+            continue
+        setattr(serie, campo, valore)
+    db.commit()
+    db.refresh(serie)
+    return serie
+
+
+@router.delete("/sets/{set_id}", status_code=204, response_model=None)
+def delete_set(
+    set_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> None:
+    serie = _owned_set(db, set_id, user)
+    db.delete(serie)
+    db.commit()
+
+
+def _history_out(voce: training_log.SessionEntry) -> ExerciseSessionOut:
+    return ExerciseSessionOut(
+        session_id=voce.session.id,
+        date=voce.session.date,
+        day_label=voce.session.day_label,
+        sets=[SessionSetOut.model_validate(s) for s in voce.sets],
+        top_weight_kg=voce.top_weight_kg,
+        best_e1rm=voce.best_e1rm,
+        volume_kg=voce.volume_kg,
+    )
+
+
+@router.get("/exercises/{exercise_id}/history", response_model=ExerciseHistoryOut)
+def exercise_history(
+    exercise_id: int,
+    weeks: int | None = Query(default=None, ge=1, le=260),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> ExerciseHistoryOut:
+    """Tutte le sessioni di un esercizio, dalla più recente: la base del
+    grafico dei carichi e dello storico modificabile."""
+    esercizio = db.get(Exercise, exercise_id)
+    if esercizio is None:
+        raise HTTPException(status_code=404, detail="Esercizio non trovato")
+    translation.ensure_translated(db, [esercizio])
+    dal = dt.date.today() - dt.timedelta(weeks=weeks) if weeks else None
+    storia = training_log.exercise_history(db, profile.id, exercise_id, since=dal)
+    return ExerciseHistoryOut(
+        exercise_id=esercizio.id,
+        exercise_name=esercizio.name_it or esercizio.name,
+        sessions=[_history_out(v) for v in storia],
+    )
+
+
+@router.get("/last-performance", response_model=dict[int, ExerciseSessionOut])
+def last_performance(
+    exercise_ids: list[int] = Query(default=[], max_length=40),
+    exclude_session_id: int | None = None,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> dict[int, ExerciseSessionOut]:
+    """L'ultima volta di ciascun esercizio: il riferimento durante la sessione."""
+    ultime = training_log.last_performance(
+        db, profile.id, exercise_ids, exclude_session_id=exclude_session_id
+    )
+    return {k: _history_out(v) for k, v in ultime.items()}
 
 
 @router.get("/sessions", response_model=list[SessionOut])

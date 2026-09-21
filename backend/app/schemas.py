@@ -274,10 +274,36 @@ class SessionSetIn(BaseModel):
 
 class SessionIn(BaseModel):
     date: dt.date | None = None
-    day_label: str | None = None
+    day_label: str | None = Field(default=None, max_length=32)
+    # La scheda che si sta eseguendo: se ce ne sono più d'una attive, senza
+    # questo la sessione finirebbe sempre sulla più recente.
+    workout_plan_id: int | None = None
     perceived_fatigue: int | None = Field(default=None, ge=1, le=10)
-    note: str | None = None
-    sets: list[SessionSetIn] = []
+    note: str | None = Field(default=None, max_length=2000)
+    sets: list[SessionSetIn] = Field(default_factory=list, max_length=200)
+
+
+class SessionUpdate(BaseModel):
+    date: dt.date | None = None
+    perceived_fatigue: int | None = Field(default=None, ge=1, le=10)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class SessionSetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    exercise_id: int
+    set_number: int
+    reps: int
+    weight_kg: float
+    rir: int | None
+
+
+class SessionSetUpdate(BaseModel):
+    reps: int | None = Field(default=None, ge=1, le=100)
+    weight_kg: float | None = Field(default=None, ge=0, le=1000)
+    rir: int | None = Field(default=None, ge=0, le=10)
 
 
 class SessionOut(BaseModel):
@@ -286,8 +312,45 @@ class SessionOut(BaseModel):
     id: int
     date: dt.date
     day_label: str | None
+    workout_plan_id: int | None = None
     perceived_fatigue: int | None
     note: str | None
+    sets: list[SessionSetOut] = []
+
+
+class PlanExerciseUpdate(BaseModel):
+    """Parametri di una riga di scheda, modificati dall'utente."""
+
+    target_sets: int | None = Field(default=None, ge=1, le=10)
+    target_reps_min: int | None = Field(default=None, ge=1, le=50)
+    target_reps_max: int | None = Field(default=None, ge=1, le=50)
+    target_rir: int | None = Field(default=None, ge=0, le=5)
+    rest_seconds: int | None = Field(default=None, ge=15, le=600)
+
+
+class ExerciseSessionOut(BaseModel):
+    """Le serie di un esercizio in una sessione dello storico."""
+
+    session_id: int
+    date: dt.date
+    day_label: str | None
+    sets: list[SessionSetOut]
+    top_weight_kg: float
+    best_e1rm: float
+    volume_kg: float
+
+
+class ExerciseHistoryOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    sessions: list[ExerciseSessionOut]
+
+
+class LoggedExerciseOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    sessions: int
+    last_date: dt.date
 
 
 class FeedbackIn(BaseModel):

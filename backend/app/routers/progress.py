@@ -15,10 +15,17 @@ from app.routers.profile import owned_profile
 from app.schemas import (
     CatalogStatusOut,
     ExerciseProgressOut,
+    LoggedExerciseOut,
     ProgressReportOut,
     SyncResultOut,
 )
-from app.services import catalog_sync, exercise_library, progress_report, translation
+from app.services import (
+    catalog_sync,
+    exercise_library,
+    progress_report,
+    training_log,
+    translation,
+)
 
 router = APIRouter(tags=["progressione"], dependencies=[Depends(current_user)])
 
@@ -88,6 +95,28 @@ def read_report(
         notes=report.notes,
         plateau_advice=progress_report.explain_plateau(db, profile, report),
     )
+
+
+@router.get("/progress/loads", response_model=list[LoggedExerciseOut])
+def logged_exercises(
+    weeks: int = Query(default=12, ge=1, le=260),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> list[LoggedExerciseOut]:
+    """Esercizi con carichi registrati nel periodo, i più frequenti prima:
+    il selettore del grafico della progressione dei carichi."""
+    dal = dt.date.today() - dt.timedelta(weeks=weeks)
+    righe = training_log.logged_exercises(db, profile.id, since=dal)
+    translation.ensure_translated(db, [r.exercise for r in righe])
+    return [
+        LoggedExerciseOut(
+            exercise_id=r.exercise.id,
+            exercise_name=r.exercise.name_it or r.exercise.name,
+            sessions=r.sessions,
+            last_date=r.last_date,
+        )
+        for r in righe
+    ]
 
 
 @router.get("/catalog/status", response_model=CatalogStatusOut)
