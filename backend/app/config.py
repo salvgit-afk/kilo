@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     themealdb_base_url: str = "https://www.themealdb.com/api/json/v1/1"
 
     # --- CORS ---------------------------------------------------------------
-    frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    frontend_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

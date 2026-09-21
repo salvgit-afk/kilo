@@ -42,7 +42,7 @@ presenta come Kilo.
   **scansioni il codice a barre** (valori per 100 g da Open Food Facts, in
   cache dopo la prima lettura; se il prodotto manca lo inserisci
   dall'etichetta), per gli alimenti sfusi cerchi per nome (USDA per i generici,
-  Open Food Facts via wger per i confezionati). Poi pesi e aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
+  Open Food Facts per i prodotti venduti in Italia). Poi pesi e aggiungi al pasto. Con **«Cosa mi manca oggi?»** Kilo propone alimenti e
   grammi per chiudere le proteine senza sforare le calorie. Non aggiunge nulla
   senza la tua conferma.
 - **Ricette fit**: prima le **Ricette Kilo**, una raccolta italiana scritta
@@ -101,7 +101,7 @@ presenta come Kilo.
 | Autenticazione | Password con **Argon2** (`pwdlib`), sessioni **JWT** |
 | LLM | **Google Gemini** (piano gratuito), solo spiegazioni e traduzioni |
 | Esercizi | [Everkinetic](https://github.com/everkinetic/data) (disegni, CC BY-SA 4.0), [RepDB](https://github.com/RepDB/exercise-dataset) (illustrazioni, free tier con attribuzione), [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (foto, pubblico dominio), più esercizi scritti a mano |
-| Alimenti | **USDA FoodData Central** (chiave gratuita), **wger / Open Food Facts** |
+| Alimenti | **USDA FoodData Central** (chiave gratuita), **Open Food Facts** (prodotti venduti in Italia), wger come riserva |
 | Ricette | **Ricette Kilo** (raccolta interna, `backend/app/data/kilo_recipes.py`), poi **TheMealDB** (senza chiave) |
 | Frontend | **Next.js 15**, React 18, TypeScript, Tailwind, Framer Motion, Recharts |
 
@@ -136,9 +136,9 @@ kilo/
 │   │       ├── chat_agent.py          # la chat con Kilo
 │   │       ├── knowledge_base.py      # retrieval dei documenti per tag
 │   │       ├── llm_client.py · translation.py
-│   │       └── wger_client.py · usda_client.py · themealdb_client.py
+│   │       └── off_client.py · usda_client.py · themealdb_client.py · wger_client.py
 │   ├── alembic/                 # migrazioni schema
-│   ├── tests/                   # 266 test
+│   ├── tests/                   # test pytest
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -177,7 +177,7 @@ kilo/
 | Chiave | Dove | A cosa serve | Senza |
 |---|---|---|---|
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey | Spiegazioni delle schede, chat con Kilo, traduzioni in italiano | Schede e target funzionano, ma senza testi e senza chat |
-| `USDA_API_KEY` | https://fdc.nal.usda.gov/api-key-signup | Alimenti grezzi precisi (pollo, uova, legumi…) | Il diario usa solo wger / Open Food Facts |
+| `USDA_API_KEY` | https://fdc.nal.usda.gov/api-key-signup | Alimenti grezzi precisi (pollo, uova, legumi…) | Il diario usa solo Open Food Facts (wger come riserva) |
 
 wger e TheMealDB non richiedono alcuna registrazione.
 
