@@ -270,3 +270,81 @@ def test_giorni_della_scheda_di_un_altro_non_modificabili(ambiente):
     r = client.put(f"/workout/plans/{piano.id}/schedule?profile_id={pid_a}", headers=attaccante,
                    json={"weekdays": [1]})
     assert r.status_code == 404
+
+
+# --- Avvio, in corso, fine ----------------------------------------------------------------
+
+
+def test_allenamento_avviato_resta_in_corso_fino_alla_fine(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _, panca, _ = _scheda(db, pid)
+    oggi = str(dt.date.today())
+
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h,
+                    json={"day_label": "A", "workout_plan_id": piano.id, "date": oggi, "start": True}).json()
+    assert s["started_at"] and s["ended_at"] is None
+
+    attivo = client.get(f"/workout/sessions/active?profile_id={pid}&today={oggi}", headers=h).json()
+    assert attivo["id"] == s["id"]
+
+    client.post(f"/workout/sessions/{s['id']}/sets", headers=h,
+                json={"exercise_id": panca.id, "set_number": 1, "reps": 8, "weight_kg": 60})
+    r = client.post(f"/workout/sessions/{s['id']}/finish", headers=h)
+    assert r.status_code == 200, r.text
+    riepilogo = r.json()
+    assert riepilogo["duration_seconds"] is not None and riepilogo["duration_seconds"] >= 0
+    assert (riepilogo["sets_count"], riepilogo["exercises_count"], riepilogo["volume_kg"]) == (1, 1, 480)
+    assert riepilogo["records"] == []  # prima volta: nessun termine di paragone
+
+    assert client.get(f"/workout/sessions/active?profile_id={pid}&today={oggi}", headers=h).json() is None
+
+
+def test_record_solo_se_mai_sollevato_prima(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _, panca, squat = _scheda(db, pid)
+    prima = str(dt.date.today() - dt.timedelta(days=3))
+    client.post(f"/workout/sessions?profile_id={pid}", headers=h, json={
+        "day_label": "A", "date": prima,
+        "sets": [{"exercise_id": panca.id, "set_number": 1, "reps": 8, "weight_kg": 60},
+                 {"exercise_id": squat.id, "set_number": 1, "reps": 5, "weight_kg": 100}],
+    })
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json={
+        "day_label": "A", "start": True,
+        "sets": [{"exercise_id": panca.id, "set_number": 1, "reps": 6, "weight_kg": 62.5},
+                 {"exercise_id": squat.id, "set_number": 1, "reps": 5, "weight_kg": 100}],
+    }).json()
+    record = client.post(f"/workout/sessions/{s['id']}/finish", headers=h).json()["records"]
+    assert [(x["exercise_name"], x["weight_kg"], x["previous_best_kg"]) for x in record] == [("Panca piana", 62.5, 60)]
+
+
+def test_sessione_riaperta_torna_in_corso(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    _scheda(db, pid)
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json={"day_label": "A", "start": True}).json()
+    client.post(f"/workout/sessions/{s['id']}/finish", headers=h)
+    riaperta = client.post(f"/workout/sessions/{s['id']}/start", headers=h).json()
+    assert riaperta["ended_at"] is None and riaperta["started_at"] == s["started_at"]
+
+
+def test_la_data_la_decide_il_telefono(ambiente):
+    """Fra mezzanotte e le due il server in UTC ha ancora la data di ieri."""
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    domani = str(dt.date.today() + dt.timedelta(days=1))
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h,
+                    json={"day_label": "A", "date": domani, "start": True}).json()
+    assert s["date"] == domani
+    corrente = client.get(f"/workout/sessions/current?profile_id={pid}&day_label=A&today={domani}", headers=h).json()
+    assert corrente["id"] == s["id"]
+
+
+def test_allenamento_di_un_altro_non_si_chiude(ambiente):
+    client, db = ambiente
+    vittima, pid_v = _account(client, "v@example.com")
+    attaccante, _ = _account(client, "a@example.com")
+    s = client.post(f"/workout/sessions?profile_id={pid_v}", headers=vittima, json={"day_label": "A", "start": True}).json()
+    assert client.post(f"/workout/sessions/{s['id']}/finish", headers=attaccante).status_code == 404
+    assert client.post(f"/workout/sessions/{s['id']}/start", headers=attaccante).status_code == 404

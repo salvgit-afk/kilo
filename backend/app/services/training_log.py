@@ -126,3 +126,61 @@ def logged_exercises(
     righe = [LoggedExercise(ex, n, ultima) for ex, n, ultima in db.execute(query)]
     righe.sort(key=lambda r: (-r.sessions, r.exercise.name))
     return righe
+
+
+@dataclass
+class SessionRecord:
+    exercise: Exercise
+    weight_kg: float
+    previous_best_kg: float | None
+
+
+@dataclass
+class SessionSummary:
+    session: WorkoutSession
+    duration_seconds: int | None
+    sets_count: int
+    exercises_count: int
+    volume_kg: float
+    records: list[SessionRecord]
+
+
+def summarize_session(db: Session, session: WorkoutSession) -> SessionSummary:
+    """Il riepilogo di fine allenamento.
+
+    Un record è un carico mai sollevato prima su quell'esercizio, in nessuna
+    sessione precedente. Alla prima volta non c'è record: senza un termine
+    di paragone non si è battuto niente.
+    """
+    durata = None
+    if session.started_at and session.ended_at:
+        durata = max(0, int((session.ended_at - session.started_at).total_seconds()))
+
+    per_esercizio: dict[int, list[SessionSet]] = {}
+    for s in session.sets:
+        per_esercizio.setdefault(s.exercise_id, []).append(s)
+
+    record: list[SessionRecord] = []
+    for exercise_id, serie in per_esercizio.items():
+        oggi = max(s.weight_kg for s in serie)
+        precedente = db.scalar(
+            select(func.max(SessionSet.weight_kg))
+            .join(WorkoutSession, SessionSet.workout_session_id == WorkoutSession.id)
+            .where(
+                WorkoutSession.profile_id == session.profile_id,
+                SessionSet.exercise_id == exercise_id,
+                WorkoutSession.id != session.id,
+                WorkoutSession.date <= session.date,
+            )
+        )
+        if precedente is not None and oggi > precedente:
+            record.append(SessionRecord(serie[0].exercise, oggi, precedente))
+
+    return SessionSummary(
+        session=session,
+        duration_seconds=durata,
+        sets_count=len(session.sets),
+        exercises_count=len(per_esercizio),
+        volume_kg=round(sum(s.weight_kg * s.reps for s in session.sets), 1),
+        records=record,
+    )

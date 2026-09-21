@@ -287,6 +287,8 @@ class SessionIn(BaseModel):
     perceived_fatigue: int | None = Field(default=None, ge=1, le=10)
     note: str | None = Field(default=None, max_length=2000)
     sets: list[SessionSetIn] = Field(default_factory=list, max_length=200)
+    # Vero quando la sessione è un allenamento avviato ora: parte il cronometro.
+    start: bool = False
 
 
 class SessionUpdate(BaseModel):
@@ -321,7 +323,28 @@ class SessionOut(BaseModel):
     workout_plan_id: int | None = None
     perceived_fatigue: int | None
     note: str | None
+    started_at: dt.datetime | None = None
+    ended_at: dt.datetime | None = None
     sets: list[SessionSetOut] = []
+
+
+class SessionRecordOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    weight_kg: float
+    previous_best_kg: float | None
+
+
+class SessionSummaryOut(BaseModel):
+    """Il riepilogo che compare a fine allenamento."""
+
+    session: SessionOut
+    duration_seconds: int | None
+    sets_count: int
+    exercises_count: int
+    volume_kg: float
+    # Carichi mai sollevati prima su quell'esercizio.
+    records: list[SessionRecordOut]
 
 
 class PlanExerciseUpdate(BaseModel):

@@ -40,6 +40,8 @@ from app.schemas import (
     PlanScheduleIn,
     SessionIn,
     SessionOut,
+    SessionRecordOut,
+    SessionSummaryOut,
     SessionSetIn,
     SessionSetOut,
     SessionSetUpdate,
@@ -312,10 +314,13 @@ def log_session(
     sessione = WorkoutSession(
         profile_id=profile.id,
         workout_plan_id=piano.id if piano else None,
+        # La data la manda il telefono: il server è in UTC e fra mezzanotte e
+        # le due, in Italia, avrebbe ancora quella di ieri.
         date=payload.date or dt.date.today(),
         day_label=payload.day_label,
         perceived_fatigue=payload.perceived_fatigue,
         note=payload.note,
+        started_at=dt.datetime.now(dt.timezone.utc) if payload.start else None,
     )
     db.add(sessione)
     db.flush()
@@ -412,6 +417,7 @@ def _owned_set(db: Session, set_id: int, user: User) -> SessionSet:
 def current_session(
     day_label: str = Query(max_length=32),
     plan_id: int | None = None,
+    today: dt.date | None = None,
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> WorkoutSession | None:
@@ -422,12 +428,87 @@ def current_session(
     piano = _plan_for(db, profile.id, plan_id)
     query = select(WorkoutSession).where(
         WorkoutSession.profile_id == profile.id,
-        WorkoutSession.date == dt.date.today(),
+        WorkoutSession.date == (today or dt.date.today()),
         WorkoutSession.day_label == day_label,
     )
     if piano is not None:
         query = query.where(WorkoutSession.workout_plan_id == piano.id)
     return db.scalar(query.order_by(WorkoutSession.id.desc()).limit(1))
+
+
+@router.get("/sessions/active", response_model=SessionOut | None)
+def active_session(
+    today: dt.date | None = None,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutSession | None:
+    """L'allenamento avviato e non ancora terminato, se c'è.
+
+    È ciò che trasforma "Inizia allenamento" in "Allenamento in corso" con il
+    cronometro, anche dopo aver chiuso il pannello o ricaricato la pagina.
+    Solo quelli di oggi: uno dimenticato aperto ieri non resta in corso.
+    """
+    return db.scalar(
+        select(WorkoutSession)
+        .where(
+            WorkoutSession.profile_id == profile.id,
+            WorkoutSession.date == (today or dt.date.today()),
+            WorkoutSession.started_at.is_not(None),
+            WorkoutSession.ended_at.is_(None),
+        )
+        .order_by(WorkoutSession.started_at.desc())
+        .limit(1)
+    )
+
+
+def _summary_out(r: training_log.SessionSummary) -> SessionSummaryOut:
+    return SessionSummaryOut(
+        session=SessionOut.model_validate(r.session),
+        duration_seconds=r.duration_seconds,
+        sets_count=r.sets_count,
+        exercises_count=r.exercises_count,
+        volume_kg=r.volume_kg,
+        records=[
+            SessionRecordOut(
+                exercise_id=x.exercise.id,
+                exercise_name=x.exercise.name_it or x.exercise.name,
+                weight_kg=x.weight_kg,
+                previous_best_kg=x.previous_best_kg,
+            )
+            for x in r.records
+        ],
+    )
+
+
+@router.post("/sessions/{session_id}/start", response_model=SessionOut)
+def start_session(
+    session_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> WorkoutSession:
+    """Avvia (o riapre) un allenamento: riparte il cronometro se era chiuso."""
+    sessione = _owned_session(db, session_id, user)
+    if sessione.started_at is None:
+        sessione.started_at = dt.datetime.now(dt.timezone.utc)
+    sessione.ended_at = None
+    db.commit()
+    db.refresh(sessione)
+    return sessione
+
+
+@router.post("/sessions/{session_id}/finish", response_model=SessionSummaryOut)
+def finish_session(
+    session_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> SessionSummaryOut:
+    """Termina l'allenamento e restituisce il riepilogo: durata, serie,
+    chili sollevati e i carichi mai raggiunti prima."""
+    sessione = _owned_session(db, session_id, user)
+    adesso = dt.datetime.now(dt.timezone.utc)
+    if sessione.started_at is None:
+        sessione.started_at = adesso
+    sessione.ended_at = adesso
+    db.commit()
+    db.refresh(sessione)
+    translation.ensure_translated(db, list({s.exercise for s in sessione.sets if s.exercise}))
+    return _summary_out(training_log.summarize_session(db, sessione))
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionOut)

@@ -569,6 +569,10 @@ class WorkoutSession(Base):
     day_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     perceived_fatigue: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-10
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Avvio e fine dell'allenamento: la durata. Nulli per le sessioni
+    # registrate prima che l'allenamento avesse un inizio e una fine.
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
