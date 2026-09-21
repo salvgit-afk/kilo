@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.models import SupplementDeclaration, SupplementIntake, SupplementKind, UserProfile
 
-# Giorni mostrati nello storico e su cui si contano i giorni saltati.
+# Giorni mostrati nello storico e su cui si contano i giorni saltati per le
+# note di Kilo. È impaginazione, non una durata dell'integratore: la
+# schermata mostra "N su M giorni" sul periodo reale (`tracked_days`).
 HISTORY_DAYS = 28
 MAX_DOSES_PER_DAY = 20
 
@@ -28,28 +30,34 @@ MAX_DOSES_PER_DAY = 20
 # l'effetto per cui l'integratore è studiato.
 # Il secondo testo vale a durata raggiunta: dice cosa significa, perché "28 di
 # 28 giorni" da solo sembrerebbe la fine dell'assunzione.
-MILESTONES: dict[str, tuple[int, str, str, str]] = {
+MILESTONES: dict[str, tuple[int, str, str, str, str, str]] = {
+    # (giorni, nome della fase, nota, nome a fase completata, nota, tag)
     SupplementKind.CREATINE: (
         28,
-        "Senza fase di carico, con 3-5 g al giorno le scorte muscolari salgono "
-        "in 3-4 settimane.",
-        "Scorte piene: da qui è mantenimento, 3-5 g al giorno. Non serve fare "
-        "pause o cicli, e la fonte non indica un limite di durata.",
+        "Fase di saturazione",
+        "Senza fase di carico, con 3-5 g al giorno le scorte muscolari si "
+        "riempiono in 3-4 settimane. Dopo si continua con la stessa dose: è "
+        "mantenimento, non la fine dell'assunzione.",
+        "Scorte piene",
+        "Da qui è mantenimento, 3-5 g al giorno. Non servono pause o cicli, e "
+        "la fonte non indica un limite di durata.",
         "creatina",
     ),
     SupplementKind.BETA_ALANINE: (
         28,
+        "Accumulo di carnosina",
         "Servono almeno 4 settimane continuative per aumentare la carnosina "
-        "muscolare.",
-        "Durata minima raggiunta. Su quanto proseguire o se fare pause la fonte "
-        "non dà indicazioni.",
+        "muscolare: è una durata minima, non un ciclo con una fine.",
+        "Durata minima raggiunta",
+        "Su quanto proseguire o se fare pause la fonte non dà indicazioni.",
         "beta_alanina",
     ),
     SupplementKind.ASHWAGANDHA: (
         56,
+        "Tempo per vedere gli effetti",
         "Gli effetti sul sonno sono più marcati dopo almeno 8 settimane.",
-        "Durata raggiunta. Da sapere: la sicurezza a lungo termine non è ancora "
-        "ben caratterizzata.",
+        "Durata indicata raggiunta",
+        "Da sapere: la sicurezza a lungo termine non è ancora ben caratterizzata.",
         "integratori_oltre_muscolo",
     ),
 }
@@ -58,7 +66,9 @@ MILESTONES: dict[str, tuple[int, str, str, str]] = {
 @dataclass
 class Milestone:
     days: int
+    label: str
     note: str
+    reached_label: str
     reached_note: str
     knowledge_tag: str
 
@@ -71,6 +81,9 @@ class IntakeSummary:
     days_taken: int
     current_streak: int
     missed_days: int
+    # Giorni dal primo segnato a oggi (oggi conta solo se già segnato): la
+    # base di "16 su 18 giorni presi", invece di una finestra fissa.
+    tracked_days: int = 0
     history: dict[dt.date, int] = field(default_factory=dict)
     milestone: Milestone | None = None
 
@@ -160,6 +173,9 @@ def summarize(
         days_taken=len(presi),
         current_streak=serie,
         missed_days=saltati,
+        tracked_days=(
+            0 if not presi else (today - min(presi)).days + (1 if today in presi else 0)
+        ),
         history={d: n for d, n in presi.items() if d >= finestra_inizio},
         milestone=Milestone(*traguardo) if traguardo else None,
     )

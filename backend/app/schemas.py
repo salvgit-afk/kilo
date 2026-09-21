@@ -194,11 +194,17 @@ class WorkoutPlanOut(BaseModel):
     name: str
     goal: str
     days_per_week: int
+    # Giorni della settimana, 0 = lunedì.
+    training_weekdays: list[int] = []
     split_type: str | None = None
     rationale: str | None
     is_active: bool
     started_at: dt.date
     exercises: list[PlanExerciseOut] = []
+
+
+class PlanScheduleIn(BaseModel):
+    weekdays: list[int] = Field(min_length=1, max_length=7)
 
 
 class PlanGenerationOut(BaseModel):
@@ -643,7 +649,9 @@ class IntakeDayOut(BaseModel):
 
 class IntakeMilestoneOut(BaseModel):
     days: int
+    label: str
     note: str
+    reached_label: str
     reached_note: str
     knowledge_tag: str
 
@@ -661,6 +669,7 @@ class SupplementIntakeOut(BaseModel):
     days_taken: int
     current_streak: int
     missed_days: int
+    tracked_days: int
     history_days: int
     history: list[IntakeDayOut]
     milestone: IntakeMilestoneOut | None

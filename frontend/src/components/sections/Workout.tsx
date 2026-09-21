@@ -40,6 +40,7 @@ import { AskCoachButton, DemoAnimation, Modal, ModalHeader, NumberField } from "
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
 import { PlanParamsDialog, SessionDialog } from "@/components/TrainingLog";
+import { ScheduleDialog, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
 
 export { formatEquipment } from "@/lib/api";
 
@@ -47,6 +48,7 @@ type PlanMeta = Omit<PlanGeneration, "plan">;
 
 type PlanOptions = {
   split: string;
+  weekdays?: number[];
   replacePlanId?: number;
   sets?: number | null;
   repsMin?: number | null;
@@ -93,6 +95,7 @@ export function Workout({
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
   const [editingParams, setEditingParams] = useState<PlanExercise | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState(false);
   // Copia degli esercizi fatta all'apertura: la sessione non deve ricaricarsi
   // (e azzerare le serie in corso) a ogni render della pagina.
   const [sessionDay, setSessionDay] = useState<{ day: string; exercises: PlanExercise[] } | null>(null);
@@ -130,6 +133,7 @@ export function Workout({
         split_type: opts.split,
       });
       if (opts.replacePlanId) params.set("replace_plan_id", String(opts.replacePlanId));
+      opts.weekdays?.forEach((g) => params.append("weekdays", String(g)));
       if (opts.sets) params.set("sets_per_exercise", String(opts.sets));
       if (opts.repsMin && opts.repsMax) {
         params.set("reps_min", String(opts.repsMin));
@@ -267,6 +271,28 @@ export function Workout({
             </button>
           )}
         </div>
+      )}
+
+      {plan && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-5">
+            <p className="text-[13px] font-medium text-white/80">
+              Questa settimana
+              <span className="ml-1.5 font-normal text-white/40">
+                · {plan.training_weekdays.length} {plan.training_weekdays.length === 1 ? "giorno" : "giorni"}
+              </span>
+            </p>
+            <button
+              onClick={() => setEditingSchedule(true)}
+              className="-my-1 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-lime-300/85 transition hover:bg-lime-400/[0.08] hover:text-lime-200"
+            >
+              Cambia giorni
+            </button>
+          </div>
+          <div className="px-3 pb-3.5 pt-2 sm:px-4">
+            <WeekLine plan={plan} profileId={profile.id} onOpenDay={(label) => setActiveDay(label)} />
+          </div>
+        </Card>
       )}
 
       {error && (
@@ -424,6 +450,7 @@ export function Workout({
             key="plan-dialog"
             replacing={dialog.replace}
             defaultSplit={profile.split_type ?? "auto"}
+            defaultDays={profile.training_days_per_week}
             onClose={() => setDialog(null)}
             onGenerate={generate}
             onOpenPrefs={() => setPrefsOpen(true)}
@@ -438,6 +465,15 @@ export function Workout({
             plan={deleting}
             onClose={() => setDeleting(null)}
             onConfirm={() => removePlan(deleting)}
+          />
+        )}
+        {editingSchedule && plan && (
+          <ScheduleDialog
+            key="schedule"
+            plan={plan}
+            profileId={profile.id}
+            onClose={() => setEditingSchedule(false)}
+            onSaved={replacePlan}
           />
         )}
         {editingParams && (
@@ -495,24 +531,29 @@ export function Workout({
 function PlanDialog({
   replacing,
   defaultSplit,
+  defaultDays,
   onClose,
   onGenerate,
   onOpenPrefs,
 }: {
   replacing: WorkoutPlan | null;
   defaultSplit: string;
+  defaultDays: number;
   onClose: () => void;
   onGenerate: (opts: PlanOptions) => void;
   onOpenPrefs: () => void;
 }) {
   const [split, setSplit] = useState(replacing?.split_type ?? defaultSplit);
+  const [weekdays, setWeekdays] = useState<number[]>(
+    replacing?.training_weekdays ?? defaultWeekdays(defaultDays)
+  );
   const [manual, setManual] = useState(false);
   const [sets, setSets] = useState<number | null>(3);
   const [repsMin, setRepsMin] = useState<number | null>(6);
   const [repsMax, setRepsMax] = useState<number | null>(8);
 
   const rangeInvalido = repsMin !== null && repsMax !== null && repsMin > repsMax;
-  const invalido = manual && (!sets || !repsMin || !repsMax || rangeInvalido);
+  const invalido = !weekdays.length || (manual && (!sets || !repsMin || !repsMax || rangeInvalido));
 
   return (
     <Modal onClose={onClose} className="max-w-lg">
@@ -528,6 +569,8 @@ function PlanDialog({
       />
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
+        <WeekdayPicker value={weekdays} onChange={setWeekdays} />
+
         <div>
           <label className="label">Come vuoi dividere gli allenamenti</label>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -609,6 +652,7 @@ function PlanDialog({
           onClick={() =>
             onGenerate({
               split,
+              weekdays,
               replacePlanId: replacing?.id,
               sets: manual ? sets : null,
               repsMin: manual ? repsMin : null,

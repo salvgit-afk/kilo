@@ -491,6 +491,12 @@ class WorkoutPlan(Base):
     # Motivazione testuale generata dall'agente (perché questa scheda, per te).
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Giorni della settimana scelti, "0,2,4" (0 = lunedì). Nullo per le schede
+    # create prima: vale la proposta di default per `days_per_week`.
+    training_weekdays_raw: Mapped[str | None] = mapped_column(
+        "training_weekdays", String(20), nullable=True
+    )
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     started_at: Mapped[dt.date] = mapped_column(Date)
     ended_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
@@ -506,6 +512,14 @@ class WorkoutPlan(Base):
         # giorni (Push, Pull, Gambe). Per nome uscirebbero in ordine alfabetico.
         order_by="WorkoutPlanExercise.id",
     )
+
+    @property
+    def training_weekdays(self) -> list[int]:
+        from app.services import training_schedule
+
+        return training_schedule.parse(self.training_weekdays_raw) or training_schedule.default_for(
+            self.days_per_week
+        )
 
 
 class WorkoutPlanExercise(Base):

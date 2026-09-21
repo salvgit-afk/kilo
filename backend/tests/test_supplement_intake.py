@@ -245,3 +245,34 @@ def test_pasto_vuoto_non_conta_come_registrato(db, profilo):
     db.add(MealLog(profile_id=profilo.id, date=OGGI, meal_type="dinner"))
     db.commit()
     assert daily_reminders.build(db, profilo, today=OGGI).meals_missing is True
+
+
+# --- "16 su 18 giorni": il periodo reale, non una finestra fissa ------------------------
+
+
+def test_giorni_tracciati_dal_primo_segnato(db, profilo):
+    d = _dichiara(db, profilo, giorni=40)
+    _segna(db, d, *[n for n in range(1, 19) if n not in (5, 11)])
+    r = intake.summarize(db, d, today=OGGI)
+    # Dal primo giorno segnato (18 giorni fa) a ieri: oggi non è ancora finito.
+    assert (r.days_taken, r.tracked_days) == (16, 18)
+
+
+def test_oggi_segnato_entra_nel_periodo(db, profilo):
+    d = _dichiara(db, profilo, giorni=3)
+    _segna(db, d, 0, 1, 2)
+    assert intake.summarize(db, d, today=OGGI).tracked_days == 3
+
+
+def test_niente_segnato_niente_periodo(db, profilo):
+    d = _dichiara(db, profilo, giorni=10)
+    assert intake.summarize(db, d, today=OGGI).tracked_days == 0
+
+
+def test_fase_con_nome_e_spiegazione():
+    for giorni, nome, nota, completata, _, _ in intake.MILESTONES.values():
+        assert giorni > 0 and nome and completata
+    creatina = intake.MILESTONES[intake.SupplementKind.CREATINE]
+    assert creatina[1] == "Fase di saturazione"
+    # Il 28 non deve sembrare la fine dell'assunzione.
+    assert "mantenimento" in creatina[2] and "non la fine" in creatina[2]

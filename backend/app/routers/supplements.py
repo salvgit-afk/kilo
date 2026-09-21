@@ -114,6 +114,7 @@ def _intake_out(riepilogo: supplement_intake.IntakeSummary) -> SupplementIntakeO
         days_taken=riepilogo.days_taken,
         current_streak=riepilogo.current_streak,
         missed_days=riepilogo.missed_days,
+        tracked_days=riepilogo.tracked_days,
         history_days=supplement_intake.HISTORY_DAYS,
         history=[
             IntakeDayOut(date=giorno, doses=dosi)

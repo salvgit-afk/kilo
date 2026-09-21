@@ -230,6 +230,8 @@ export type WorkoutPlan = {
   name: string;
   goal: string;
   days_per_week: number;
+  /** Giorni della settimana, 0 = lunedì. */
+  training_weekdays: number[];
   /** Divisione usata (full_body, upper_lower…); null per le schede create prima. */
   split_type: string | null;
   rationale: string | null;
@@ -428,9 +430,18 @@ export type SupplementIntake = {
   days_taken: number;
   current_streak: number;
   missed_days: number;
+  /** Giorni dal primo segnato a oggi (oggi solo se già segnato). */
+  tracked_days: number;
   history_days: number;
   history: IntakeDay[];
-  milestone: { days: number; note: string; reached_note: string; knowledge_tag: string } | null;
+  milestone: {
+    days: number;
+    label: string;
+    note: string;
+    reached_label: string;
+    reached_note: string;
+    knowledge_tag: string;
+  } | null;
 };
 
 export type DailyReminders = {

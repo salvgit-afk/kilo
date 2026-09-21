@@ -4,15 +4,17 @@
  * Diario delle assunzioni: la scheda "Diario" della sezione Integratori.
  *
  * Per ogni integratore dichiarato l'utente segna le assunzioni del giorno e
- * vede da quanti giorni lo prende, la serie in corso e i giorni saltati.
- * Le ultime 4 settimane sono una striscia di quadratini: un clic su un
- * giorno lo seleziona, così si può segnare anche un'assunzione dimenticata.
+ * vede, in un anello, quanti giorni l'ha preso **sul periodo reale** (dal
+ * primo giorno segnato: "16 su 18"), più la serie in corso e i saltati. Gli
+ * ultimi 7 giorni sono pillole da toccare; il mese intero si apre a richiesta.
+ * Niente percentuali da interpretare: solo giorni contati.
  *
  * Dove le fonti indicano una durata (creatina senza carico, beta-alanina,
- * ashwagandha) compare a che punto si è: è un'informazione, non un obiettivo.
+ * ashwagandha) compare come fase con un nome ("Fase di saturazione") e con
+ * scritto cosa succede dopo: è un'informazione, non la fine dell'assunzione.
  */
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import {
   SUPPLEMENT_LABELS,
@@ -51,6 +53,7 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
   const [items, setItems] = useState<SupplementIntake[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
+  const [monthOpen, setMonthOpen] = useState<Record<number, boolean>>({});
 
   const load = useCallback(async () => {
     const oggi = localDate();
@@ -68,13 +71,23 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
     load();
   }, [load]);
 
-  async function setDoses(item: SupplementIntake, doses: number) {
+  // Con una dose al giorno il tocco segna o toglie quel giorno; con più dosi
+  // lo seleziona, e le dosi si segnano in alto.
+  function tapDay(item: SupplementIntake, date: string) {
+    if (date > today) return;
+    setSelected(date);
+    if (item.doses_required !== 1) return;
+    const presa = (item.history.find((h) => h.date === date)?.doses ?? 0) >= 1;
+    setDoses(item, presa ? 0 : 1, date);
+  }
+
+  async function setDoses(item: SupplementIntake, doses: number, date: string = selected) {
     setSaving(item.supplement_id);
     setError(null);
     try {
       const aggiornato = await api.put<SupplementIntake>(
         `/supplements/${item.supplement_id}/intake?profile_id=${profileId}&today=${today}`,
-        { date: selected, doses }
+        { date, doses }
       );
       setItems((prev) =>
         prev?.map((i) => (i.supplement_id === aggiornato.supplement_id ? aggiornato : i)) ?? null
@@ -220,102 +233,310 @@ export function SupplementDiary({ profileId }: { profileId: number }) {
               )}
             </div>
 
-            <div className="grid grid-cols-3 border-t border-white/[0.06]">
-              {[
-                [item.days_taken, item.days_taken === 1 ? "giorno di assunzione" : "giorni di assunzione", `dal ${shortDate(item.since)}`],
-                [item.current_streak, item.current_streak === 1 ? "giorno di fila" : "giorni di fila", "serie in corso"],
-                [item.missed_days, item.missed_days === 1 ? "giorno saltato" : "giorni saltati", `ultime ${span / 7} settimane`],
-              ].map(([value, text, hint], n) => (
-                <div
-                  key={n}
-                  className={`px-3 py-3 text-center sm:px-5 ${n > 0 ? "border-l border-white/[0.06]" : ""}`}
-                >
-                  <p
-                    className={`font-mono text-[20px] font-semibold tabular-nums ${
-                      n === 2 && Number(value) > 0 ? "text-amber-200" : "text-white"
-                    }`}
-                  >
-                    {value}
-                  </p>
-                  <p className="text-[11.5px] leading-tight text-white/55">{text}</p>
-                  <p className="text-[10.5px] text-white/30">{hint}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-white/[0.06] px-5 py-3.5">
-              <div className="grid grid-cols-[repeat(14,minmax(0,1fr))] gap-1 sm:grid-cols-[repeat(28,minmax(0,1fr))]">
-                {days.map((d) => {
-                  const n = byDate[d] ?? 0;
-                  const beforeStart = d < item.since;
-                  const state =
-                    n >= item.doses_required
-                      ? "bg-lime-400 border-lime-400"
-                      : n > 0
-                        ? "bg-lime-400/35 border-lime-400/50"
-                        : d === today || beforeStart
-                          ? "bg-white/[0.03] border-white/10"
-                          : "bg-rose-400/20 border-rose-400/45";
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => setSelected(d)}
-                      title={`${shortDate(d)}: ${
-                        n ? `${n}/${item.doses_required}` : beforeStart ? "prima dell'inizio" : d === today ? "da segnare" : "saltato"
-                      }`}
-                      aria-label={shortDate(d)}
-                      className={`aspect-square rounded-[4px] border transition hover:scale-110 ${state} ${
-                        d === selected ? "ring-2 ring-white/70 ring-offset-1 ring-offset-ink-900" : ""
-                      }`}
-                    />
-                  );
-                })}
+            <div className="border-t border-white/[0.06] px-4 py-4 sm:px-5">
+              <div className="flex items-center gap-4 sm:gap-5">
+                <IntakeRing taken={item.days_taken} tracked={item.tracked_days} />
+                <dl className="min-w-0 flex-1 divide-y divide-white/[0.06] text-[13px]">
+                  <Kpi label="Di fila">
+                    {item.current_streak > 0 && <Flame />}
+                    {item.current_streak} {item.current_streak === 1 ? "giorno" : "giorni"}
+                  </Kpi>
+                  <Kpi label="Saltati" warn={saltati(item) > 0}>
+                    {saltati(item)}
+                  </Kpi>
+                  <Kpi label="Dal">{item.tracked_days ? shortDate(firstDay(item, today)) : "—"}</Kpi>
+                </dl>
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px] text-white/35">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-[2px] bg-lime-400" /> preso
-                </span>
-                {item.doses_required > 1 && (
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-[2px] bg-lime-400/35" /> in parte
-                  </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-[2px] border border-rose-400/45 bg-rose-400/20" /> saltato
-                </span>
-                <span>un clic su un giorno per segnarlo</span>
-              </div>
-            </div>
 
-            {item.milestone && (
-              <div className="space-y-2 border-t border-white/[0.06] px-5 py-3.5">
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-[12.5px] text-white/65">
-                    {item.days_taken >= item.milestone.days
-                      ? `${item.days_taken} giorni: durata indicata dalle fonti raggiunta`
-                      : `${item.days_taken} di ${item.milestone.days} giorni`}
-                  </p>
-                  <span className="font-mono text-[11.5px] tabular-nums text-white/35">
-                    {Math.min(100, Math.round((item.days_taken / item.milestone.days) * 100))}%
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+              <DayPills
+                item={item}
+                days={days.slice(-7)}
+                today={today}
+                selected={selected}
+                busy={busy}
+                onTap={(d) => tapDay(item, d)}
+              />
+
+              <button
+                onClick={() => setMonthOpen((m) => ({ ...m, [item.supplement_id]: !m[item.supplement_id] }))}
+                className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:bg-white/[0.04] hover:text-white/80"
+                aria-expanded={!!monthOpen[item.supplement_id]}
+              >
+                {monthOpen[item.supplement_id] ? "Nascondi il mese" : "Vedi il mese"}
+              </button>
+              <AnimatePresence initial={false}>
+                {monthOpen[item.supplement_id] && (
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-lime-500 to-lime-400"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${Math.min(100, (item.days_taken / item.milestone.days) * 100)}%` }}
-                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                  />
-                </div>
-                <p className="text-[11.5px] leading-snug text-white/40">
-                  {item.days_taken >= item.milestone.days ? item.milestone.reached_note : item.milestone.note}
-                </p>
-                <SourceTags tags={[item.milestone.knowledge_tag]} />
-              </div>
-            )}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <MonthGrid
+                      item={item}
+                      days={days}
+                      today={today}
+                      selected={selected}
+                      busy={busy}
+                      onTap={(d) => tapDay(item, d)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <p className="mt-1 text-center text-[11.5px] text-white/30">
+                {item.doses_required === 1
+                  ? "Tocca un giorno per segnarlo o toglierlo"
+                  : "Tocca un giorno per sceglierlo, poi segna le dosi in alto"}
+              </p>
+            </div>
+
+            {item.milestone && <Phase item={item} />}
           </motion.div>
         );
       })}
+    </div>
+  );
+}
+
+
+// --- Pezzi della card -------------------------------------------------------------------
+
+function saltati(item: SupplementIntake): number {
+  return Math.max(0, item.tracked_days - item.days_taken);
+}
+
+/** Il primo giorno segnato, da cui partono i giorni contati. */
+function firstDay(item: SupplementIntake, today: string): string {
+  return shiftDate(today, -(item.tracked_days - (item.history.some((h) => h.date === today) ? 1 : 0)));
+}
+
+type DayState = "taken" | "partial" | "missed" | "before" | "today" | "future";
+
+function dayState(item: SupplementIntake, date: string, today: string): DayState {
+  if (date > today) return "future";
+  const n = item.history.find((h) => h.date === date)?.doses ?? 0;
+  if (n >= item.doses_required) return "taken";
+  if (n > 0) return "partial";
+  if (date === today) return "today";
+  if (!item.tracked_days || date < firstDay(item, today)) return "before";
+  return "missed";
+}
+
+const DAY_STYLE: Record<DayState, string> = {
+  taken: "border-lime-400/60 bg-lime-400/[0.18] text-lime-200",
+  partial: "border-lime-400/40 bg-lime-400/[0.08] text-lime-200/70",
+  missed: "border-rose-400/35 bg-transparent text-rose-200/60",
+  before: "border-white/[0.06] bg-white/[0.02] text-white/20",
+  today: "border-dashed border-white/45 bg-transparent text-white/60",
+  future: "border-transparent bg-transparent text-white/15",
+};
+
+function Check() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={3}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Flame() {
+  return (
+    <svg viewBox="0 0 24 24" className="mr-1 inline h-3.5 w-3.5 -translate-y-px fill-lime-400">
+      <path d="M13.5 1s1 3.5-1.5 6.5C9.6 10.4 8 12 8 15a4 4 0 0 0 8 0c0-1.3-.4-2.3-1-3 2.4.8 4 3.3 4 6a7 7 0 1 1-14 0c0-5 4-7.5 5.5-10.5C11.6 5.2 12 3 13.5 1Z" />
+    </svg>
+  );
+}
+
+/** Quanti giorni presi sul periodo reale: niente percentuale, solo giorni. */
+function IntakeRing({ taken, tracked }: { taken: number; tracked: number }) {
+  const r = 44;
+  const c = 2 * Math.PI * r;
+  const frazione = tracked ? Math.min(1, taken / tracked) : 0;
+  return (
+    <div className="relative h-[104px] w-[104px] shrink-0">
+      <svg viewBox="0 0 104 104" className="h-full w-full -rotate-90">
+        <circle cx="52" cy="52" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="9" />
+        <motion.circle
+          cx="52"
+          cy="52"
+          r={r}
+          fill="none"
+          stroke="url(#intake-ring)"
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          initial={{ strokeDashoffset: c }}
+          animate={{ strokeDashoffset: c * (1 - frazione) }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        />
+        <defs>
+          <linearGradient id="intake-ring" x1="0" x2="1">
+            <stop offset="0" stopColor="#8fbf24" />
+            <stop offset="1" stopColor="#aed44a" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        {tracked ? (
+          <div>
+            <p className="font-mono text-[24px] font-semibold leading-none tabular-nums text-white">{taken}</p>
+            <p className="mt-1 text-[11px] leading-tight text-white/45">
+              su {tracked} {tracked === 1 ? "giorno" : "giorni"}
+            </p>
+          </div>
+        ) : (
+          <p className="px-3 text-[11.5px] leading-tight text-white/45">Inizia oggi</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Kpi({ label, warn = false, children }: { label: string; warn?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
+      <dt className="text-white/45">{label}</dt>
+      <dd className={`font-semibold tabular-nums ${warn ? "text-amber-200" : "text-white"}`}>{children}</dd>
+    </div>
+  );
+}
+
+function weekdayLetter(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return ["D", "L", "M", "M", "G", "V", "S"][new Date(y, m - 1, d).getDay()];
+}
+
+function DayPills({
+  item,
+  days,
+  today,
+  selected,
+  busy,
+  onTap,
+}: {
+  item: SupplementIntake;
+  days: string[];
+  today: string;
+  selected: string;
+  busy: boolean;
+  onTap: (date: string) => void;
+}) {
+  return (
+    <div className="mt-4 grid grid-cols-7 gap-1.5 sm:gap-2">
+      {days.map((d) => {
+        const st = dayState(item, d, today);
+        return (
+          <div key={d} className="text-center">
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              disabled={busy || st === "future"}
+              onClick={() => onTap(d)}
+              aria-label={`${shortDate(d)}: ${st === "taken" ? "preso" : st === "missed" ? "saltato" : "da segnare"}`}
+              className={`grid h-10 w-full place-items-center rounded-full border transition disabled:opacity-60 ${DAY_STYLE[st]} ${
+                d === selected && item.doses_required > 1 ? "ring-2 ring-white/60 ring-offset-2 ring-offset-ink-900" : ""
+              }`}
+            >
+              {st === "taken" ? <Check /> : st === "partial" ? <span className="text-[11px] font-semibold">½</span> : null}
+            </motion.button>
+            <span className={`mt-1.5 block text-[11px] ${d === today ? "font-semibold text-white/70" : "text-white/35"}`}>
+              {d === today ? "oggi" : weekdayLetter(d)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Le ultime 4 settimane come calendario: righe per settimana, colonne L-D. */
+function MonthGrid({
+  item,
+  days,
+  today,
+  selected,
+  busy,
+  onTap,
+}: {
+  item: SupplementIntake;
+  days: string[];
+  today: string;
+  selected: string;
+  busy: boolean;
+  onTap: (date: string) => void;
+}) {
+  const [y, m, dd] = days[0].split("-").map(Number);
+  const vuoti = (new Date(y, m - 1, dd).getDay() + 6) % 7; // lunedì = 0
+  return (
+    <div className="mt-2 grid grid-cols-7 gap-1.5 sm:gap-2">
+      {["L", "M", "M", "G", "V", "S", "D"].map((l, i) => (
+        <span key={i} className="text-center text-[11px] text-white/30">
+          {l}
+        </span>
+      ))}
+      {Array.from({ length: vuoti }, (_, i) => (
+        <span key={`v${i}`} />
+      ))}
+      {days.map((d) => {
+        const st = dayState(item, d, today);
+        return (
+          <button
+            key={d}
+            disabled={busy || st === "future"}
+            onClick={() => onTap(d)}
+            aria-label={shortDate(d)}
+            className={`grid aspect-square w-full place-items-center rounded-full border text-[12px] font-medium tabular-nums transition disabled:opacity-60 ${DAY_STYLE[st]} ${
+              d === selected && item.doses_required > 1 ? "ring-2 ring-white/60" : ""
+            }`}
+          >
+            {Number(d.slice(8))}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** La fase indicata dalle fonti, con il suo nome e cosa succede dopo. */
+function Phase({ item }: { item: SupplementIntake }) {
+  const f = item.milestone!;
+  const raggiunta = item.days_taken >= f.days;
+  const oltre = item.days_taken - f.days;
+  return (
+    <div className="border-t border-white/[0.06] px-4 py-4 sm:px-5">
+      <div className="rounded-2xl border border-iris-400/25 bg-iris-400/[0.08] px-3.5 py-3">
+        <div className="flex items-baseline justify-between gap-3 text-[13px]">
+          <p className="font-medium text-white/85">
+            {raggiunta ? f.reached_label : f.label}
+            <span className="font-normal text-white/50">
+              {" · "}
+              {raggiunta
+                ? oltre > 0
+                  ? `da ${oltre} ${oltre === 1 ? "giorno" : "giorni"}`
+                  : "da oggi"
+                : `${item.days_taken} di ${f.days} giorni`}
+            </span>
+          </p>
+          {!raggiunta && (
+            <span className="font-mono text-[12px] tabular-nums text-white/40">
+              {Math.round((item.days_taken / f.days) * 100)}%
+            </span>
+          )}
+        </div>
+        {!raggiunta && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-iris-400 to-iris-300"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, (item.days_taken / f.days) * 100)}%` }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </div>
+        )}
+        <p className="mt-2 text-[12px] leading-snug text-white/55">{raggiunta ? f.reached_note : f.note}</p>
+        <div className="mt-2">
+          <SourceTags tags={[f.knowledge_tag]} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { GOAL_LABELS, api, type Diary, type Profile, type WorkoutPlan } from "@/lib/api";
+import { WeekLine } from "@/components/WeekSchedule";
 import { askCoach } from "@/lib/coach";
 import { Card, CardHeader, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
@@ -259,26 +260,9 @@ export function Today({
             }
           />
           {plan ? (
-            <div className="px-5 py-5">
-              <p className="mb-4 text-[13px] text-white/55">{plan.name}</p>
-              <div className="grid grid-cols-2 gap-2.5">
-                {days.map((d, i) => {
-                  const count = plan.exercises.filter((e) => e.day_label === d).length;
-                  return (
-                    <motion.button
-                      key={d}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 + i * 0.05 }}
-                      onClick={() => onNavigate("scheda")}
-                      className="group rounded-xl border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-left transition hover:border-lime-400/25 hover:bg-lime-400/[0.05]"
-                    >
-                      <p className="text-[13px] font-medium text-white/85">{d}</p>
-                      <p className="text-[11.5px] text-white/35">{count} esercizi</p>
-                    </motion.button>
-                  );
-                })}
-              </div>
+            <div className="px-4 py-5 sm:px-5">
+              <p className="mb-3 text-[13px] text-white/55">{plan.name}</p>
+              <WeekLine plan={plan} profileId={profile.id} onOpenDay={() => onNavigate("scheda")} />
             </div>
           ) : (
             <div className="px-5 py-8 text-center">

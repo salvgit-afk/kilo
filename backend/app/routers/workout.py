@@ -37,6 +37,7 @@ from app.schemas import (
     ExerciseHistoryOut,
     ExerciseSessionOut,
     PlanExerciseUpdate,
+    PlanScheduleIn,
     SessionIn,
     SessionOut,
     SessionSetIn,
@@ -55,6 +56,7 @@ from app.services import (
     exercise_swap,
     rate_limit,
     training_log,
+    training_schedule,
     translation,
     workout_generator,
 )
@@ -119,6 +121,7 @@ def generate_plan(
     sets_per_exercise: int | None = Query(default=None, ge=1, le=10),
     reps_min: int | None = Query(default=None, ge=1, le=50),
     reps_max: int | None = Query(default=None, ge=1, le=50),
+    weekdays: list[int] = Query(default=[], max_length=7),
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
     user: User = Depends(current_user),
@@ -135,6 +138,13 @@ def generate_plan(
     manuale dell'utente e la scheda dichiara che non seguono le fonti.
     """
     screening = _latest_screening(db, profile.id)
+
+    giorni: list[int] | None = None
+    if weekdays:
+        try:
+            giorni = training_schedule.normalize(weekdays)
+        except training_schedule.ScheduleError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
 
     if (reps_min is None) != (reps_max is None):
         raise HTTPException(status_code=422, detail="Indica sia le ripetizioni minime sia le massime")
@@ -154,6 +164,10 @@ def generate_plan(
         # nel profilo, così si può provare uno split diverso senza modificarlo.
         if split_type:
             profile.split_type = split_type
+            db.commit()
+        # I giorni scelti decidono la frequenza con cui si costruisce la scheda.
+        if giorni:
+            profile.training_days_per_week = len(giorni)
             db.commit()
         generated = workout_generator.generate_plan(
             db, profile, screening=screening, split_type=split_type
@@ -176,6 +190,9 @@ def generate_plan(
     plan = workout_generator.persist_plan(
         db, profile, generated, used_llm=used_llm, replace_plan_id=replace_plan_id
     )
+    if giorni:
+        plan.training_weekdays_raw = training_schedule.serialize(giorni)
+        db.commit()
     translation.ensure_translated(db, [riga.exercise for riga in plan.exercises])
 
     return PlanGenerationOut(
@@ -313,6 +330,33 @@ def log_session(
     db.commit()
     db.refresh(sessione)
     return sessione
+
+
+@router.put("/plans/{plan_id}/schedule", response_model=WorkoutPlanOut)
+def update_schedule(
+    plan_id: int,
+    payload: PlanScheduleIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutPlan:
+    """Giorni della settimana in cui ci si allena con questa scheda.
+
+    La frequenza diventa il numero di giorni scelti, anche nel profilo: è
+    quella che usano i target nutrizionali e il riepilogo della settimana.
+    Se i giorni sono più di quelli diversi della scheda (3 allenamenti con
+    una A/B), gli allenamenti si alternano.
+    """
+    piano = _plan_for(db, profile.id, plan_id)
+    try:
+        giorni = training_schedule.normalize(payload.weekdays)
+    except training_schedule.ScheduleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    piano.training_weekdays_raw = training_schedule.serialize(giorni)
+    piano.days_per_week = len(giorni)
+    profile.training_days_per_week = len(giorni)
+    db.commit()
+    db.refresh(piano)
+    return piano
 
 
 # --- Parametri della scheda -------------------------------------------------------

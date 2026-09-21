@@ -1,0 +1,326 @@
+"use client";
+
+/**
+ * I giorni della settimana in cui ci si allena.
+ *
+ * - **WeekdayPicker**: prima la frequenza, poi i giorni. Scegliere la
+ *   frequenza propone giorni distanziati (3 → lunedì, mercoledì, venerdì);
+ *   toccando i giorni si cambia la proposta, e la frequenza li segue.
+ * - **WeekLine**: la settimana come una linea di pallini, verdi nei giorni di
+ *   allenamento. Toccando un giorno il pallino si allarga e mostra
+ *   l'allenamento di quel giorno; toccando la pillola lo si apre.
+ *
+ * Quale allenamento cade in quale giorno: gli allenamenti della scheda (A, B,
+ * Push…) si susseguono nell'ordine dei giorni scelti, e se i giorni sono più
+ * degli allenamenti si alternano di settimana in settimana (A-B-A, poi B-A-B)
+ * invece di ripartire sempre da A.
+ */
+
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { api, localDate, shiftDate, type WorkoutPlan, type WorkoutSessionLog } from "@/lib/api";
+import { Modal, ModalHeader } from "@/components/controls";
+import { Notice } from "@/components/ui";
+
+export const WEEKDAY_LETTERS = ["L", "M", "M", "G", "V", "S", "D"];
+export const WEEKDAY_NAMES = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"];
+
+export const DEFAULT_WEEKDAYS: Record<number, number[]> = {
+  1: [0],
+  2: [0, 3],
+  3: [0, 2, 4],
+  4: [0, 1, 3, 4],
+  5: [0, 1, 2, 3, 4],
+  6: [0, 1, 2, 3, 4, 5],
+  7: [0, 1, 2, 3, 4, 5, 6],
+};
+
+export function defaultWeekdays(days: number): number[] {
+  return DEFAULT_WEEKDAYS[Math.min(Math.max(days, 1), 7)] ?? DEFAULT_WEEKDAYS[3];
+}
+
+function parseISO(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Il lunedì della settimana di una data. */
+export function mondayOf(iso: string): string {
+  return shiftDate(iso, -((parseISO(iso).getDay() + 6) % 7));
+}
+
+export function planDayLabels(plan: WorkoutPlan): string[] {
+  return [...new Set(plan.exercises.map((e) => e.day_label))];
+}
+
+export function dayTitle(label: string): string {
+  return label.length <= 2 ? `Giorno ${label}` : label;
+}
+
+/** Quale allenamento cade in ciascun giorno della settimana che inizia lunedì `monday`. */
+export function weekAssignments(plan: WorkoutPlan, monday: string): Record<number, string> {
+  const etichette = planDayLabels(plan);
+  const giorni = [...plan.training_weekdays].sort((a, b) => a - b);
+  if (!etichette.length || !giorni.length) return {};
+  const settimane = Math.max(
+    0,
+    Math.round((parseISO(monday).getTime() - parseISO(mondayOf(plan.started_at)).getTime()) / (7 * 864e5))
+  );
+  return Object.fromEntries(
+    giorni.map((g, i) => [g, etichette[(settimane * giorni.length + i) % etichette.length]])
+  );
+}
+
+// --- Selettore -------------------------------------------------------------------------
+
+export function WeekdayPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  const ordinati = [...value].sort((a, b) => a - b);
+  const difila = ordinati.some((g, i) => i > 0 && g - ordinati[i - 1] === 1) || (ordinati.includes(0) && ordinati.includes(6));
+
+  return (
+    <div>
+      <p className="label">Quanti giorni a settimana</p>
+      <div className="inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+        {[2, 3, 4, 5, 6].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(defaultWeekdays(n))}
+            className={`relative h-10 w-11 rounded-xl text-[14px] font-semibold transition ${
+              value.length === n ? "text-ink-900" : "text-white/55 hover:text-white"
+            }`}
+          >
+            {value.length === n && (
+              <motion.span
+                layoutId="freq-pill"
+                className="absolute inset-0 rounded-xl bg-gradient-to-b from-lime-400 to-lime-500"
+                transition={{ type: "spring", stiffness: 420, damping: 32 }}
+              />
+            )}
+            <span className="relative">{n}</span>
+          </button>
+        ))}
+      </div>
+
+      <p className="label mt-4">Quali giorni</p>
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+        {WEEKDAY_LETTERS.map((l, g) => {
+          const on = value.includes(g);
+          return (
+            <motion.button
+              key={g}
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() =>
+                onChange(on ? value.filter((x) => x !== g) : [...value, g].sort((a, b) => a - b))
+              }
+              aria-pressed={on}
+              aria-label={WEEKDAY_NAMES[g]}
+              className={`mx-auto grid aspect-square w-full max-w-[48px] place-items-center rounded-full border text-[14px] font-semibold transition ${
+                on
+                  ? "border-lime-400/60 bg-lime-400/[0.16] text-lime-100 shadow-[0_0_16px_-6px_rgba(174,212,74,0.7)]"
+                  : "border-white/10 bg-white/[0.03] text-white/45 hover:text-white/80"
+              }`}
+            >
+              {l}
+            </motion.button>
+          );
+        })}
+      </div>
+      <p className={`mt-2.5 min-h-[18px] text-[12px] leading-snug ${value.length ? "text-white/40" : "text-amber-200/80"}`}>
+        {!value.length
+          ? "Scegli almeno un giorno."
+          : difila
+            ? "Due giorni di fila: va bene se la scheda lavora muscoli diversi, per esempio sopra e sotto."
+            : ordinati.map((g) => WEEKDAY_NAMES[g]).join(", ")}
+      </p>
+    </div>
+  );
+}
+
+/** Modifica dei giorni di una scheda già creata. */
+export function ScheduleDialog({
+  plan,
+  profileId,
+  onClose,
+  onSaved,
+}: {
+  plan: WorkoutPlan;
+  profileId: number;
+  onClose: () => void;
+  onSaved: (plan: WorkoutPlan) => void;
+}) {
+  const [value, setValue] = useState(plan.training_weekdays);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const allenamenti = planDayLabels(plan).length;
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      onSaved(await api.put<WorkoutPlan>(`/workout/plans/${plan.id}/schedule?profile_id=${profileId}`, { weekdays: value }));
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito a salvare i giorni.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} className="max-w-md">
+      <ModalHeader
+        eyebrow="Giorni di allenamento"
+        title={plan.name}
+        subtitle="Scegli quando ti alleni: la proposta distanzia gli allenamenti, ma decidi tu."
+        onClose={onClose}
+      />
+      <div className="space-y-4 overflow-y-auto p-5">
+        <WeekdayPicker value={value} onChange={setValue} />
+        {value.length > 0 && value.length !== allenamenti && (
+          <p className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-[12px] leading-snug text-white/50">
+            La scheda ha {allenamenti} {allenamenti === 1 ? "allenamento" : "allenamenti diversi"}
+            {value.length > allenamenti
+              ? `: con ${value.length} giorni si alternano di settimana in settimana.`
+              : `: con ${value.length} ${value.length === 1 ? "giorno" : "giorni"} a settimana ne fai una parte ogni settimana, a rotazione. Valuta di rigenerarla con la nuova frequenza.`}
+          </p>
+        )}
+        {error && <Notice>{error}</Notice>}
+        <div className="flex gap-2">
+          <button className="btn-primary flex-1" onClick={save} disabled={saving || !value.length}>
+            {saving ? "Salvo…" : "Salva i giorni"}
+          </button>
+          <button className="btn-ghost" onClick={onClose}>
+            Annulla
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// --- Linea della settimana ------------------------------------------------------------------
+
+export function WeekLine({
+  plan,
+  profileId,
+  onOpenDay,
+}: {
+  plan: WorkoutPlan;
+  profileId: number;
+  /** Tocco sulla pillola di un giorno di allenamento. */
+  onOpenDay?: (label: string) => void;
+}) {
+  const oggi = localDate();
+  const lunedi = mondayOf(oggi);
+  const giorni = Array.from({ length: 7 }, (_, i) => shiftDate(lunedi, i));
+  const assegnati = useMemo(() => weekAssignments(plan, lunedi), [plan, lunedi]);
+  const [fatti, setFatti] = useState<Set<string>>(new Set());
+  const [aperto, setAperto] = useState<number | null>(null);
+
+  // Sessioni di questa settimana con questa scheda: il giorno diventa "fatto".
+  useEffect(() => {
+    let annullato = false;
+    api
+      .get<WorkoutSessionLog[]>(`/workout/sessions?profile_id=${profileId}&limit=20`)
+      .then((sessioni) => {
+        if (annullato) return;
+        setFatti(
+          new Set(
+            sessioni
+              .filter((s) => s.date >= lunedi && s.workout_plan_id === plan.id && s.sets.length > 0)
+              .map((s) => s.date)
+          )
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      annullato = true;
+    };
+  }, [profileId, plan.id, lunedi]);
+
+  const esercizi = (label: string) => plan.exercises.filter((e) => e.day_label === label).length;
+
+  return (
+    <LayoutGroup id={`week-${plan.id}`}>
+      <div className="relative flex items-start gap-1 py-1">
+        {/* La linea che unisce i giorni, dietro ai pallini. */}
+        <div className="pointer-events-none absolute left-4 right-4 top-[21px] h-[2px] rounded-full bg-white/[0.08]" />
+        {giorni.map((data, g) => {
+          const label = assegnati[g];
+          const allenamento = label !== undefined;
+          const fatto = fatti.has(data);
+          const oggiQui = data === oggi;
+          const espanso = aperto === g;
+          return (
+            <motion.div
+              key={data}
+              layout
+              transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              className={`relative flex min-w-0 flex-col items-center ${espanso ? "flex-[2.4]" : "flex-1"}`}
+            >
+              <motion.button
+                layout
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                onClick={() => {
+                  if (espanso && allenamento && onOpenDay) onOpenDay(label);
+                  else setAperto(espanso ? null : g);
+                }}
+                aria-expanded={espanso}
+                aria-label={`${WEEKDAY_NAMES[g]}: ${allenamento ? dayTitle(label) : "riposo"}${fatto ? ", fatto" : ""}`}
+                className={`relative z-10 flex h-9 items-center justify-center overflow-hidden border transition-colors ${
+                  espanso ? "w-full rounded-[18px] px-2" : "w-9 rounded-full"
+                } ${
+                  allenamento
+                    ? fatto
+                      ? "border-lime-400 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
+                      : "border-lime-400/55 bg-ink-800 text-lime-100 shadow-[0_0_18px_-6px_rgba(174,212,74,0.8)]"
+                    : "border-white/10 bg-ink-800 text-white/35"
+                } ${oggiQui ? "ring-2 ring-white/60 ring-offset-1 ring-offset-ink-900" : ""}`}
+              >
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {espanso ? (
+                    <motion.span
+                      key="aperto"
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      className="flex min-w-0 flex-col items-center leading-tight"
+                    >
+                      <span className="max-w-full truncate text-[12.5px] font-semibold">
+                        {allenamento ? dayTitle(label) : "Riposo"}
+                      </span>
+                      <span className={`max-w-full truncate text-[10.5px] ${fatto ? "text-ink-900/70" : "text-white/50"}`}>
+                        {allenamento
+                          ? fatto
+                            ? "fatto ✓"
+                            : `${esercizi(label)} esercizi`
+                          : "recupero"}
+                      </span>
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="chiuso"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="text-[13px] font-semibold"
+                    >
+                      {allenamento ? (fatto ? "✓" : label.length <= 2 ? label : label.slice(0, 1)) : ""}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+              <motion.span
+                layout="position"
+                className={`mt-1.5 text-[11px] ${oggiQui ? "font-semibold text-white/80" : allenamento ? "text-lime-200/70" : "text-white/30"}`}
+              >
+                {oggiQui ? "oggi" : WEEKDAY_LETTERS[g]}
+              </motion.span>
+            </motion.div>
+          );
+        })}
+      </div>
+    </LayoutGroup>
+  );
+}

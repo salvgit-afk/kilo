@@ -226,3 +226,47 @@ def test_serie_e_sessioni_di_un_altro_non_accessibili(ambiente):
     storia = client.get(f"/workout/exercises/{panca.id}/history?profile_id={pid_a}", headers=attaccante).json()
     assert storia["sessions"] == []
     assert db.get(WorkoutSession, sid).sets[0].weight_kg == 80
+
+
+# --- Giorni della settimana ------------------------------------------------------------
+
+
+def test_scheda_senza_giorni_salvati_riceve_la_proposta(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    _scheda(db, pid)  # 3 giorni a settimana, creata prima di questa funzione
+    piani = client.get(f"/workout/plans?profile_id={pid}", headers=h).json()
+    assert piani[0]["training_weekdays"] == [0, 2, 4]  # lunedì, mercoledì, venerdì
+
+
+def test_giorni_modificabili_e_frequenza_allineata(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _, _, _ = _scheda(db, pid)
+
+    r = client.put(f"/workout/plans/{piano.id}/schedule?profile_id={pid}", headers=h,
+                   json={"weekdays": [6, 0, 2, 4, 2]})
+    assert r.status_code == 200, r.text
+    assert r.json()["training_weekdays"] == [0, 2, 4, 6]  # ordinati, senza doppioni
+    assert r.json()["days_per_week"] == 4
+    profilo = client.get(f"/profile/{pid}", headers=h).json()
+    assert profilo["training_days_per_week"] == 4
+
+
+@pytest.mark.parametrize("giorni", [[], [7], [-1, 2]])
+def test_giorni_non_validi_rifiutati(ambiente, giorni):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _, _, _ = _scheda(db, pid)
+    r = client.put(f"/workout/plans/{piano.id}/schedule?profile_id={pid}", headers=h, json={"weekdays": giorni})
+    assert r.status_code == 422
+
+
+def test_giorni_della_scheda_di_un_altro_non_modificabili(ambiente):
+    client, db = ambiente
+    _, pid_v = _account(client, "v@example.com")
+    attaccante, pid_a = _account(client, "a@example.com")
+    piano, _, _, _ = _scheda(db, pid_v)
+    r = client.put(f"/workout/plans/{piano.id}/schedule?profile_id={pid_a}", headers=attaccante,
+                   json={"weekdays": [1]})
+    assert r.status_code == 404

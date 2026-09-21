@@ -326,8 +326,11 @@ cd frontend && npm audit
 | `POST/GET /profile/{id}/screening` | Screening PAR-Q+ |
 | `POST/GET /profile/{id}/weight` | Pesate |
 | `POST /workout/plans/generate` · `GET /workout/plans/active` | Generazione e scheda attiva |
-| `POST /workout/plan-exercises/{id}/swap` | Sostituisci un esercizio |
-| `POST/GET /workout/sessions` | Sessioni svolte e serie registrate |
+| `POST /workout/plan-exercises/{id}/swap` · `PATCH /workout/plan-exercises/{id}` | Sostituisci un esercizio · serie, ripetizioni, RIR e recupero |
+| `PUT /workout/plans/{id}/schedule` | Giorni della settimana di allenamento |
+| `POST/GET /workout/sessions` · `GET /workout/sessions/current` · `PATCH/DELETE /workout/sessions/{id}` | Sessioni svolte, ripresa della sessione di oggi |
+| `POST /workout/sessions/{id}/sets` · `PATCH/DELETE /workout/sets/{id}` | Serie registrate una alla volta, sempre correggibili |
+| `GET /workout/exercises/{id}/history` · `GET /workout/last-performance` · `GET /progress/loads` | Storico dei carichi e grafico della progressione |
 | `POST /workout/feedback` | Feedback (DOMS, progressi) → raccomandazione sul volume |
 | `GET /workout/exercises` · `GET/POST/DELETE /workout/preferences` | Catalogo e preferenze |
 | `POST /workout/chat` | Chat con Kilo |
