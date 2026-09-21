@@ -25,7 +25,15 @@ import {
 import { mealForNow, type Intent } from "@/lib/coach";
 import { Card, Empty, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
-import { AskCoachButton, CloseButton, Modal, NumberField } from "@/components/controls";
+import {
+  AskCoachButton,
+  CloseButton,
+  Field,
+  MacroGrid,
+  Modal,
+  NumberField,
+  OptionGroup,
+} from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { RecipeToDiaryDialog } from "@/components/RecipeToDiary";
@@ -282,53 +290,54 @@ function ManualProductForm({
   }
 
   return (
-    <div className="space-y-3 p-2">
+    <div className="space-y-3 p-2 sm:p-3">
       <Notice>{reason ?? "Prodotto non trovato, vuoi inserirlo manualmente?"}</Notice>
       <p className="text-[12px] leading-snug text-white/45">
         Copia i valori <strong className="text-white/70">per 100 g</strong> dalla tabella
         nutrizionale sulla confezione. Il prodotto resta visibile solo a te
         {barcode ? ", e la prossima scansione di questo codice lo ritrova subito" : ""}.
       </p>
-      <div>
-        <label className="label">Nome del prodotto</label>
+      <Field title="Nome del prodotto">
         <input
           className="input"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="es. Kefir magro · marca"
         />
-      </div>
-      <div className="grid grid-cols-2 gap-2.5">
-        {(
-          [
-            ["Calorie", kcal, setKcal, "kcal", 950],
-            ["Proteine", protein, setProtein, "g", 100],
-            ["Carboidrati", carbs, setCarbs, "g", 100],
-            ["Grassi", fat, setFat, "g", 100],
-          ] as const
-        ).map(([etichetta, valore, imposta, unita, massimo]) => (
-          <div key={etichetta}>
-            <label className="label">{etichetta}</label>
-            <NumberField
-              value={valore}
-              onChange={imposta}
-              min={0}
-              max={massimo}
-              decimals={1}
-              suffix={unita}
-              placeholder="—"
-              ariaLabel={`${etichetta} per 100 g`}
-            />
-          </div>
-        ))}
-      </div>
-      {barcode && <p className="font-mono text-[11px] text-white/30">Codice {barcode}</p>}
-      {error && <p className="text-[12px] text-rose-200/80">{error}</p>}
+      </Field>
+      <Field title="Valori per 100 g" hint={barcode ? <span className="font-mono">Codice {barcode}</span> : undefined}>
+        <div className="grid grid-cols-2 gap-2.5">
+          {(
+            [
+              ["Calorie", kcal, setKcal, "kcal", 950],
+              ["Proteine", protein, setProtein, "g", 100],
+              ["Carboidrati", carbs, setCarbs, "g", 100],
+              ["Grassi", fat, setFat, "g", 100],
+            ] as const
+          ).map(([etichetta, valore, imposta, unita, massimo]) => (
+            <div key={etichetta}>
+              <p className="mb-1.5 text-[11px] text-white/45">{etichetta}</p>
+              <NumberField
+                value={valore}
+                onChange={imposta}
+                min={0}
+                max={massimo}
+                decimals={1}
+                suffix={unita}
+                steppers="sm"
+                placeholder="—"
+                ariaLabel={`${etichetta} per 100 g`}
+              />
+            </div>
+          ))}
+        </div>
+      </Field>
+      {error && <Notice>{error}</Notice>}
       <div className="flex gap-2">
-        <button className="btn-ghost flex-1" onClick={onCancel}>
+        <button className="btn-ghost flex-1 justify-center" onClick={onCancel}>
           Annulla
         </button>
-        <button className="btn-primary flex-1" disabled={!completo || saving} onClick={save}>
+        <button className="btn-primary flex-[1.6] justify-center" disabled={!completo || saving} onClick={save}>
           {saving ? "Salvo…" : "Salva e usa"}
         </button>
       </div>
@@ -551,7 +560,7 @@ function FoodSearchDialog({
   return (
     <Modal onClose={onClose} align="top" className="max-w-xl">
       {/* Intestazione fissa: ricerca e pasto */}
-      <div className="shrink-0 space-y-3 border-b border-white/[0.06] p-4">
+      <div className="shrink-0 space-y-3 border-b border-white/[0.06] px-4 py-4 sm:px-5">
         <div className="flex items-center gap-2.5">
           <div className="relative flex-1">
             <svg
@@ -590,22 +599,13 @@ function FoodSearchDialog({
           </button>
           <CloseButton onClose={onClose} />
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {MEAL_ORDER.map((m) => (
-            <button
-              key={m}
-              onClick={() => setMeal(m)}
-              className={`rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
-                meal === m
-                  ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
-                  : "border-white/[0.08] text-white/45 hover:text-white/80"
-              }`}
-            >
-              {MEAL_LABELS[m]}
-            </button>
-          ))}
-          <span className="ml-auto text-[11px] text-white/30">valori per 100 g</span>
-        </div>
+        <OptionGroup
+          ariaLabel="Pasto"
+          size="sm"
+          value={meal}
+          onChange={setMeal}
+          options={MEAL_ORDER.map((m) => ({ value: m, label: MEAL_LABELS[m] }))}
+        />
       </div>
 
       {/* Risultati: l'unica parte che scorre */}
@@ -718,10 +718,10 @@ function FoodSearchDialog({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 14 }}
             transition={{ duration: 0.18 }}
-            className="shrink-0 border-t border-white/[0.08] bg-ink-800/95 p-4"
+            className="shrink-0 space-y-3 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5"
           >
-            <p className="mb-3 truncate text-[13px] font-medium text-white">{nameOf(selected)}</p>
-            <div className="mb-3 flex flex-wrap items-center gap-2.5">
+            <p className="truncate text-[13.5px] font-medium text-white">{nameOf(selected)}</p>
+            <div className="flex flex-wrap items-center gap-2">
               <NumberField
                 value={grams}
                 onChange={setGrams}
@@ -732,40 +732,30 @@ function FoodSearchDialog({
                 ariaLabel="Grammi"
                 inputRef={gramsRef}
                 onEnter={add}
-                className="w-40"
+                className="w-36"
               />
-              <div className="flex gap-1.5">
-                {[50, 100, 150, 200].map((g) => (
-                  <button
-                    key={g}
-                    onClick={() => setGrams(g)}
-                    className={`rounded-lg border px-2.5 py-1.5 text-[11.5px] transition ${
-                      grams === g
-                        ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
-                        : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white"
-                    }`}
-                  >
-                    {g}
-                  </button>
-                ))}
+              <div className="min-w-[180px] flex-1">
+                <OptionGroup
+                  ariaLabel="Grammi rapidi"
+                  size="sm"
+                  mono
+                  value={grams}
+                  onChange={setGrams}
+                  options={[50, 100, 150, 200].map((g) => ({ value: g, label: g }))}
+                />
               </div>
             </div>
 
-            <div className="mb-3 grid grid-cols-4 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
-              {[
+            <MacroGrid
+              items={[
                 ["kcal", Math.round(selected.kcal_100g * factor)],
                 ["proteine", `${(selected.protein_100g * factor).toFixed(1)}g`],
                 ["carboid.", `${(selected.carbs_100g * factor).toFixed(1)}g`],
                 ["grassi", `${(selected.fat_100g * factor).toFixed(1)}g`],
-              ].map(([label, value]) => (
-                <div key={label} className="text-center">
-                  <p className="font-mono text-[14px] tabular-nums text-white">{value}</p>
-                  <p className="text-[10px] uppercase tracking-wide text-white/30">{label}</p>
-                </div>
-              ))}
-            </div>
+              ]}
+            />
 
-            <button className="btn-primary w-full" disabled={saving || !grams} onClick={add}>
+            <button className="btn-primary w-full justify-center" disabled={saving || !grams} onClick={add}>
               {saving ? "Aggiungo…" : `Aggiungi a ${MEAL_LABELS[meal]}`}
             </button>
           </motion.div>

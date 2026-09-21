@@ -27,6 +27,7 @@ import { useState } from "react";
 import { ApiError, api, type ImportedRecipe, type RecipeItem, type RecipeSuggestion } from "@/lib/api";
 import { Card, Notice } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
+import { Field, MacroGrid, NumberField, Stepper } from "@/components/controls";
 
 const ESEMPIO = `Porridge proteico — per 2 persone
 80 g di fiocchi d'avena
@@ -201,45 +202,37 @@ export function RecipeImport({
       {draft && t && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="mb-4">
-            <div className="flex flex-col gap-3 border-b border-white/[0.06] p-4 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <p className="label">Nome della ricetta</p>
+            <div className="grid grid-cols-1 gap-3 border-b border-white/[0.06] p-4 sm:grid-cols-[1fr_220px]">
+              <Field title="Nome della ricetta">
                 <input
                   className="input"
                   value={draft.name}
                   maxLength={300}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 />
-              </div>
-              <div className="sm:w-32">
-                <p className="label">Porzioni</p>
-                <input
-                  className="input tabular-nums"
-                  type="number"
+              </Field>
+              <Field title="Porzioni">
+                <Stepper
+                  compact
+                  value={draft.servings}
+                  onChange={(n) => setDraft({ ...draft, servings: n })}
                   min={1}
                   max={20}
-                  value={draft.servings}
-                  onChange={(e) =>
-                    setDraft({ ...draft, servings: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
-                  }
+                  label="porzioni"
+                />
+              </Field>
+              <div className="sm:col-span-2">
+                <MacroGrid
+                  items={[
+                    ["kcal", Math.round(t.kcal / porzioni)],
+                    ["prot.", `${Math.round((t.protein / porzioni) * 10) / 10}g`],
+                    ["carb.", `${Math.round((t.carbs / porzioni) * 10) / 10}g`],
+                    ["grassi", `${Math.round((t.fat / porzioni) * 10) / 10}g`],
+                  ]}
+                  note="per porzione · si aggiorna mentre correggi i grammi"
                 />
               </div>
             </div>
-
-            <div className="grid grid-cols-4 gap-2 border-b border-white/[0.06] bg-black/20 p-3">
-              {[
-                ["kcal", Math.round(t.kcal / porzioni)],
-                ["prot.", `${Math.round((t.protein / porzioni) * 10) / 10}g`],
-                ["carb.", `${Math.round((t.carbs / porzioni) * 10) / 10}g`],
-                ["grassi", `${Math.round((t.fat / porzioni) * 10) / 10}g`],
-              ].map(([l, v]) => (
-                <div key={l} className="text-center">
-                  <p className="font-mono text-[15px] tabular-nums text-white">{v}</p>
-                  <p className="text-[9.5px] uppercase tracking-wide text-white/30">{l}</p>
-                </div>
-              ))}
-            </div>
-            <p className="px-4 pt-2 text-[11px] text-white/30">per porzione · si aggiorna mentre correggi i grammi</p>
 
             <div className="divide-y divide-white/[0.05] p-2">
               {draft.items.map((item, k) => {
@@ -270,26 +263,22 @@ export function RecipeImport({
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <input
-                        aria-label={`Grammi di ${item.name}${item.estimated ? " (stimati)" : ""}`}
-                        className={`input w-20 px-2 py-1.5 text-right font-mono text-[12.5px] tabular-nums ${
-                          item.estimated && !mancante ? "border-amber-300/40 text-amber-100" : ""
-                        }`}
-                        type="number"
+                      <NumberField
+                        value={item.grams}
+                        onChange={(v) =>
+                          // Toccato il valore, è un dato di chi ha cucinato.
+                          aggiorna(k, { grams: v, estimated: false })
+                        }
                         min={0}
                         max={5000}
                         step={5}
-                        disabled={mancante}
-                        value={item.grams ?? ""}
-                        onChange={(e) =>
-                          // Toccato il valore, è un dato di chi ha cucinato.
-                          aggiorna(k, {
-                            grams: e.target.value === "" ? null : Number(e.target.value),
-                            estimated: false,
-                          })
-                        }
+                        size="sm"
+                        steppers="sm"
+                        suffix="g"
+                        placeholder="—"
+                        ariaLabel={`Grammi di ${item.name}${item.estimated ? " (stimati)" : ""}`}
+                        className={`w-24 sm:w-36 ${mancante ? "pointer-events-none opacity-40" : ""}`}
                       />
-                      <span className="w-3 text-[11px] text-white/30">g</span>
                     </div>
                     <button
                       onClick={() =>
@@ -297,7 +286,7 @@ export function RecipeImport({
                       }
                       aria-label={`Togli ${item.name}`}
                       title="Togli dalla ricetta"
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-white/30 transition hover:bg-rose-400/10 hover:text-rose-300"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white/35 transition hover:bg-rose-400/10 hover:text-rose-300"
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4" stroke="currentColor" strokeWidth={2} fill="none">
                         <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
@@ -314,12 +303,16 @@ export function RecipeImport({
               </p>
             ))}
 
-            <div className="flex flex-wrap gap-2 border-t border-white/[0.06] p-4">
-              <button className="btn-primary" onClick={save} disabled={saving || draft.items.length === 0}>
-                {saving ? "Salvo…" : "Salva tra le mie ricette"}
-              </button>
-              <button className="btn-ghost" onClick={() => setDraft(null)} disabled={saving}>
+            <div className="flex items-center gap-2 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5">
+              <button className="btn-ghost flex-1 justify-center" onClick={() => setDraft(null)} disabled={saving}>
                 Ricomincia
+              </button>
+              <button
+                className="btn-primary flex-[1.6] justify-center"
+                onClick={save}
+                disabled={saving || draft.items.length === 0}
+              >
+                {saving ? "Salvo…" : "Salva ricetta"}
               </button>
             </div>
           </Card>

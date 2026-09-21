@@ -644,9 +644,7 @@ function PlanDialog({
         {mode === "kilo" ? (
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5">
             <div className="flex items-start gap-3">
-              <span className="shrink-0">
-                <Mascot size={40} mood="happy" />
-              </span>
+              <Mascot size={40} mood="happy" />
               <p className="min-w-0 text-[12.5px] leading-relaxed text-white/60">
                 Scelgo la divisione adatta ai tuoi giorni e calcolo serie, ripetizioni, RIR e
                 recuperi dai documenti della knowledge base. Gli esercizi preferiti entrano per primi.

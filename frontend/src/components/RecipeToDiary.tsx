@@ -19,7 +19,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { MEAL_LABELS, api, type SavedRecipe } from "@/lib/api";
-import { Modal, ModalHeader } from "@/components/controls";
+import { MacroGrid, Modal, ModalHeader, OptionGroup } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 
 const PORZIONI = [0.5, 1, 1.5, 2];
@@ -91,23 +91,16 @@ export function RecipeToDiaryDialog({
         title="Aggiungi una ricetta"
         subtitle="Gli ingredienti entrano nel pasto come voci separate: puoi correggerne una senza rifare tutto."
         onClose={onClose}
-      >
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {mealOrder.map((m) => (
-            <button
-              key={m}
-              onClick={() => setMeal(m)}
-              className={`rounded-lg border px-3 py-1.5 text-[12px] font-medium transition ${
-                meal === m
-                  ? "border-lime-400/40 bg-lime-400/10 text-lime-200"
-                  : "border-white/[0.08] text-white/45 hover:text-white/80"
-              }`}
-            >
-              {MEAL_LABELS[m]}
-            </button>
-          ))}
-        </div>
-      </ModalHeader>
+      />
+      <div className="shrink-0 border-b border-white/[0.06] px-4 py-3 sm:px-5">
+        <OptionGroup
+          ariaLabel="Pasto"
+          size="sm"
+          value={meal}
+          onChange={setMeal}
+          options={mealOrder.map((m) => ({ value: m, label: MEAL_LABELS[m] }))}
+        />
+      </div>
 
       <div className="min-h-[140px] flex-1 overflow-y-auto overscroll-contain p-2">
         {!recipes && <Spinner label="Carico le tue ricette…" />}
@@ -128,8 +121,8 @@ export function RecipeToDiaryDialog({
               key={s.id}
               onClick={() => usabile && setSelected(attiva ? null : s)}
               disabled={!usabile}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
-                attiva ? "bg-lime-400/[0.1] ring-1 ring-lime-400/35" : "hover:bg-white/[0.04]"
+              className={`mb-1 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
+                attiva ? "border-lime-400/40 bg-lime-400/[0.08]" : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
               } ${usabile ? "" : "opacity-40"}`}
             >
               <div className="min-w-0 flex-1">
@@ -156,43 +149,35 @@ export function RecipeToDiaryDialog({
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="shrink-0 border-t border-white/[0.06] bg-black/25 p-4"
+          className="shrink-0 space-y-3 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5"
         >
-          <p className="label">Quanto ne hai mangiato</p>
-          <div className="mb-3 flex flex-wrap items-center gap-1.5">
-            {PORZIONI.map((p) => (
-              <button
-                key={p}
-                onClick={() => setEaten(p)}
-                className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-medium tabular-nums transition ${
-                  eaten === p
-                    ? "border-lime-400/50 bg-lime-400/15 text-lime-200"
-                    : "border-white/[0.08] text-white/50 hover:text-white/85"
-                }`}
-              >
-                {p === 1 ? "1 porzione" : `${p.toString().replace(".", ",")} porzioni`}
-              </button>
-            ))}
-            <span className="ml-auto text-[11px] text-white/30">
-              la ricetta è per {porzioni} porzioni
-            </span>
+          <div>
+            <div className="mb-1.5 flex items-baseline justify-between gap-2">
+              <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">Quanto ne hai mangiato</p>
+              <span className="text-[11px] text-white/30">ricetta per {porzioni} porzioni</span>
+            </div>
+            <OptionGroup
+              ariaLabel="Porzioni mangiate"
+              size="sm"
+              value={eaten}
+              onChange={setEaten}
+              options={PORZIONI.map((p) => ({
+                value: p,
+                label: p === 1 ? "1 porz." : `${p.toString().replace(".", ",")} porz.`,
+              }))}
+            />
           </div>
 
-          <div className="mb-3 grid grid-cols-4 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
-            {[
+          <MacroGrid
+            items={[
               ["kcal", Math.round(selected.recipe.kcal_per_serving * eaten)],
               ["proteine", `${(selected.recipe.protein_per_serving * eaten).toFixed(1)}g`],
               ["carboid.", `${(selected.recipe.carbs_per_serving * eaten).toFixed(1)}g`],
               ["grassi", `${(selected.recipe.fat_per_serving * eaten).toFixed(1)}g`],
-            ].map(([label, value]) => (
-              <div key={label} className="text-center">
-                <p className="font-mono text-[14px] tabular-nums text-white">{value}</p>
-                <p className="text-[10px] uppercase tracking-wide text-white/30">{label}</p>
-              </div>
-            ))}
-          </div>
+            ]}
+          />
 
-          <p className="mb-3 text-[11.5px] leading-snug text-white/35">
+          <p className="text-[11.5px] leading-snug text-white/35">
             Entrano {collegati.length} ingredienti, con le quantità della ricetta
             {fattore !== 1 && <> ridotte al {Math.round(fattore * 100)}%</>}.
             {mancanti > 0 && (
@@ -204,13 +189,9 @@ export function RecipeToDiaryDialog({
             )}
           </p>
 
-          {error && (
-            <div className="mb-3">
-              <Notice>{error}</Notice>
-            </div>
-          )}
+          {error && <Notice>{error}</Notice>}
 
-          <button className="btn-primary w-full" onClick={add} disabled={saving}>
+          <button className="btn-primary w-full justify-center" onClick={add} disabled={saving}>
             {saving ? "Aggiungo…" : `Aggiungi a ${MEAL_LABELS[meal]}`}
           </button>
         </motion.div>

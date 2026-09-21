@@ -268,14 +268,17 @@ export function OptionGroup<T extends string | number>({
   onChange,
   columns,
   mono = false,
+  size = "md",
   ariaLabel,
 }: {
   options: Option<T>[];
-  value: T;
+  value: T | null;
   onChange: (v: T) => void;
   /** Colonne della griglia; senza, le scelte si dividono la riga. */
   columns?: string;
   mono?: boolean;
+  /** "sm" per le scelte rapide dentro intestazioni e piè di pagina. */
+  size?: "sm" | "md";
   ariaLabel?: string;
 }) {
   return (
@@ -294,8 +297,12 @@ export function OptionGroup<T extends string | number>({
             aria-checked={on}
             whileTap={{ scale: 0.95 }}
             onClick={() => onChange(o.value)}
-            className={`min-h-[42px] rounded-xl border px-2 py-2 text-center transition sm:px-3 ${columns ? "" : "flex-1"} ${
-              mono ? "font-mono text-[15px] font-semibold tabular-nums" : "text-[13px] font-medium"
+            className={`rounded-xl border px-2 text-center transition sm:px-3 ${columns ? "" : "flex-1"} ${
+              size === "sm" ? "min-h-[36px] py-1.5" : "min-h-[42px] py-2"
+            } ${
+              mono
+                ? `font-mono font-semibold tabular-nums ${size === "sm" ? "text-[13px]" : "text-[15px]"}`
+                : `font-medium ${size === "sm" ? "text-[12.5px]" : "text-[13px]"}`
             } ${
               on
                 ? "border-lime-400/60 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900 shadow-[0_6px_16px_-10px_rgba(174,212,74,0.9)]"
@@ -311,6 +318,23 @@ export function OptionGroup<T extends string | number>({
           </motion.button>
         );
       })}
+    </div>
+  );
+}
+
+/** Calorie e macro in quattro colonne: la stessa riga in diario, ricette e importazione. */
+export function MacroGrid({ items, note }: { items: [string, ReactNode][]; note?: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-2 py-3">
+      <div className="grid grid-cols-4 gap-2">
+        {items.map(([label, value]) => (
+          <div key={label} className="text-center">
+            <p className="font-mono text-[15px] font-semibold tabular-nums text-white">{value}</p>
+            <p className="mt-0.5 text-[10.5px] uppercase tracking-wide text-white/35">{label}</p>
+          </div>
+        ))}
+      </div>
+      {note && <p className="mt-2 text-center text-[11px] text-white/35">{note}</p>}
     </div>
   );
 }

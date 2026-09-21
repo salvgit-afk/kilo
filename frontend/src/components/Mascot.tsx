@@ -80,7 +80,7 @@ export function Mascot({
       height={size}
       aria-hidden="true"
       onPointerDown={interactive ? squish : undefined}
-      className={`mascot mascot-${mood} ${animated ? "mascot-anim" : ""} ${
+      className={`mascot shrink-0 mascot-${mood} ${animated ? "mascot-anim" : ""} ${
         interactive ? "mascot-interactive" : ""
       } ${className}`}
     >
@@ -205,7 +205,7 @@ function FlatMascot({ size, mood, className }: { size: number; mood: MascotMood;
   const id = useId().replace(/:/g, "");
   const felice = mood === "happy" || mood === "goal";
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} className={`mascot ${className}`} aria-hidden="true">
+    <svg viewBox="0 0 64 64" width={size} height={size} className={`mascot shrink-0 ${className}`} aria-hidden="true">
       <defs>
         <linearGradient id={`${id}-body`} x1="0.2" y1="0" x2="0.55" y2="1">
           <stop offset="0%" stopColor="#cbeb73" />
