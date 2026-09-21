@@ -440,12 +440,3 @@ verificati a mano, sono in `backend/app/data/exercise_duplicates.json`. Se ne
 tiene uno solo, preferendo disegni, poi illustrazioni, poi foto. La
 sincronizzazione da **Profilo** importa tutte le fonti e traduce in background
 gli esercizi nuovi, che nel frattempo compaiono in inglese.
-
----
-
-## Origine del progetto
-
-Kilo nasce riutilizzando la base del precedente *"Cacciatore di Abbonamenti e
-Spese Fantasma"*: backend FastAPI, Neon, Alembic e il client Gemini con
-output JSON vincolato. Il dominio è stato poi completamente sostituito con
-allenamento e nutrizione.

@@ -17,9 +17,8 @@ note_di_onestà: >
 
 Nessuna scheda di allenamento o piano nutrizionale con obiettivi aggressivi
 (deficit calorico marcato, carichi progressivi) dovrebbe essere generata
-**senza prima passare da questo screening**. È il guardrail equivalente a
-"propone, non agisce mai da solo" del progetto abbonamenti, adattato alla
-salute fisica.
+**senza prima passare da questo screening**. È il guardrail per la salute
+fisica: Kilo propone, non agisce mai da solo.
 
 ## Domande di screening (adattate da PAR-Q+) da porre nell'interfaccia
 
