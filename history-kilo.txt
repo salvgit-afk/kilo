@@ -1,3 +1,477 @@
- ▐▛███▛█   Claude Code v2.1.259
-▝▜██████▀  Sonnet 5 · Claude Pro
-  ▝▝ ▝▝    ~/work/kilo
+================================================================================
+KILO — EXPORT DELLA CONVERSAZIONE DI SVILUPPO (per Claude Code sul PC di casa)
+Aggiornato al 21 settembre 2026 · ultimo commit incluso: 80d3c95
+================================================================================
+
+COME USARE QUESTO FILE
+----------------------
+Questo è un riassunto strutturato di una lunga sessione di sviluppo con
+Claude Code, non la trascrizione parola per parola. Serve a riprendere il
+lavoro da un'altra macchina con tutto il contesto: cosa è stato fatto, perché,
+le regole di lavoro concordate con l'utente e cosa resta aperto.
+
+Per Claude Code: leggi prima le sezioni 1 (regole) e 2 (progetto), poi usa le
+altre come riferimento quando serve. Il codice è la fonte di verità: se qui
+qualcosa non torna con il repository, vale il repository. I nomi di file e
+funzioni citati erano corretti all'ultimo commit indicato sopra.
+
+Nel file non ci sono segreti (chiavi API, DATABASE_URL, email): stanno nel
+backend/.env locale, che non è nel repository.
+
+
+================================================================================
+1. REGOLE DI LAVORO CONCORDATE CON L'UTENTE
+================================================================================
+
+- LINGUA: si parla in italiano. Anche commenti nel codice, messaggi di commit
+  e testi dell'interfaccia sono in italiano.
+- GIT: Claude fa i commit, l'utente fa SEMPRE i push da sé. Non fare mai
+  push. Dopo i commit, mostrare il comando `git push` come blocco a parte.
+  Firma dei commit: "Co-Authored-By: Claude ... <noreply@anthropic.com>".
+- SEGRETI: mai committare .env o chiavi. history-kilo.txt è nel repository.
+- RepDB: l'attribuzione "Exercise data by RepDB (repdb.co)" deve restare
+  visibile (dettaglio esercizio, Profilo, README), e il dataset RepDB non va
+  messo nel repository (lo vieta la licenza).
+- COSTI: tutto deve restare GRATUITO. Niente API o piani a pagamento. Per
+  questo sono state escluse Spoonacular ed Edamam per le ricette.
+- PROPOSTE PRIMA DI IMPLEMENTARE: per scelte di UI o di architettura in cui
+  l'utente chiede alternative, mostrargliele PRIMA (mockup o screenshot) e
+  aspettare la scelta. Per il resto decidere in autonomia e procedere.
+  L'utente non riesce ad aprire file HTML inviati: mandare screenshot PNG
+  (Playwright) o spiegare a parole.
+- STILE VISIVO: scuro, viola (iris) e lime, glassmorphism, animazioni
+  morbide con framer-motion. Mascotte kettlebell lime con fascia viola. Le
+  modifiche devono adattarsi allo stile esistente, non riscriverlo.
+- MOBILE PRIMA DI TUTTO: l'utente usa soprattutto il telefono. Ogni modifica
+  va verificata a 390x844 (vedi sezione 8), con target di tocco di almeno
+  ~36 px e senza sforamenti orizzontali.
+- ONESTÀ SUI DATI: i numeri vengono dalle fonti (knowledge base, USDA, Open
+  Food Facts), mai inventati dal modello. Le stime vanno dichiarate come tali
+  ("stimato", "valori stimati").
+- COPYRIGHT: niente scraping di social (TikTok, Instagram, YouTube) né di
+  blog di ricette. I blog si possono usare come riferimento per scrivere
+  ricette nostre con parole nostre. L'utente può incollare nell'app ricette
+  che ha lui (funzione "Importa").
+- VERIFICA: dopo ogni lavoro eseguire i test backend, `npx tsc --noEmit`,
+  `npx eslint .`, `next build` e, per l'interfaccia, la prova nel browser a
+  dimensione telefono. Riportare i risultati in modo onesto (anche i bug
+  introdotti e corretti).
+- TOKEN: l'utente ha un piano con limite di utilizzo e a volte chiede di
+  dividere il lavoro in sezioni, con un commit per sezione, per potersi
+  fermare a buon punto.
+
+
+================================================================================
+2. IL PROGETTO
+================================================================================
+
+Kilo è un agente AI per allenamento e nutrizione (app web, usata soprattutto
+da telefono). È nato al posto del vecchio progetto "cacciatore-abbonamenti":
+la cartella è stata rinominata in ~/work/kilo il 14/09/2026. Tutto ciò che
+cita ancora "cacciatore" è un residuo.
+
+STACK
+- backend/: FastAPI + SQLAlchemy 2 + Alembic su Neon Postgres (psycopg3).
+  Deploy su Render, free tier: il comando di avvio esegue `alembic upgrade
+  head`, quindi le migrazioni partono da sole a ogni deploy.
+- frontend/: Next.js 15 (App Router) + Tailwind + framer-motion + recharts, su
+  Vercel. Le chiamate /api/* vengono inoltrate al backend tramite rewrite
+  (BACKEND_URL). Il file dove sono tutti i tipi e le chiamate è
+  frontend/src/lib/api.ts.
+- LLM: Gemini. Modello fisso per la chat (gemini-3.5-flash-lite) e
+  gemini-3.5-flash per le traduzioni. Output JSON strutturato, system prompt,
+  tentativi ripetuti e gestione della quota esaurita
+  (backend/app/services/llm_client.py). Piano gratuito, che basta per 10-50
+  utenti. Nell'area SEE/UK/Svizzera i dati del piano gratuito non vengono
+  usati per migliorare i prodotti Google.
+- Fonti dati: USDA FoodData Central (alimenti generici), Open Food Facts
+  (codice a barre e ricerca dei prodotti venduti in Italia), wger (riserva),
+  TheMealDB (ricette internazionali, chiave di test gratuita "1"), catalogo
+  esercizi unito (vedi sotto).
+- Knowledge base: backend/app/knowledge_base/*.md, cioè documenti delle fonti
+  (ISSN, EFSA, ACSM, WHO, LARN...). Il recupero va per tag: mappa tag → file
+  in knowledge_base.py, parole chiave → tag in chat_agent.py (KEYWORD_TAGS).
+  Niente motore vettoriale, di proposito: così si vede sempre quali fonti
+  sono state usate.
+- Motori a regole, SENZA LLM: agent_notes.py (le note di Kilo),
+  weekly_summary.py, exercise_guidance.py (biomeccanica),
+  workout_generator.py (le schede).
+
+CATALOGO ESERCIZI (dal 15/09/2026)
+- Unisce Everkinetic (disegni), RepDB (illustrazioni), free-exercise-db (foto)
+  ed esercizi scritti a mano in backend/app/services/manual_exercises.py.
+  Circa 960 esercizi visibili.
+- I doppioni sono verificati a mano in backend/app/data/exercise_duplicates.json
+  (colonna duplicate_of_id). Precedenza: everkinetic > repdb > kilo >
+  free_exercise_db. Le nuove versioni dei dataset NON vengono deduplicate da
+  sole.
+- Preferenze dell'utente: niente foto reali se c'è un'alternativa. Gli
+  esercizi non tradotti si mostrano subito in inglese. Quelli scritti a mano
+  hanno nome breve (massimo 6 parole), imperativo con il tu e focus di
+  massimo 14 parole.
+- Aggiornamento del catalogo in produzione: `POST /catalog/sync-exercises`,
+  riservato agli admin. Il pulsante "Aggiorna catalogo" in Profilo compare
+  solo agli account elencati nella variabile d'ambiente ADMIN_EMAILS.
+
+SICUREZZA (fasi A, B e C fatte)
+- JWT + Argon2. Tutte le rotte richiedono l'accesso (dependency a livello di
+  router). I dati di un profilo passano da `owned_profile` / `ensure_owner`
+  in routers/profile.py. Le risorse raggiunte per id (serie, sessioni, voci
+  del diario) controllano il proprietario e rispondono 404 se non sono tue.
+- Limiti: rate_limit.py, con finestre in memoria per login e registrazione e
+  quote giornaliere nel database (tabella ApiUsage): chat 60, food_names
+  150, plan_generation 25, barcode_lookup 150, recipe_import 25.
+- CSP e intestazioni di sicurezza in frontend/next.config.mjs (fotocamera
+  permessa solo su self). DOCS_ENABLED per /docs.
+- tests/test_security.py ricava TUTTE le rotte dallo schema OpenAPI e
+  verifica che richiedano l'accesso: una rotta nuova senza protezione fa
+  fallire i test.
+
+SEZIONI DELL'APP (ordine della navigazione)
+Oggi · Scheda · Diario · Ricette · Progressi · Integratori · Profilo.
+Su mobile c'è la barra in basso a pillola, con swipe tra le sezioni e scorrimento
+del dito sulla barra (Shell.tsx). Chat con Kilo nel pulsante flottante con la
+mascotte (ChatBubble.tsx).
+
+
+================================================================================
+3. COME LAVORARE IN LOCALE
+================================================================================
+
+BACKEND
+  cd backend
+  .venv/bin/python -m pytest tests/ -q        # 771 test verdi all'ultimo commit
+  .venv/bin/alembic heads                      # deve esserci UNA sola head
+  Python di sistema: usare `python3` o `.venv/bin/python` (non `python`).
+
+FRONTEND
+  cd frontend
+  npx tsc --noEmit
+  npx eslint .            # oppure: npm run lint
+  npx next build          # esegue anche ESLint: gli errori bloccano la build
+  Node: su questa macchina c'era nvm con Node 22 (~/.nvm/versions/node/v22.*).
+
+ATTENZIONE: backend/.env punta al database di PRODUZIONE (Neon). Per provare
+l'app in locale NON usarlo: vedi la sezione 8 (backend su SQLite temporaneo).
+
+LE MIGRAZIONI (backend/alembic/versions), in ordine, ultime aggiunte:
+  a6d1e8f3b2c9  supplement_intakes
+  b7e2f9a4c1d3  agent_note_dismissals
+  c8f3a1d5e7b2  api_usage
+  d9a4b2c6e8f1  ingredients barcode/owner
+  e5b7c3d9f2a4  saved_recipes
+  f6c8d4a1b3e5  workout_plans.training_weekdays   (giorni di allenamento)
+  a7d9e2b4c6f8  workout_sessions.started_at/ended_at (head)
+Le migrazioni precedenti non girano su SQLite (usano funzioni di Postgres).
+Per SQLite usare Base.metadata.create_all.
+
+
+================================================================================
+4. CRONOLOGIA DEL LAVORO (dal più vecchio al più recente)
+================================================================================
+
+--- Integratori e promemoria (f655de6) --------------------------------------
+Diario delle assunzioni in stile diario alimenti: si segnano le dosi
+giornaliere, con giorni totali, serie in corso e giorni saltati. Banner dei
+promemoria in alto per integratori e pasti non segnati, "non fastidioso" e
+chiudibile con un clic (ReminderBanner.tsx, services/daily_reminders.py:
+il diario viene ricordato solo se usato negli ultimi 14 giorni).
+
+--- Mobile: barra in stile app (de1b306) ------------------------------------
+Barra in basso arrotondata in stile Instagram/WhatsApp, con capsula di
+selezione animata. Navigazione con tocco, trascinamento del dito sulla barra e
+swipe sullo schermo. Niente zoom da pagina web (touch-action, viewport).
+
+--- Agente più presente (1f49afd, 87f7f87, 62efe62) --------------------------
+Note di Kilo calcolate da regole della knowledge base, per esempio: creatina
+a 28 giorni = scorte sature, poi mantenimento senza pause né cicli; revisione
+della scheda a 28 giorni; plateau; calo di peso troppo rapido; proteine basse.
+Riepilogo della settimana conclusa in Oggi. Mascotte con stati d'animo.
+Decisione: resta Gemini, perché è il miglior rapporto qualità/prezzo e il
+piano gratuito basta.
+
+--- Sicurezza, fasi A-B-C (8e5f948, 67f8fee, 24fc4d9, c2bff85, fd900f3) ---------
+Trovata e chiusa una falla CRITICA: tutti i router tranne /profile
+accettavano un profile_id senza controllare il token, quindi chiunque poteva
+leggere o modificare i dati di salute di chiunque. Ora c'è il controllo di
+proprietà ovunque. Poi: dipendenze aggiornate (pip-audit e npm audit
+puliti), intestazioni di sicurezza, avviso AI nella chat, testo dell'utente
+nel prompt delimitato (niente nome utente nel prompt) e set di prova di 40
+domande per la chat (backend/evals/, baseline 40/40).
+
+--- Quattro miglioramenti ----------------------------------------------------
+1. MASCOTTE (0e511ff): scelta la "variante C", cioè resa soft 3D in SVG con
+   micro-animazioni e stati (idle, thinking, happy, goal, remind). Sotto i
+   24 px si usa la versione piatta. Rispetta "riduci movimento".
+2. CODICE A BARRE (16a58b9): scansione con BarcodeDetector nativo e ZXing di
+   riserva (BarcodeScanner.tsx). Open Food Facts API v2. HTTP 200 con
+   status 0 = "prodotto non trovato", con proposta di inserirlo a mano; mai
+   salvato come vuoto. Cache per codice: la seconda scansione è istantanea.
+3. RICETTE SALVATE (2306ad0): schede "Idee per te" e "Salvate".
+4. OVERLAY ESERCIZIO (02652f4...): biomeccanica (articolazioni, azioni, piano
+   di movimento, indicazioni di forma) da exercise_guidance.py. Corretto il
+   bug del riquadro verde sempre uguale per tutti gli esercizi.
+
+--- Ricette: importazione e aggiunta al diario (bdcd0e3, ad5fef8, d9955d2) ---
+"Importa ricetta": si incolla il testo di una ricetta e il modello la legge
+(titolo, porzioni, ingredienti con quantità, nome inglese per USDA). I macro
+vengono SEMPRE dal catalogo alimenti, mai dal modello (recipe_import.py, che
+riusa recipe_analyzer.py). Diario: pulsante "Ricetta" su ogni pasto, che versa
+tutti gli ingredienti di una ricetta salvata scalati sulle porzioni
+mangiate (POST /nutrition/diary/recipe).
+
+--- Porzioni LARN e grammi stimati (7a19ab2) --------------------------------
+Knowledge base: standard_portions.md (SINU, LARN V revisione 2024, solo i
+valori riassunti con parole nostre, perché il documento è sotto copyright).
+Se una ricetta non indica le dosi, la stima parte dalle porzioni LARN per
+persona (una piadina circa 100 g, carne 100 g, olio 9 g a cucchiaio) e sa per
+quante persone è. I grammi stimati sono marcati "stimato" in ambra finché
+l'utente non li tocca.
+
+--- Overlay esercizio: "Come sentirlo" (739389b) ----------------------------
+Tolte le etichette "Misurato / Non misurato / Nessuna differenza" (l'utente
+le trovava inutili). Al loro posto un'indicazione pratica per schema di
+movimento e muscolo, del tipo "nella lat machine tira con i gomiti, non con
+le mani". Mappe MUSCLE_CUES_BY_TARGET / _BY_PATTERN / _BY_MUSCLE in
+exercise_guidance.py. Le note "In allungamento" restano (all'utente
+piacciono).
+
+--- Ricette Kilo (1f8f205, 17c5f19, 8f029eb) --------------------------------
+31 ricette italiane scritte da noi, con ogni dose in grammi
+(backend/app/data/kilo_recipes.py). Categorie: colazione, pollo e tacchino,
+pesce, carne rossa, legumi e vegetariane, spuntini. Vengono per prime nei
+suggerimenti; TheMealDB solo se non bastano, e se non risponde le Kilo
+restano. scripts/check_kilo_recipes.py verifica gli abbinamenti con USDA su
+un DB temporaneo. Al primo giro ha trovato le lenticchie cotte abbinate a
+quelle crude (915 kcal invece di 525), banana e pomodorini a zero e le
+mandorle scambiate per burro di mandorle. Ricerca in italiano a inizio parola
+("pollo" non trova la "cipolla"). Test che impedisce nomi inglesi di
+ricerca nel nome italiano mostrato.
+TheMealDB: chiave di test gratuita, "per sviluppo o uso didattico"; su
+app store servirebbe l'abbonamento da supporter. Potrà essere tolto quando le
+ricette Kilo basteranno.
+
+--- Ricerca alimenti con i prodotti italiani (941af05) ----------------------
+Problema segnalato con "kefir": due kefir americani LIFEWAY etichettati
+"generico" e una sfilza di "kefir" senza marca, che arrivavano da wger (una
+vecchia copia mondiale di OFF). Ora:
+- i prodotti di marca vengono dalla ricerca di Open Food Facts limitata
+  all'Italia (search.openfoodfacts.org, filtro countries_tags en:italy), con
+  marca e formato nel nome, e si scartano incompleti e implausibili;
+- si usa l'ordine di pertinenza del motore, NON la popolarità: con
+  "petto di pollo" la popolarità portava biscotti Mulino Bianco. La parola
+  cercata deve stare nel nome del prodotto, non solo nella marca;
+- i prodotti americani di USDA (marca in maiuscolo) diventano "prodotto USA"
+  e vanno in fondo; i generici USDA vengono filtrati per pertinenza, al
+  massimo 5 prima dei prodotti italiani, e cercati anche con "raw" (per
+  "riso" USDA dava cracker e crusca);
+- cache di 7 giorni per ricerca e tetto di 8 ricerche al minuto (il limite
+  di OFF è per IP e il server è uno solo); wger resta solo come riserva.
+File: services/off_client.py (search_products, plausible),
+services/food_diary.py (search_foods, _italian_products, usda_brand,
+pertinente).
+
+--- Ricette: "Carica altre ricette" (54f9648) -------------------------------
+4 per volta. Il frontend manda gli id già mostrati (parametro exclude) e il
+backend li esclude: così niente doppioni, anche se l'ordine delle esterne
+cambia.
+
+--- Schede: storico carichi e allenamento in corso (8957e15, 6764920) ---------
+Lo schema per lo storico esisteva già (workout_sessions, session_sets, una
+riga per serie con kg, ripetizioni e RIR) ma nessuna schermata lo riempiva.
+Nessuna migrazione necessaria. Aggiunti:
+- PATCH dei parametri dell'esercizio (serie, ripetizioni, RIR, recupero);
+- sessioni riempite serie per serie, con salvataggio immediato;
+- storico per esercizio con serie modificabili ed eliminabili;
+- grafico della progressione dei carichi in Progressi, accanto al peso
+  (services/training_log.py, components/TrainingLog.tsx).
+Nello stesso commit il GIRO MOBILE su tutte le pagine: griglie con
+grid-cols-1 esplicito (una colonna "auto" allargava Progressi a 800 px),
+intestazioni delle card che vanno a capo, target di tocco ingranditi, pulsante
+della chat nascosto quando è aperta una finestra.
+
+--- Giorni di allenamento e integratori (e8cb42a) ---------------------------
+Migrazione f6c8d4a1b3e5, colonna training_weekdays ("0,2,4", 0 = lunedì).
+- Selettore: prima la frequenza, poi i giorni rotondi, con una proposta che
+  distanzia gli allenamenti (3 → lun, mer, ven; 4 → lun, mar, gio, ven). Si
+  modifica anche dopo ("Cambia giorni"), con PUT /workout/plans/{id}/schedule.
+  La frequenza del profilo viene allineata.
+- Linea della settimana (WeekSchedule.tsx, variante "B" scelta dall'utente):
+  pallini sulla linea; toccando un giorno il pallino si allarga in una
+  pillola ("Giorno A · 4 esercizi" o "Riposo"). Se i giorni sono più degli
+  allenamenti, si alternano di settimana in settimana (A-B-A, poi B-A-B).
+- Integratori, il "0 di 28 giorni": NON era un limite. Erano due numeri che
+  coincidevano per la creatina: la durata indicata dalle fonti
+  (MILESTONES in supplement_intake.py: creatina 28, beta-alanina 28,
+  ashwagandha 56) e la finestra di impaginazione di 28 giorni. Ora:
+  - anello "16 su 18 giorni" (giorni presi dal primo segnato, campo
+    tracked_days; l'utente NON voleva percentuali come "91% aderenza");
+  - giorni di fila, saltati, "Dal";
+  - ultimi 7 giorni a pillole;
+  - fase con un nome ("Fase di saturazione", poi "Scorte piene da N giorni").
+
+--- Chat e settimana (a399455) ----------------------------------------------
+Bug "la chat a volte non si apre": la mascotte ricreava il proprio disegno
+(una `key` che cambiava) a ogni pointerdown, l'elemento toccato spariva e il
+click non partiva. Ora l'animazione riparte sullo stesso elemento. Pulsante
+escluso dallo swipe (data-no-swipe). Il "lampo" all'apertura e chiusura era
+backdrop-filter animato insieme all'opacità: tolta la sfocatura dal pannello.
+Pillola della settimana richiudibile, con freccia interna per aprire il giorno.
+
+--- Allenamento dinamico (a2604ab, f49996b) ---------------------------------
+Migrazione a7d9e2b4c6f8 (started_at, ended_at). Tre stati nel pannello:
+- pronto: "Avvia allenamento";
+- in corso: cronometro e serie; con "Riduci" il pannello si chiude e nella
+  Scheda compare la pillola "Allenamento in corso · 12:34";
+- completato: riepilogo con durata, serie, esercizi, kg sollevati e record.
+I valori dell'ultima volta sono SUGGERIMENTI in grigio nei campi (con ✓ a
+campo vuoto si conferma il suggerimento). Sotto ogni serie c'è il confronto
+"+2,5 kg rispetto all'ultima volta". Parametri modificabili con una fascia
+tratteggiata "✎ Modifica" sempre visibile e una finestra a riquadri (RIR a
+pulsanti, recupero con valori pronti). La data della sessione la manda il
+telefono: il server è in UTC. Calendario degli integratori come mese vero
+sfogliabile. Durante il lavoro c'è stato un crash della Scheda (un hook dopo
+un return anticipato), trovato nel browser e corretto → vedi ESLint.
+
+--- ESLint (5e13d4d) --------------------------------------------------------
+frontend/eslint.config.mjs (flat config, next/core-web-vitals +
+next/typescript). react-hooks/rules-of-hooks è un errore e blocca
+`next build` anche su Vercel. Disattivata react/no-unescaped-entities: gli
+apostrofi italiani nel JSX sono innocui. `npm run lint` = `eslint .`.
+
+--- Pallini nel menu e rifiniture (80d3c95) ---------------------------------
+- Pallino lime sulle voci del menu (barra laterale e barra in basso) per ciò
+  che manca oggi:
+  - Integratori: integratori dichiarati non segnati;
+  - Diario: nessun pasto, solo se il diario è in uso;
+  - Scheda: oggi è un giorno di allenamento e la sessione non è iniziata.
+  Il nuovo campo workouts_due in /profile/{id}/reminders alimenta lib/badges.ts.
+  Si aggiorna con notifyLogged(), al ritorno sull'app e ogni 5 minuti.
+- Chiusura della pillola della settimana: curva simmetrica di 0,6 s
+  [0.45, 0, 0.2, 1], dissolvenza incrociata, borderRadius nello style e
+  `layout` sul testo, così cerchio e lettera non si deformano.
+- Integratori: pallini dei 7 giorni a 36 px; nel calendario si vedono i due
+  mesi successivi, spenti; la schermata si ricarica tornando sull'app (cambio
+  di giorno dopo la mezzanotte).
+
+
+================================================================================
+5. DECISIONI E PERCHÉ (per non rimetterle in discussione)
+================================================================================
+- Gemini resta il modello: rapporto qualità/prezzo migliore, piano gratuito
+  sufficiente.
+- Ricette: fonte principale le ricette Kilo (gratis, dosi esatte). TheMealDB
+  solo come riempitivo. Esclusi Spoonacular (50 punti al giorno per tutta
+  l'app, cache massima di 1 ora) ed Edamam (a pagamento).
+- Nessuno scraping di social o blog. Al loro posto: "Importa ricetta" da testo
+  incollato, e i blog solo come ispirazione per ricette scritte da noi.
+- Recupero dalla knowledge base per tag, non vettoriale. Provato il recupero
+  per sezioni: -13% di token ma due domande del set di prova perdevano dati,
+  quindi annullato.
+- Storico dei carichi: una riga per serie, mai sovrascritta. Una correzione
+  cambia solo quella serie.
+- Integratori: niente durata "configurabile a mano". Le durate vengono dalle
+  fonti; senza fonte non c'è la barra.
+- Ricerca OFF: ordine di pertinenza, non popolarità (vedi sezione 4).
+
+
+================================================================================
+6. FILE PRINCIPALI (dove guardare)
+================================================================================
+backend/app/
+  models.py                     tutti i modelli (WorkoutPlan.training_weekdays è
+                                una property su training_weekdays_raw)
+  schemas.py                    tutti gli schemi pydantic
+  routers/workout.py            schede, sessioni, serie, storico, giorni
+  routers/nutrition.py          diario, ricerca alimenti, codice a barre, ricette
+  routers/profile.py            profilo, promemoria, note, riepilogo settimana
+  routers/supplements.py        integratori e diario assunzioni
+  routers/progress.py           resoconto, /progress/loads, catalogo
+  services/training_log.py      storico carichi, riepilogo di fine allenamento
+  services/training_schedule.py giorni della settimana (proposte, parsing)
+  services/daily_reminders.py   promemoria del giorno (+ workouts_due)
+  services/supplement_intake.py diario integratori, MILESTONES, tracked_days
+  services/food_diary.py        ricerca alimenti, codice a barre, prodotti OFF
+  services/off_client.py        Open Food Facts: prodotto e ricerca Italia
+  services/meal_suggestions.py  suggerimenti ricette (Kilo prima, poi TheMealDB)
+  services/recipe_import.py     importazione ricetta da testo
+  services/recipe_analyzer.py   grammi e macro delle ricette
+  services/exercise_guidance.py biomeccanica e "Come sentirlo"
+  data/kilo_recipes.py          le 31 ricette Kilo
+  knowledge_base/*.md           documenti delle fonti
+
+frontend/src/
+  lib/api.ts                    tipi, chiamate, localDate, notifyLogged
+  lib/badges.ts                 pallini del menu
+  components/Shell.tsx          layout, barra laterale, barra mobile, swipe
+  components/TrainingLog.tsx    allenamento in corso, parametri, storico
+  components/WeekSchedule.tsx   selettore giorni e linea della settimana
+  components/SupplementDiary.tsx check-in integratori (anello, pillole, mese)
+  components/ChatBubble.tsx     chat con Kilo
+  components/Mascot.tsx         mascotte SVG
+  components/sections/*.tsx     le pagine (Today, Workout, Diary, Recipes...)
+
+
+================================================================================
+7. STATO ATTUALE E COSE APERTE
+================================================================================
+- Tutto il lavoro elencato è committato e pushato su GitHub fino a 80d3c95.
+  Controllare con `git log origin/main..` se c'è altro in sospeso.
+- Da confermare sul telefono dell'utente: che il "lampo" della chat sia
+  sparito (in un browser automatico non si vede).
+- Possibili sviluppi discussi e non fatti:
+  - togliere TheMealDB quando le ricette Kilo saranno abbastanza (servono
+    altre ricette, da aggiungere per le ricerche che oggi non trovano
+    abbastanza risultati);
+  - eventuale obiettivo personale per gli integratori (es. "90 giorni di
+    fila"), proposto come opzione futura;
+  - il README.md in cima ha ancora parti del vecchio progetto (vedi
+    sezione 2).
+- Dati di prova: le verifiche nel browser sono state fatte su un database
+  SQLite temporaneo con un account di prova, mai sul DB di produzione.
+
+
+================================================================================
+8. COME VERIFICARE L'APP NEL BROWSER (metodo usato)
+================================================================================
+1) Backend su SQLite temporaneo, senza chiavi LLM (nessuna chiamata a
+   pagamento):
+     export DATABASE_URL="sqlite:////percorso/tmp/kilo.db"
+     export SECRET_KEY="una-chiave-locale-lunga-almeno-32-caratteri"
+     export GEMINI_API_KEY=""
+     cd backend && .venv/bin/python -c "import sys; sys.path.insert(0,'.');
+       from sqlalchemy import create_engine; from app.database import Base;
+       import app.models; Base.metadata.create_all(create_engine('$DATABASE_URL'))"
+     .venv/bin/uvicorn app.main:app --port 8000
+   (SECRET_KEY corta → errori 500; USDA/OFF funzionano dal vivo se c'è
+   USDA_API_KEY.)
+2) Popolare i dati: registrazione e profilo via API (POST /auth/register,
+   POST /profile), poi via ORM esercizi, una scheda "Upper / Lower" su 2
+   giorni, 6 settimane di sessioni con carichi in crescita, 40 pesate,
+   creatina e vitamina D con assunzioni. (Lo script usato stava nella
+   scratchpad della sessione: va riscritto, è semplice.)
+3) Frontend di produzione: `npx next build` e `npx next start -p 3100`
+   (il rewrite punta a 127.0.0.1:8000 per default, al momento del build).
+4) Playwright (playwright-core con il canale chromium-headless-shell),
+   viewport 390x844, deviceScaleFactor 2, isMobile, hasTouch. Accesso dal
+   modulo di login: iniettare il token in localStorage non bastava.
+   Rimuovere l'elemento `nextjs-portal` se intercetta i tocchi. Per elementi
+   in fondo alla pagina: scrollIntoView e poi click con force. Controlli
+   automatici utili: elementi che sforano la larghezza, testi sotto gli
+   11 px, pulsanti sotto i 32 px, errori JS (pageerror).
+5) Spegnere i server alla fine (kill per porta con `ss -ltnp`, NON con
+   `pkill -f uvicorn`: il pattern colpiva anche la shell stessa).
+
+Trappole già incontrate:
+- Un elemento `fixed` dentro un contenitore animato (framer-motion con
+  transform) si posiziona rispetto al contenitore, non allo schermo: le
+  finestre (Modal) vanno renderizzate FUORI da card e pannelli animati.
+- Gli hook di React vanno sempre prima dei return anticipati (ora ESLint lo
+  blocca).
+- I limiti di registrazione in memoria sono condivisi fra i test: le
+  fixture che creano account devono azzerare rate_limit.REGISTER_PER_IP
+  (e le altre finestre).
+- Nel componente di una sessione, passare `exercises` stabile (una copia
+  fatta all'apertura): un nuovo array a ogni render ricarica la sessione e
+  azzera le serie.
+================================================================================
