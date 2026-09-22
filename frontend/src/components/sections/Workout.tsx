@@ -16,7 +16,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EXPERIENCE_LABELS,
   GOAL_LABELS,
@@ -76,20 +76,6 @@ function planLabel(plan: WorkoutPlan) {
   return `${divisione ?? plan.name.split(" — ")[0]} · ${plan.days_per_week} g`;
 }
 
-/** Linguette distinguibili anche con due schede della stessa divisione. */
-function planTabLabels(plans: WorkoutPlan[]) {
-  const totali: Record<string, number> = {};
-  plans.forEach((p) => (totali[planLabel(p)] = (totali[planLabel(p)] ?? 0) + 1));
-  const visti: Record<string, number> = {};
-  return Object.fromEntries(
-    [...plans].reverse().map((p) => {
-      const base = planLabel(p);
-      visti[base] = (visti[base] ?? 0) + 1;
-      return [p.id, totali[base] > 1 ? `${base} (${visti[base]})` : base];
-    })
-  ) as Record<number, string>;
-}
-
 export function Workout({
   profile,
   intent,
@@ -111,6 +97,8 @@ export function Workout({
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
   const [editingParams, setEditingParams] = useState<PlanExercise | null>(null);
   const [editingSchedule, setEditingSchedule] = useState(false);
+  // Tendina aperta nella card della scheda: scelta della scheda o opzioni.
+  const [menu, setMenu] = useState<"piano" | "opzioni" | null>(null);
   // Copia degli esercizi fatta all'apertura: la sessione non deve ricaricarsi
   // (e azzerare le serie in corso) a ogni render della pagina.
   const [sessionDay, setSessionDay] = useState<{ plan: WorkoutPlan; day: string; exercises: PlanExercise[] } | null>(null);
@@ -210,7 +198,6 @@ export function Workout({
 
   const plan = plans.find((p) => p.id === selectedId) ?? null;
   const meta = plan ? metaById[plan.id] : undefined;
-  const labels = planTabLabels(plans);
   const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
   const dayExercises = plan?.exercises.filter((e) => e.day_label === activeDay) ?? [];
 
@@ -233,95 +220,13 @@ export function Workout({
     <>
       <PageHeader
         eyebrow="Allenamento"
-        title={plan ? plan.name : "Nessuna scheda attiva"}
+        title={plan ? "La tua scheda" : "Nessuna scheda attiva"}
         description={
           plan
-            ? `${plan.days_per_week} giorni a settimana · attiva dal ${new Date(
-                plan.started_at
-              ).toLocaleDateString("it-IT")}`
+            ? undefined
             : "Genero una scheda sui parametri del tuo profilo, presi dai documenti della knowledge base."
         }
-        action={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-            {plan && (
-              <button className="btn-ghost justify-center whitespace-nowrap px-3" onClick={() => setFeedbackOpen(true)}>
-                Come sta andando?
-              </button>
-            )}
-            <button
-              className={`btn-primary justify-center ${plan ? "" : "col-span-2"}`}
-              onClick={() => setDialog({ replace: null })}
-              disabled={generating}
-            >
-              {generating ? "Genero…" : plan ? "+ Nuova scheda" : "Crea scheda"}
-            </button>
-          </div>
-        }
       />
-
-      <KiloNote
-        section="scheda"
-        onAction={(azione) => azione === "feedback" && plan && setFeedbackOpen(true)}
-      />
-
-      {plans.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex max-w-full flex-wrap rounded-xl border border-white/10 bg-white/[0.03] p-1">
-            {plans.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => selectPlan(p)}
-                className={`relative rounded-lg px-3.5 py-2 text-[12.5px] font-medium transition ${
-                  p.id === selectedId ? "text-ink-900" : "text-white/55 hover:text-white"
-                }`}
-              >
-                {p.id === selectedId && (
-                  <motion.span
-                    layoutId="plan-tab"
-                    className="absolute inset-0 rounded-lg bg-gradient-to-b from-lime-400 to-lime-500"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                )}
-                <span className="relative">{labels[p.id]}</span>
-              </button>
-            ))}
-          </div>
-          {plan && (
-            <button
-              onClick={() => setDeleting(plan)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] font-medium text-white/50 transition hover:border-rose-400/30 hover:bg-rose-400/[0.08] hover:text-rose-200"
-              title="Elimina questa scheda"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h2v-8h-2Zm4 0v8h2v-8h-2Z" />
-              </svg>
-              Elimina scheda
-            </button>
-          )}
-        </div>
-      )}
-
-      {plan && (
-        <Card className="mb-4">
-          <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-5">
-            <p className="text-[13px] font-medium text-white/80">
-              Questa settimana
-              <span className="ml-1.5 font-normal text-white/40">
-                · {plan.training_weekdays.length} {plan.training_weekdays.length === 1 ? "giorno" : "giorni"}
-              </span>
-            </p>
-            <button
-              onClick={() => setEditingSchedule(true)}
-              className="-my-1 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-lime-300/85 transition hover:bg-lime-400/[0.08] hover:text-lime-200"
-            >
-              Cambia giorni
-            </button>
-          </div>
-          <div className="px-3 pb-3.5 pt-2 sm:px-4">
-            <WeekLine plan={plan} profileId={profile.id} onOpenDay={(label) => setActiveDay(label)} />
-          </div>
-        </Card>
-      )}
 
       {error && (
         <div className="mb-4">
@@ -356,7 +261,7 @@ export function Workout({
                 una push, pull, gambe.
               </p>
               <button className="btn-primary mt-5" onClick={() => setDialog({ replace: null })}>
-                Crea la tua scheda
+                <Sparkle /> Genera con Kilo
               </button>
             </div>
           </Card>
@@ -364,52 +269,167 @@ export function Workout({
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {days.map((d) => (
+            {/* Tutto ciò che riguarda la scheda in una card: quale scheda,
+                la settimana, il giorno e l'avvio. Le azioni rare stanno nel
+                menu «⋯», per non occupare la pagina. */}
+            <div className="glass relative z-20 p-3.5 sm:p-4">
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <button
+                    onClick={() => setMenu(menu === "piano" ? null : "piano")}
+                    aria-expanded={menu === "piano"}
+                    aria-haspopup="menu"
+                    className="flex h-12 w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] pl-4 pr-3.5 text-left transition hover:border-white/20"
+                  >
+                    <span className="min-w-0 truncate text-[15px] font-semibold text-white">{plan.name}</span>
+                    <span className="shrink-0 text-[12.5px] text-white/45">
+                      · {plan.training_weekdays.length} {plan.training_weekdays.length === 1 ? "giorno" : "giorni"}
+                    </span>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`ml-auto h-4 w-4 shrink-0 fill-white/50 transition-transform duration-300 ${menu === "piano" ? "rotate-180" : ""}`}
+                    >
+                      <path d="M7 10l5 5 5-5H7Z" />
+                    </svg>
+                  </button>
+                  <Popover open={menu === "piano"} onClose={() => setMenu(null)} className="left-0 right-0">
+                    {plans.map((p) => (
+                      <MenuItem
+                        key={p.id}
+                        onClick={() => {
+                          selectPlan(p);
+                          setMenu(null);
+                        }}
+                        active={p.id === selectedId}
+                      >
+                        <span className="min-w-0 truncate">{p.name}</span>
+                        <span className="shrink-0 text-white/40">
+                          · {p.training_weekdays.length} {p.training_weekdays.length === 1 ? "giorno" : "giorni"}
+                        </span>
+                      </MenuItem>
+                    ))}
+                    <div className="mx-2 my-1 border-t border-white/[0.07]" />
+                    <MenuItem
+                      tone="accent"
+                      disabled={generating}
+                      onClick={() => {
+                        setMenu(null);
+                        setDialog({ replace: null });
+                      }}
+                    >
+                      <Sparkle /> Genera con Kilo
+                    </MenuItem>
+                  </Popover>
+                </div>
+
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => setMenu(menu === "opzioni" ? null : "opzioni")}
+                    aria-expanded={menu === "opzioni"}
+                    aria-haspopup="menu"
+                    aria-label="Opzioni della scheda"
+                    className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/75 transition hover:border-white/20 hover:text-white"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                      <circle cx="5" cy="12" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="19" cy="12" r="2" />
+                    </svg>
+                  </button>
+                  <Popover open={menu === "opzioni"} onClose={() => setMenu(null)} className="right-0 w-64">
+                    <MenuItem
+                      onClick={() => {
+                        setMenu(null);
+                        setEditingSchedule(true);
+                      }}
+                      icon="M7 2h2v2h6V2h2v2h3v18H4V4h3V2Zm11 8H6v10h12V10Z"
+                    >
+                      Cambia giorni
+                    </MenuItem>
+                    <div className="mx-2 my-1 border-t border-white/[0.07]" />
+                    <MenuItem
+                      tone="danger"
+                      onClick={() => {
+                        setMenu(null);
+                        setDeleting(plan);
+                      }}
+                      icon="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Z"
+                    >
+                      Elimina scheda
+                    </MenuItem>
+                  </Popover>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <WeekLine plan={plan} profileId={profile.id} onOpenDay={(label) => setActiveDay(label)} />
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <div className="-my-1 min-w-0 overflow-x-auto py-1">
+                  <div className="inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+                    {days.map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setActiveDay(d)}
+                        className={`relative h-9 shrink-0 rounded-xl px-4 text-[13px] font-semibold transition ${
+                          d === activeDay ? "text-ink-900" : "text-white/55 hover:text-white"
+                        }`}
+                      >
+                        {d === activeDay && (
+                          <motion.span
+                            layoutId="day-pill"
+                            className="absolute inset-0 rounded-xl bg-gradient-to-b from-lime-400 to-lime-500"
+                            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                          />
+                        )}
+                        <span className="relative">{d}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button
-                  key={d}
-                  onClick={() => setActiveDay(d)}
-                  className={`relative rounded-xl px-4 py-2 text-[13px] font-medium transition ${
-                    d === activeDay
-                      ? "text-ink-900"
-                      : "border border-white/10 bg-white/[0.04] text-white/60 hover:text-white"
-                  }`}
+                  onClick={() => setFeedbackOpen(true)}
+                  className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-iris-400/35 bg-iris-400/[0.12] px-3.5 text-[12.5px] font-semibold text-iris-100 transition hover:bg-iris-400/20"
+                  title="Racconta a Kilo progressi e recupero: ti dice se mantenere, aumentare o ridurre il volume"
                 >
-                  {d === activeDay && (
-                    <motion.span
-                      layoutId="day-pill"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-b from-lime-400 to-lime-500"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative">{d}</span>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                    <path d="M4 4h16v12H8l-4 4V4Z" />
+                  </svg>
+                  Com&apos;è andata?
                 </button>
-              ))}
+              </div>
+
+              <div className="mt-3">
+                <AnimatePresence mode="wait" initial={false}>
+                  {activeSession ? (
+                    <ActiveWorkoutPill key="in-corso" session={activeSession} onOpen={openActive} />
+                  ) : (
+                    activeDay &&
+                    dayExercises.length > 0 && (
+                      <motion.button
+                        key="inizia"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        onClick={() => setSessionDay({ plan, day: activeDay, exercises: dayExercises })}
+                        className="btn-primary w-full justify-center py-3.5 text-[14.5px]"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                          <path d="M8 5v14l11-7L8 5Z" />
+                        </svg>
+                        Inizia allenamento · {activeDay.length <= 2 ? `giorno ${activeDay}` : activeDay}
+                      </motion.button>
+                    )
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
-            <AnimatePresence mode="wait" initial={false}>
-              {activeSession ? (
-                <ActiveWorkoutPill key="in-corso" session={activeSession} onOpen={openActive} />
-              ) : (
-                activeDay &&
-                plan &&
-                dayExercises.length > 0 && (
-                  <motion.button
-                    key="inizia"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    onClick={() => setSessionDay({ plan, day: activeDay, exercises: dayExercises })}
-                    className="btn-primary w-full justify-center py-3.5 text-[14px] sm:w-auto sm:px-6"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                      <path d="M8 5v14l11-7L8 5Z" />
-                    </svg>
-                    Inizia allenamento · giorno {activeDay}
-                  </motion.button>
-                )
-              )}
-            </AnimatePresence>
+            <KiloNote
+              section="scheda"
+              onAction={(azione) => azione === "feedback" && setFeedbackOpen(true)}
+            />
 
             <div className="space-y-2.5">
               <AnimatePresence mode="popLayout">
@@ -860,7 +880,7 @@ function ExerciseRow({
           className="group min-w-0 flex-1 text-left"
           title="Vedi come si esegue"
         >
-          <p className="line-clamp-2 text-[14px] font-medium leading-snug text-white underline-offset-4 group-hover:underline">
+          <p className="line-clamp-2 text-[14.5px] font-semibold leading-snug text-white underline-offset-4 group-hover:underline">
             {nome}
           </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-white/40">
@@ -1246,5 +1266,102 @@ function ActiveWorkoutPill({ session, onOpen }: { session: WorkoutSessionLog; on
         {clock(secondi)}
       </span>
     </motion.button>
+  );
+}
+
+function Sparkle() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current" aria-hidden>
+      <path d="M12 2l2.1 6.4L20.5 10l-6.4 2.1L12 18.5l-2.1-6.4L3.5 10l6.4-1.6L12 2Zm7 12 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" />
+    </svg>
+  );
+}
+
+/** Tendina sotto un pulsante: si chiude toccando fuori o con Esc. */
+function Popover({
+  open,
+  onClose,
+  className = "",
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    // Il contenitore comprende anche il pulsante che la apre: toccarlo di
+    // nuovo la chiude con il suo onClick, non qui.
+    const fuori = (e: PointerEvent) => {
+      const box = ref.current?.parentElement;
+      if (box && !box.contains(e.target as Node)) onClose();
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("pointerdown", fuori);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", fuori);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open, onClose]);
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          ref={ref}
+          role="menu"
+          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.98 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className={`absolute top-full z-40 mt-2 origin-top rounded-2xl border border-white/[0.12] bg-ink-800 p-1.5 shadow-[0_24px_48px_-16px_rgba(0,0,0,0.9)] ${className}`}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function MenuItem({
+  onClick,
+  children,
+  active = false,
+  tone = "default",
+  icon,
+  disabled = false,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  active?: boolean;
+  tone?: "default" | "accent" | "danger";
+  icon?: string;
+  disabled?: boolean;
+}) {
+  const colore =
+    tone === "danger" ? "text-rose-300 hover:bg-rose-400/10" : tone === "accent" ? "text-lime-200 hover:bg-lime-400/10" : "text-white/85 hover:bg-white/[0.06]";
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3 text-left text-[14px] font-medium transition disabled:opacity-40 ${colore} ${
+        active ? "bg-lime-400/[0.1] text-lime-100" : ""
+      }`}
+    >
+      {active && (
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-lime-300">
+          <path d="m9.5 16.2-4-4L4 13.7l5.5 5.5L20 8.7l-1.5-1.5-9 9Z" />
+        </svg>
+      )}
+      {icon && (
+        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0 fill-current opacity-80">
+          <path d={icon} />
+        </svg>
+      )}
+      {children}
+    </button>
   );
 }
