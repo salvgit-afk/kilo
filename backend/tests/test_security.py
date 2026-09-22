@@ -24,6 +24,11 @@ PUBLIC_ROUTES = {
     ("GET", "/health"),
     ("POST", "/auth/register"),
     ("POST", "/auth/login"),
+    # Chiave pubblica VAPID: serve prima dell'iscrizione e non è un segreto.
+    ("GET", "/push/config"),
+    # Il job orario non ha un account: si autentica con PUSH_CRON_SECRET
+    # (vedi test_push.test_dispatch_richiede_il_segreto).
+    ("POST", "/push/dispatch"),
 }
 
 PASSWORD = "passwordlunga1"

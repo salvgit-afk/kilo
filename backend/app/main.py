@@ -51,7 +51,7 @@ async def security_headers(request, call_next):
     return response
 
 
-from app.routers import auth, nutrition, profile, progress, supplements, workout
+from app.routers import auth, nutrition, profile, progress, push, supplements, workout
 
 app.include_router(auth.router)
 app.include_router(profile.router)
@@ -59,6 +59,7 @@ app.include_router(workout.router)
 app.include_router(nutrition.router)
 app.include_router(supplements.router)
 app.include_router(progress.router)
+app.include_router(push.router)
 
 
 @app.get("/health", tags=["meta"])
@@ -69,6 +70,7 @@ def health() -> dict:
         "gemini_configured": settings.gemini_configured,
         "gemini_model": settings.gemini_model,
         "usda_configured": settings.usda_configured,
+        "push_configured": settings.push_configured,
         # wger e TheMealDB non richiedono chiavi: sempre disponibili.
         "wger_base_url": settings.wger_base_url,
     }

@@ -1,0 +1,38 @@
+# Promemoria di Kilo sul telefono.
+#
+# Render gratuito si addormenta e non può tenere un timer suo: questo job,
+# gratuito su GitHub Actions, ogni ora chiede al backend di mandare le
+# notifiche arrivate alla loro ora. Il backend sceglie a chi scrivere e
+# non manda niente due volte nello stesso giorno, quindi un giro in ritardo
+# o saltato non fa danni. Guida: DEPLOY.md, sezione «Notifiche».
+#
+# Secrets del repository (Settings → Secrets and variables → Actions):
+#   KILO_BACKEND_URL   es. https://kilo-backend.onrender.com
+#   PUSH_CRON_SECRET   lo stesso valore messo su Render
+
+name: Promemoria
+
+on:
+  schedule:
+    # Minuto 7 e non 0: allo scoccare dell'ora GitHub è più carico e ritarda.
+    # Orari in UTC; il backend ragiona con l'ora italiana.
+    - cron: "7 5-21 * * *"
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invia i promemoria dovuti
+        env:
+          BACKEND: ${{ secrets.KILO_BACKEND_URL }}
+          SECRET: ${{ secrets.PUSH_CRON_SECRET }}
+        run: |
+          if [ -z "$BACKEND" ] || [ -z "$SECRET" ]; then
+            echo "Secrets non configurati: nessun invio."
+            exit 0
+          fi
+          # Il primo tentativo può trovare Render addormentato (fino a ~1 minuto).
+          curl -fsS --retry 3 --retry-delay 20 --retry-all-errors --max-time 90 \
+            -X POST -H "X-Cron-Secret: $SECRET" "$BACKEND/push/dispatch"

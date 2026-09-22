@@ -104,6 +104,42 @@ passo non serve.
 
 ---
 
+## 4) App sul telefono e notifiche (facoltativo, gratuito)
+
+Kilo è una **PWA**: da Chrome su Android («Installa app») o da Safari su
+iPhone (Condividi → «Aggiungi alla schermata Home») si installa con la sua
+icona e si apre a tutto schermo. Non serve nessuno store.
+
+I **promemoria della sera** («oggi non hai ancora segnato la creatina…»)
+richiedono tre passi, da fare una volta sola:
+
+1. **Chiavi VAPID.** In locale, dalla cartella `backend/`:
+   ```bash
+   python scripts/generate_vapid_keys.py
+   ```
+   Copia le due righe su Render → *Environment*: `VAPID_PUBLIC_KEY` e
+   `VAPID_PRIVATE_KEY`. Aggiungi `VAPID_SUBJECT=mailto:` seguito dalla tua
+   email. Non rigenerarle più: con chiavi nuove i telefoni già iscritti
+   smettono di ricevere.
+2. **Segreto del job.** Scegli una stringa lunga e casuale
+   (`python -c "import secrets; print(secrets.token_urlsafe(32))"`) e mettila
+   su Render come `PUSH_CRON_SECRET`.
+3. **Job orario su GitHub.** Nel repository → *Settings → Secrets and
+   variables → Actions* aggiungi `KILO_BACKEND_URL` (l'URL di Render, senza
+   `/` finale) e `PUSH_CRON_SECRET` (lo stesso valore). Il workflow
+   `.github/workflows/promemoria.yml` parte ogni ora dalle 7 alle 23 (ora
+   italiana); per provarlo subito: *Actions → Promemoria → Run workflow*.
+
+Poi ognuno attiva i promemoria dal **Profilo** e sceglie l'ora. Su iPhone
+funzionano solo con l'app aggiunta alla schermata Home (iOS 16.4 o più
+recente).
+
+GitHub può far partire i job programmati con qualche minuto di ritardo:
+il backend manda comunque il promemoria dovuto, e mai due volte nello stesso
+giorno.
+
+---
+
 ## Aggiornamenti
 
 Ogni `git push` su `main` rideploya **entrambi** i servizi da soli: Render

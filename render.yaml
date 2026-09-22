@@ -38,5 +38,15 @@ services:
         sync: false
       - key: USDA_API_KEY
         sync: false
+      # Notifiche push: chiavi da `python scripts/generate_vapid_keys.py`,
+      # segreto a scelta (lo stesso nei secrets di GitHub). Vedi DEPLOY.md.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      - key: PUSH_CRON_SECRET
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite

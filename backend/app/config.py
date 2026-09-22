@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     # qui: si calcolano sommando gli ingredienti (vedi models.Recipe).
     themealdb_base_url: str = "https://www.themealdb.com/api/json/v1/1"
 
+    # --- Notifiche push (Web Push, gratuito) --------------------------------
+    # Coppia di chiavi VAPID: identifica il server presso i servizi push di
+    # Google, Apple e Mozilla. Si genera una volta con
+    # `python scripts/generate_vapid_keys.py`; cambiarla invalida tutte le
+    # iscrizioni dei telefoni. Senza chiavi le notifiche sono solo spente.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # Contatto richiesto dal protocollo (mailto: o https:).
+    vapid_subject: str = "mailto:admin@example.com"
+    # Segreto con cui il job orario (GitHub Actions) chiama /push/dispatch.
+    push_cron_secret: str = ""
+
     # --- CORS ---------------------------------------------------------------
     frontend_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
@@ -97,6 +109,10 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def push_configured(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key)
 
     @property
     def usda_configured(self) -> bool:

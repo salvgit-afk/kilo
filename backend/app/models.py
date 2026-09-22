@@ -1068,6 +1068,32 @@ class ApiUsage(Base):
     __table_args__ = (UniqueConstraint("user_id", "day", "kind", name="uq_api_usage_day"),)
 
 
+class PushSubscription(Base):
+    """Un telefono o un browser iscritto ai promemoria (Web Push).
+
+    `endpoint`, `p256dh` e `auth` sono quelli che il browser consegna con
+    `PushManager.subscribe()`: l'indirizzo del servizio push (Google, Apple,
+    Mozilla) e le chiavi per cifrare il messaggio, che il servizio non può
+    leggere. Un account può averne più di uno (telefono e computer).
+
+    `reminder_hour` è l'ora italiana in cui arriva il promemoria della sera;
+    `last_sent_on` impedisce di mandarlo due volte nello stesso giorno.
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(String(1024), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    reminder_hour: Mapped[int] = mapped_column(Integer, default=20)
+    last_sent_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 # --- Tracciabilità delle raccomandazioni ------------------------------------
 
 

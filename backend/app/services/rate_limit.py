@@ -83,6 +83,8 @@ DAILY_LIMITS = {
     "barcode_lookup": 150,
     # Lettura di una ricetta incollata: una chiamata al modello ciascuna.
     "recipe_import": 25,
+    # Notifica di prova dal Profilo.
+    "push_test": 10,
 }
 
 

@@ -26,3 +26,7 @@ pytest==9.1.1
 pwdlib[argon2]==0.2.1
 pyjwt==2.14.0
 python-multipart==0.0.32
+
+# --- Notifiche push ---
+# Web Push con chiavi VAPID: gratuito, senza account presso Google o Apple.
+pywebpush==2.5.0
