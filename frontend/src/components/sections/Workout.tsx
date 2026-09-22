@@ -226,6 +226,21 @@ export function Workout({
             ? undefined
             : "Genero una scheda sui parametri del tuo profilo, presi dai documenti della knowledge base."
         }
+        inline
+        action={
+          plan && (
+            <button
+              onClick={() => setFeedbackOpen(true)}
+              className="mb-0.5 inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-iris-400/35 bg-iris-400/[0.12] px-2.5 text-[11.5px] sm:gap-1.5 font-semibold text-iris-100 transition hover:bg-iris-400/20 sm:h-10 sm:px-3.5 sm:text-[12.5px]"
+              title="Racconta a Kilo progressi e recupero: ti dice se mantenere, aumentare o ridurre il volume"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current sm:h-4 sm:w-4">
+                <path d="M4 4h16v12H8l-4 4V4Z" />
+              </svg>
+              Come sta andando?
+            </button>
+          )
+        }
       />
 
       {error && (
@@ -365,14 +380,14 @@ export function Workout({
                 <WeekLine plan={plan} profileId={profile.id} onOpenDay={(label) => setActiveDay(label)} />
               </div>
 
-              <div className="mt-4 flex items-center justify-between gap-2">
-                <div className="-my-1 min-w-0 overflow-x-auto py-1">
-                  <div className="inline-flex gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+              <div className="mt-4">
+                <div>
+                  <div className="flex gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
                     {days.map((d) => (
                       <button
                         key={d}
                         onClick={() => setActiveDay(d)}
-                        className={`relative h-9 shrink-0 rounded-xl px-4 text-[13px] font-semibold transition ${
+                        className={`relative h-10 min-w-0 flex-1 rounded-xl px-2 text-[13px] font-semibold transition ${
                           d === activeDay ? "text-ink-900" : "text-white/55 hover:text-white"
                         }`}
                       >
@@ -383,21 +398,11 @@ export function Workout({
                             transition={{ type: "spring", stiffness: 380, damping: 30 }}
                           />
                         )}
-                        <span className="relative">{d}</span>
+                        <span className="relative block truncate">{d}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-                <button
-                  onClick={() => setFeedbackOpen(true)}
-                  className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-iris-400/35 bg-iris-400/[0.12] px-3.5 text-[12.5px] font-semibold text-iris-100 transition hover:bg-iris-400/20"
-                  title="Racconta a Kilo progressi e recupero: ti dice se mantenere, aumentare o ridurre il volume"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                    <path d="M4 4h16v12H8l-4 4V4Z" />
-                  </svg>
-                  Com&apos;è andata?
-                </button>
               </div>
 
               <div className="mt-3">

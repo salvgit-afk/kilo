@@ -446,26 +446,33 @@ export function PageHeader({
   title,
   description,
   action,
+  inline = false,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   action?: ReactNode;
+  /** L'azione resta sulla riga del titolo anche sul telefono. */
+  inline?: boolean;
 }) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="mb-5 flex flex-wrap items-end justify-between gap-4"
+      className={`mb-5 flex items-end justify-between ${inline ? "gap-3" : "flex-wrap gap-4"}`}
     >
-      <div>
+      <div className={inline ? "min-w-0" : undefined}>
         {eyebrow && (
           <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-lime-400/70">
             {eyebrow}
           </p>
         )}
-        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-white lg:text-[30px]">
+        <h1
+          className={`font-semibold leading-tight tracking-tight text-white lg:text-[30px] ${
+            inline ? "whitespace-nowrap text-[23px] sm:text-[26px]" : "text-[26px]"
+          }`}
+        >
           {title}
         </h1>
         {description && (

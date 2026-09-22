@@ -26,7 +26,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   exerciseName,
@@ -302,20 +302,20 @@ export function ParamsChips({
   return (
     <button
       onClick={onEdit}
-      className="group/params flex w-full flex-wrap items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-left transition hover:border-lime-400/35 hover:bg-lime-400/[0.04]"
+      className="group/params flex w-full items-center gap-2 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3.5 py-2.5 text-left transition hover:border-lime-400/35 hover:bg-lime-400/[0.05] active:bg-lime-400/[0.08]"
       aria-label="Modifica serie, ripetizioni, RIR e recupero"
     >
       {[
-        `${value.target_sets} serie`,
-        `${value.target_reps_min}-${value.target_reps_max} rip.`,
+        `${value.target_sets} × ${value.target_reps_min}-${value.target_reps_max}`,
         `RIR ${value.target_rir}`,
-        `rec. ${restLabel(value.rest_seconds)}`,
-      ].map((c) => (
-        <span key={c} className="rounded-full bg-white/[0.06] px-2.5 py-1 font-mono text-[12px] tabular-nums text-white/80">
-          {c}
-        </span>
+        restLabel(value.rest_seconds),
+      ].map((c, i) => (
+        <Fragment key={c}>
+          {i > 0 && <span className="text-white/20">·</span>}
+          <span className="whitespace-nowrap font-mono text-[13px] font-semibold tabular-nums text-white/85">{c}</span>
+        </Fragment>
       ))}
-      <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-lime-400/15 px-2.5 py-1 text-[12px] font-medium text-lime-300 transition group-hover/params:bg-lime-400 group-hover/params:text-ink-900">
+      <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[12.5px] font-semibold text-lime-300">
         <PencilIcon />
         {changed ? "Modificato" : "Modifica"}
       </span>
