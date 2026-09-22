@@ -122,7 +122,6 @@ export default function Page() {
   return (
     <NotesProvider profileId={profile.id} section={section}>
       <ShellWithBadges profileId={profile.id} active={section} onNavigate={setSection} profileName={profile.display_name}>
-        <ReminderBanner profileId={profile.id} section={section} onNavigate={setSection} />
         {/* Solo animazione d'entrata. Con un'uscita in modalità "wait", la
             sezione Integratori (schede animate dell'esploratore) restava
             bloccata a opacità 0 e da lì ogni sezione appariva vuota. */}
@@ -132,6 +131,9 @@ export default function Page() {
             animate={{ opacity: 1, x: 0, y: 0 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
+            {/* Solo nelle sezioni con qualcosa da segnare oggi: il pallino nel
+                menu porta qui, il banner dice cosa manca. */}
+            <ReminderBanner profileId={profile.id} section={section} />
             {section === "oggi" && <Today profile={profile} onNavigate={setSection} />}
             {section === "scheda" && (
               <Workout profile={profile} intent={intent} onIntentHandled={clearIntent} />

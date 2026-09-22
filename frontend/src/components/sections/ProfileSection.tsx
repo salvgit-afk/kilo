@@ -21,7 +21,7 @@ import {
 import { Card, CardHeader, Notice } from "@/components/ui";
 import { Field, NumberField, OptionGroup } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
-import { REMINDER_HOUR, reminderSettings } from "@/components/ReminderBanner";
+import { reminderSettings } from "@/components/ReminderBanner";
 import { PushSettings } from "@/components/PushSettings";
 
 export function ProfileSection({
@@ -240,10 +240,10 @@ export function ProfileSection({
           </Card>
 
           <Card delay={0.08}>
-            <CardHeader title="Promemoria" subtitle="Banner in cima alla pagina" />
+            <CardHeader title="Promemoria nell'app" subtitle="Banner dentro la sezione" />
             <div className="space-y-3 px-5 py-4">
               <label className="flex cursor-pointer items-center justify-between gap-3">
-                <span className="text-[13px] text-white/75">Ricordami cosa non ho segnato</span>
+                <span className="text-[13px] text-white/75">Mostra cosa non ho ancora segnato</span>
                 <button
                   role="switch"
                   aria-checked={reminders}
@@ -263,9 +263,10 @@ export function ProfileSection({
                 </button>
               </label>
               <p className="text-[11.5px] leading-relaxed text-white/30">
-                Dalle {REMINDER_HOUR}, se non hai ancora segnato gli integratori dichiarati o i
-                pasti (solo se usi il diario). La X lo nasconde fino al giorno dopo. La scelta
-                vale per questo browser.
+                Dentro Integratori, Diario e Scheda, quando lì manca qualcosa di oggi: gli
+                integratori dichiarati, i pasti (solo se usi il diario) e l&apos;allenamento
+                previsto. Il pallino nel menu resta sempre. La X lo nasconde fino al giorno
+                dopo; la scelta vale per questo browser.
               </p>
             </div>
           </Card>

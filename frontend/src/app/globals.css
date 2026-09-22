@@ -47,6 +47,20 @@ body::before {
       0 24px 48px -28px rgb(0 0 0 / 0.9);
   }
 
+  /* Chat di Kilo aperta: bordo lime al neon, perché si capisca a colpo
+     d'occhio che il pannello è sopra la pagina e non ne fa parte. */
+  .chat-neon {
+    border-color: rgb(174 212 74 / 0.55);
+    box-shadow:
+      0 0 0 1px rgb(174 212 74 / 0.25),
+      0 0 14px 1px rgb(174 212 74 / 0.35),
+      0 0 42px 4px rgb(174 212 74 / 0.16),
+      0 1px 0 0 rgb(255 255 255 / 0.08) inset,
+      0 0 24px 0 rgb(174 212 74 / 0.06) inset,
+      0 30px 60px -20px rgb(0 0 0 / 0.95);
+    animation: chat-neon-respiro 3.6s ease-in-out infinite;
+  }
+
   .glass-hover {
     @apply transition-all duration-300;
   }
@@ -363,4 +377,21 @@ body:has([role="dialog"][aria-modal="true"]) .chat-fab {
 }
 .chat-fab {
   transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+@keyframes chat-neon-respiro {
+  /* Solo il colore del bordo: animare l'ombra ridisegnerebbe tutto il
+     pannello a ogni fotogramma, pesante sui telefoni. */
+  0%, 100% {
+    border-color: rgb(174 212 74 / 0.5);
+  }
+  50% {
+    border-color: rgb(174 212 74 / 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-neon {
+    animation: none;
+  }
 }

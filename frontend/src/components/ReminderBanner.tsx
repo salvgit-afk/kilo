@@ -1,20 +1,19 @@
 "use client";
 
 /**
- * Banner dei promemoria: cosa non è ancora segnato oggi.
+ * Banner dei promemoria, dentro la sezione a cui si riferisce.
  *
- * Deve aiutare senza dare fastidio, quindi:
- *  - compare solo da mezzogiorno, quando "non ancora segnato" inizia a voler
- *    dire "forse dimenticato";
- *  - ricorda solo abitudini che l'utente ha già: integratori dichiarati, e
- *    il diario solo se lo ha usato di recente (lo decide il backend);
- *  - un clic sulla X lo nasconde fino al giorno dopo, e dal Profilo si
- *    spegne del tutto;
- *  - l'integratore si segna direttamente dal banner, senza cambiare sezione;
- *  - non ripete ciò che la sezione aperta sta già mostrando.
+ * Il pallino nel menu dice già *dove* manca qualcosa; il banner, aperta la
+ * sezione, dice *cosa*: gli integratori in Integratori, i pasti in Diario,
+ * l'allenamento del giorno in Scheda. Nelle altre sezioni non compare.
  *
- * Le due preferenze vivono in `localStorage`: valgono per questo browser, e
- * se non è disponibile il banner funziona lo stesso (solo senza memoria).
+ * Per non dare fastidio:
+ *  - ricorda solo abitudini che l'utente ha già (lo decide il backend);
+ *  - la X lo nasconde fino al giorno dopo, e dal Profilo si spegne del tutto;
+ *  - l'integratore si segna direttamente dal banner.
+ *
+ * Le preferenze vivono in `localStorage`: valgono per questo browser, e se
+ * non è disponibile il banner funziona lo stesso (solo senza memoria).
  */
 
 import { AnimatePresence, motion } from "framer-motion";
@@ -23,7 +22,6 @@ import { REMINDERS_EVENT, api, localDate, notifyLogged, type DailyReminders } fr
 import type { SectionId } from "@/components/Shell";
 import { supplementName } from "@/components/SupplementDiary";
 
-export const REMINDER_HOUR = 12;
 const DISMISSED_KEY = "kilo-promemoria-nascosto";
 const DISABLED_KEY = "kilo-promemoria-disattivati";
 
@@ -52,25 +50,14 @@ export const reminderSettings = {
   },
 };
 
-export function ReminderBanner({
-  profileId,
-  section,
-  onNavigate,
-}: {
-  profileId: number;
-  section: SectionId;
-  onNavigate: (s: SectionId) => void;
-}) {
+export function ReminderBanner({ profileId, section }: { profileId: number; section: SectionId }) {
   const [data, setData] = useState<DailyReminders | null>(null);
   const [hidden, setHidden] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     const oggi = localDate();
-    const spento =
-      !reminderSettings.enabled() ||
-      readStorage(DISMISSED_KEY) === oggi ||
-      new Date().getHours() < REMINDER_HOUR;
+    const spento = !reminderSettings.enabled() || readStorage(DISMISSED_KEY) === oggi;
     setHidden(spento);
     if (spento) return;
     api
@@ -84,8 +71,8 @@ export function ReminderBanner({
   }, [refresh, section]);
 
   // Si aggiorna quando qualcosa viene segnato, quando si torna sulla scheda
-  // del browser e, per chi la tiene aperta, ogni mezz'ora (scatta così anche
-  // mezzogiorno o il cambio di giorno).
+  // del browser e, per chi la tiene aperta, ogni mezz'ora (per il cambio di
+  // giorno).
   useEffect(() => {
     const onVisible = () => document.visibilityState === "visible" && refresh();
     window.addEventListener(REMINDERS_EVENT, refresh);
@@ -117,9 +104,10 @@ export function ReminderBanner({
     }
   }
 
-  const supplements = section === "integratori" ? [] : (data?.supplements ?? []);
-  const meals = section !== "diario" && !!data?.meals_missing;
-  const visible = !hidden && data !== null && (supplements.length > 0 || meals);
+  const supplements = section === "integratori" ? (data?.supplements ?? []) : [];
+  const meals = section === "diario" && !!data?.meals_missing;
+  const workouts = section === "scheda" ? (data?.workouts_due ?? []) : [];
+  const visible = !hidden && data !== null && (supplements.length > 0 || meals || workouts.length > 0);
 
   return (
     <AnimatePresence initial={false}>
@@ -141,7 +129,13 @@ export function ReminderBanner({
             </svg>
 
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 py-0.5">
-              <span className="text-[12.5px] text-white/65">Oggi non hai ancora segnato</span>
+              <span className="text-[12.5px] text-white/65">
+                {workouts.length > 0
+                  ? `Oggi è giorno di allenamento: ${workouts.map((w) => w.plan_name).join(", ")}`
+                  : meals
+                    ? "Oggi non hai ancora segnato i pasti nel diario"
+                    : "Oggi non hai ancora segnato"}
+              </span>
 
               {supplements.map((s) => (
                 <button
@@ -163,14 +157,6 @@ export function ReminderBanner({
                 </button>
               ))}
 
-              {meals && (
-                <button
-                  onClick={() => onNavigate("diario")}
-                  className="rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1 text-[12px] font-medium text-white/75 transition hover:border-white/25 hover:text-white"
-                >
-                  i pasti nel diario →
-                </button>
-              )}
             </div>
 
             <button
