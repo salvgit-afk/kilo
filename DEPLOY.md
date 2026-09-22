@@ -130,6 +130,11 @@ richiedono tre passi, da fare una volta sola:
    `.github/workflows/promemoria.yml` parte ogni ora dalle 7 alle 23 (ora
    italiana); per provarlo subito: *Actions → Promemoria → Run workflow*.
 
+Nel **Profilo** si sceglie quali notifiche ricevere (allenamento, integratori,
+diario, ricette, progressi), l'ora del promemoria della sera e quella
+dell'allenamento, che altrimenti Kilo ricava dagli orari delle sessioni già
+svolte. Ne arrivano al massimo tre al giorno, e mai due volte la stessa.
+
 Poi ognuno attiva i promemoria dal **Profilo** e sceglie l'ora. Su iPhone
 funzionano solo con l'app aggiunta alla schermata Home (iOS 16.4 o più
 recente).

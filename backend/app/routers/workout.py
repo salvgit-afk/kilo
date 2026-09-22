@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
@@ -56,6 +57,7 @@ from app.services import (
     exercise_guidance,
     exercise_library,
     exercise_swap,
+    push_notifications,
     rate_limit,
     training_log,
     training_schedule,
@@ -508,6 +510,13 @@ def finish_session(
     db.commit()
     db.refresh(sessione)
     translation.ensure_translated(db, list({s.exercise for s in sessione.sets if s.exercise}))
+    # Promemoria degli integratori subito, non al giro d'ora successivo: è
+    # adesso che si prepara lo shaker. Se l'invio fallisce, l'allenamento
+    # resta comunque chiuso.
+    try:
+        push_notifications.after_session(db, sessione.profile)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning("Promemoria post-allenamento non inviato", exc_info=True)
     return _summary_out(training_log.summarize_session(db, sessione))
 
 

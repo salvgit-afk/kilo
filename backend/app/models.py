@@ -1076,8 +1076,8 @@ class PushSubscription(Base):
     Mozilla) e le chiavi per cifrare il messaggio, che il servizio non può
     leggere. Un account può averne più di uno (telefono e computer).
 
-    `reminder_hour` è l'ora italiana in cui arriva il promemoria della sera;
-    `last_sent_on` impedisce di mandarlo due volte nello stesso giorno.
+    `reminder_hour` è l'ora italiana da cui può arrivare il promemoria della
+    sera; cosa è già stato mandato lo tiene `NotificationLog`.
     """
 
     __tablename__ = "push_subscriptions"
@@ -1088,10 +1088,56 @@ class PushSubscription(Base):
     p256dh: Mapped[str] = mapped_column(String(255))
     auth: Mapped[str] = mapped_column(String(255))
     reminder_hour: Mapped[int] = mapped_column(Integer, default=20)
-    last_sent_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class NotificationSettings(Base):
+    """Cosa può arrivare sul telefono, per account.
+
+    Sta qui e non nel browser perché vale per la persona, non per il
+    dispositivo: chi ha telefono e tablet non vuole ripetere le scelte, e
+    chi manda le notifiche è il server.
+
+    `gym_hour` è l'ora in cui arriva il promemoria dell'allenamento: se è
+    `None` viene ricavata dagli orari di avvio delle sessioni passate.
+    """
+
+    __tablename__ = "notification_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    training: Mapped[bool] = mapped_column(Boolean, default=True)
+    supplements: Mapped[bool] = mapped_column(Boolean, default=True)
+    diary: Mapped[bool] = mapped_column(Boolean, default=True)
+    recipes: Mapped[bool] = mapped_column(Boolean, default=True)
+    progress: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Le due ricette della domenica: utili per chi cucina in anticipo, un
+    # disturbo per gli altri. Spenta finché non la si chiede.
+    meal_prep: Mapped[bool] = mapped_column(Boolean, default=False)
+    gym_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class NotificationLog(Base):
+    """Notifiche già mandate, per non ripetersi.
+
+    La chiave descrive l'evento (`allenamento:12:2026-09-22`,
+    `ricetta-salvata:87`): una situazione nuova produce una chiave nuova, e
+    la stessa situazione non viene notificata due volte. Serve anche a
+    contare quante ne sono già partite oggi, per restare sotto il tetto.
+    """
+
+    __tablename__ = "notification_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(160))
+    sent_on: Mapped[dt.date] = mapped_column(Date, index=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_notification_key"),)
 
 
 # --- Tracciabilità delle raccomandazioni ------------------------------------

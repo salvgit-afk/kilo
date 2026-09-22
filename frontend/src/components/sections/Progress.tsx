@@ -3,47 +3,44 @@
 /**
  * Report di progressione.
  *
- * Il grafico del peso mostra le pesate singole **e** la media mobile, con la
- * media in evidenza: serve a far vedere con gli occhi perché la tendenza si
- * legge sulla linea liscia e non sui punti, che oscillano di 1-2 kg al
- * giorno per acqua e glicogeno.
+ * La pagina è un impianto di card indipendenti: ognuna legge il proprio
+ * endpoint e si arrangia con caricamento, vuoto ed errore, così una statistica
+ * che manca non porta giù il resto. L'ordine segue le domande che ci si fa
+ * davvero, dalla più generale alla più specifica:
  *
- * Accanto, la progressione dei carichi di un esercizio a scelta: carico
- * massimo di ogni sessione e massimale stimato. I due grafici si leggono
- * insieme: il peso che sale con i carichi fermi racconta una cosa diversa
- * dal peso che sale mentre i carichi crescono.
+ *  1. peso — dove sta andando il corpo, con il ritmo settimanale a confronto
+ *     con quello atteso;
+ *  2. costanza — quante sessioni si fanno davvero rispetto al piano;
+ *  3. serie per gruppo muscolare — la leva che decide se il programma
+ *     funziona, ed è per questo che sta a tutta larghezza;
+ *  4. massimale stimato e carichi — due grafici sullo stesso esercizio, che si
+ *     leggono in coppia e quindi condividono il selettore;
+ *  5. alimentazione — la benzina, che spiega i primi quattro.
  */
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Scatter,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { api, type LoggedExercise, type ProgressReport } from "@/lib/api";
-import { LoadHistoryDialog, kg, useHistory } from "@/components/TrainingLog";
+import { api, type ProgressReport } from "@/lib/api";
 import { Card, CardHeader, Empty, Notice, Spinner } from "@/components/ui";
-import { AskCoachButton, NumberField } from "@/components/controls";
+import { AskCoachButton } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
 import { KiloNote } from "@/components/KiloNote";
-
-type WeightPoint = { date: string; weight_kg: number };
+import { useLoggedExercises } from "@/components/progress/common";
+import { WeightCard, type WeightPoint } from "@/components/progress/WeightCard";
+import { ConsistencyCard } from "@/components/progress/ConsistencyCard";
+import { VolumeCard } from "@/components/progress/VolumeCard";
+import { OneRmCard } from "@/components/progress/OneRmCard";
+import { NutritionCard } from "@/components/progress/NutritionCard";
+import { LoadChartCard } from "@/components/progress/LoadChartCard";
 
 export function Progress({ profileId }: { profileId: number }) {
   const [report, setReport] = useState<ProgressReport | null>(null);
   const [weights, setWeights] = useState<WeightPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState(12);
-  const [logging, setLogging] = useState(false);
-  const [newWeight, setNewWeight] = useState<number | null>(null);
+  // Il selettore dell'esercizio è unico per i due grafici sui carichi: è la
+  // stessa domanda ("come va la panca?") vista da due angoli.
+  const { exercises, selected, setSelected } = useLoggedExercises(profileId, weeks);
 
   const load = useCallback(async () => {
     const [r, w] = await Promise.all([
@@ -59,33 +56,7 @@ export function Progress({ profileId }: { profileId: number }) {
     load();
   }, [load]);
 
-  async function logWeight() {
-    const value = newWeight;
-    if (!value) return;
-    setLogging(true);
-    try {
-      await api.post(`/profile/${profileId}/weight`, { weight_kg: value });
-      setNewWeight(null);
-      await load();
-    } finally {
-      setLogging(false);
-    }
-  }
-
   if (loading || !report) return <Spinner label="Costruisco il report…" />;
-
-  // Media mobile a 7 giorni, la stessa logica usata dal backend: qui serve a
-  // rendere visibile la differenza fra rumore e tendenza.
-  const chartData = weights.map((p, i) => {
-    const finestra = weights.slice(Math.max(0, i - 6), i + 1);
-    return {
-      date: new Date(p.date).toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
-      peso: p.weight_kg,
-      media: Number(
-        (finestra.reduce((s, x) => s + x.weight_kg, 0) / finestra.length).toFixed(2)
-      ),
-    };
-  });
 
   return (
     <>
@@ -96,25 +67,25 @@ export function Progress({ profileId }: { profileId: number }) {
         action={
           <div className="flex flex-wrap items-center gap-1.5">
             <AskCoachButton
-              question={`Analizza i miei progressi delle ultime ${weeks} settimane (peso, sessioni e carichi): cosa sta andando bene e cosa cambieresti?`}
+              question={`Analizza i miei progressi delle ultime ${weeks} settimane (peso, costanza, serie per gruppo muscolare, carichi e alimentazione): cosa sta andando bene e cosa cambieresti?`}
               context="Sezione Progressi"
               label="Analizza con Kilo"
               className="mr-1.5"
             />
             <div className="flex gap-1.5">
-            {[4, 12, 24].map((w) => (
-              <button
-                key={w}
-                onClick={() => setWeeks(w)}
-                className={`rounded-lg px-3 py-2 text-[12.5px] font-medium transition ${
-                  weeks === w
-                    ? "bg-white/[0.09] text-white"
-                    : "border border-white/10 text-white/45 hover:text-white"
-                }`}
-              >
-                {w} sett.
-              </button>
-            ))}
+              {[4, 12, 24].map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setWeeks(w)}
+                  className={`rounded-lg px-3 py-2 text-[12.5px] font-medium transition ${
+                    weeks === w
+                      ? "bg-white/[0.09] text-white"
+                      : "border border-white/10 text-white/45 hover:text-white"
+                  }`}
+                >
+                  {w} sett.
+                </button>
+              ))}
             </div>
           </div>
         }
@@ -175,89 +146,38 @@ export function Progress({ profileId }: { profileId: number }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Peso corporeo"
-            subtitle="I punti sono le pesate, la linea è la media a 7 giorni"
-            action={
-              <div className="flex gap-2">
-                <NumberField
-                  value={newWeight}
-                  onChange={setNewWeight}
-                  min={30}
-                  max={300}
-                  decimals={1}
-                  suffix="kg"
-                  placeholder="peso"
-                  size="sm"
-                  ariaLabel="Peso di oggi"
-                  onEnter={logWeight}
-                  className="w-36"
-                />
-                <button className="btn-ghost px-3 py-1.5" disabled={logging} onClick={logWeight}>
-                  Registra
-                </button>
-              </div>
-            }
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <WeightCard
+            profileId={profileId}
+            weeks={weeks}
+            weights={weights}
+            onLogged={load}
           />
-          <div className="p-4">
-            {chartData.length < 2 ? (
-              <Empty
-                title="Servono più pesate"
-                hint="Il peso oscilla di 1-2 kg al giorno: con 3-4 misurazioni a settimana la tendenza diventa leggibile."
-              />
-            ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="weightFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#8b7dff" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="#8b7dff" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    minTickGap={28}
-                  />
-                  <YAxis
-                    domain={["dataMin - 1", "dataMax + 1"]}
-                    tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "rgba(12,14,22,0.96)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 12,
-                      fontSize: 12,
-                    }}
-                    labelStyle={{ color: "rgba(255,255,255,0.5)" }}
-                  />
-                  <Scatter dataKey="peso" fill="rgba(255,255,255,0.28)" />
-                  <Area
-                    type="monotone"
-                    dataKey="media"
-                    stroke="#8b7dff"
-                    strokeWidth={2.5}
-                    fill="url(#weightFill)"
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </Card>
+          <ConsistencyCard profileId={profileId} weeks={weeks} />
+        </div>
 
-        <LoadChartCard profileId={profileId} weeks={weeks} />
-      </div>
+        <VolumeCard profileId={profileId} weeks={weeks} />
 
-      <div className="mt-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <OneRmCard
+            profileId={profileId}
+            weeks={weeks}
+            exercises={exercises}
+            selected={selected}
+            onSelect={setSelected}
+          />
+          <LoadChartCard
+            profileId={profileId}
+            weeks={weeks}
+            exercises={exercises}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        </div>
+
+        <NutritionCard profileId={profileId} weeks={weeks} />
+
         <Card>
           <CardHeader title="Carichi" subtitle="Massimale stimato, inizio → fine periodo" />
           <div className="p-3">
@@ -273,7 +193,7 @@ export function Progress({ profileId }: { profileId: number }) {
                     key={e.exercise_name}
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
+                    transition={{ delay: Math.min(i * 0.05, 0.5) }}
                     className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-3">
@@ -311,24 +231,24 @@ export function Progress({ profileId }: { profileId: number }) {
             )}
           </div>
         </Card>
+
+        {report.plateau_advice && (
+          <Card>
+            <CardHeader title="Sei fermo su qualcosa" />
+            <p className="px-5 py-4 text-[13px] leading-relaxed text-white/70">
+              {report.plateau_advice}
+            </p>
+          </Card>
+        )}
+
+        {report.notes.length > 0 && (
+          <div className="space-y-2.5">
+            {report.notes.map((n, i) => (
+              <Notice key={i}>{n}</Notice>
+            ))}
+          </div>
+        )}
       </div>
-
-      {report.plateau_advice && (
-        <Card className="mt-4">
-          <CardHeader title="Sei fermo su qualcosa" />
-          <p className="px-5 py-4 text-[13px] leading-relaxed text-white/70">
-            {report.plateau_advice}
-          </p>
-        </Card>
-      )}
-
-      {report.notes.length > 0 && (
-        <div className="mt-4 space-y-2.5">
-          {report.notes.map((n, i) => (
-            <Notice key={i}>{n}</Notice>
-          ))}
-        </div>
-      )}
     </>
   );
 }
@@ -368,172 +288,5 @@ function Metric({
         </p>
       </div>
     </Card>
-  );
-}
-
-
-/**
- * Progressione dei carichi di un esercizio: il carico massimo di ogni
- * sessione (linea piena) e il massimale stimato (tratteggio), che rende
- * confrontabili sessioni con ripetizioni diverse.
- */
-function LoadChartCard({ profileId, weeks }: { profileId: number; weeks: number }) {
-  const [exercises, setExercises] = useState<LoggedExercise[] | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [editing, setEditing] = useState(false);
-  const { data, points, reload } = useHistory(profileId, selected, weeks);
-
-  useEffect(() => {
-    api
-      .get<LoggedExercise[]>(`/progress/loads?profile_id=${profileId}&weeks=${weeks}`)
-      .then((lista) => {
-        setExercises(lista);
-        setSelected((attuale) =>
-          attuale !== null && lista.some((e) => e.exercise_id === attuale) ? attuale : lista[0]?.exercise_id ?? null
-        );
-      })
-      .catch(() => setExercises([]));
-  }, [profileId, weeks]);
-
-  const ultimo = points[points.length - 1];
-  const primo = points[0];
-  const delta = ultimo && primo && points.length > 1 ? ultimo.carico - primo.carico : null;
-
-  return (
-    <>
-    <Card>
-      <CardHeader
-        title="Progressione dei carichi"
-        subtitle="Carico massimo di ogni sessione; il tratteggio è il massimale stimato"
-        action={
-          selected !== null && (
-            <button className="btn-ghost px-3 py-1.5 text-[12px]" onClick={() => setEditing(true)}>
-              Storico
-            </button>
-          )
-        }
-      />
-      <div className="p-4">
-        {!exercises ? (
-          <Spinner label="Carico gli esercizi…" />
-        ) : exercises.length === 0 ? (
-          <Empty
-            title="Ancora nessun carico registrato"
-            hint="Nella Scheda tocca «Inizia allenamento» e segna kg e ripetizioni di ogni serie: la progressione compare qui."
-          />
-        ) : (
-          <>
-            <div className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
-              {exercises.map((e) => (
-                <button
-                  key={e.exercise_id}
-                  onClick={() => setSelected(e.exercise_id)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
-                    e.exercise_id === selected
-                      ? "border-lime-400/50 bg-lime-400/15 text-lime-100"
-                      : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white"
-                  }`}
-                >
-                  {e.exercise_name}
-                  <span className="ml-1.5 font-mono text-[11px] text-white/35">{e.sessions}</span>
-                </button>
-              ))}
-            </div>
-
-            {!data ? (
-              <Spinner label="Carico lo storico…" />
-            ) : points.length < 2 ? (
-              <Empty
-                title={points.length === 1 ? `Una sessione: ${kg(points[0].carico)} kg` : "Nessuna sessione nel periodo"}
-                hint="Con almeno due sessioni dello stesso esercizio si vede la linea della progressione."
-              />
-            ) : (
-              <>
-                <div className="mb-2 flex items-baseline gap-2">
-                  <span className="font-mono text-[22px] font-semibold tabular-nums text-white">
-                    {kg(ultimo.carico)} kg
-                  </span>
-                  {delta !== null && (
-                    <span
-                      className={`font-mono text-[12.5px] tabular-nums ${
-                        delta > 0 ? "text-lime-300" : delta < 0 ? "text-rose-300" : "text-white/40"
-                      }`}
-                    >
-                      {delta > 0 ? "+" : ""}
-                      {kg(delta)} kg nel periodo
-                    </span>
-                  )}
-                </div>
-                <ResponsiveContainer width="100%" height={230}>
-                  <LineChart data={points} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                      minTickGap={24}
-                    />
-                    <YAxis
-                      // Estremi arrotondati ai 5 kg: niente tacche come 96,8.
-                      domain={[
-                        (min: number) => Math.max(0, Math.floor((min - 2.5) / 5) * 5),
-                        (max: number) => Math.ceil((max + 2.5) / 5) * 5,
-                      ]}
-                      tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(12,14,22,0.96)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 12,
-                        fontSize: 12,
-                      }}
-                      labelStyle={{ color: "rgba(255,255,255,0.5)" }}
-                      formatter={(v: number, nome: string) => [
-                        `${kg(v)} kg`,
-                        nome === "carico" ? "carico massimo" : "massimale stimato",
-                      ]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="massimale"
-                      stroke="#8b7dff"
-                      strokeWidth={1.8}
-                      strokeDasharray="5 4"
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="carico"
-                      stroke="#aed44a"
-                      strokeWidth={2.5}
-                      dot={{ r: 3, fill: "#aed44a", strokeWidth: 0 }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </Card>
-    {/* Fuori dalla card: la card è animata e un fixed al suo interno si
-        posizionerebbe rispetto a lei, non allo schermo. */}
-    <AnimatePresence>
-      {editing && selected !== null && (
-        <LoadHistoryDialog
-          profileId={profileId}
-          exerciseId={selected}
-          onClose={() => setEditing(false)}
-          onChanged={reload}
-        />
-      )}
-    </AnimatePresence>
-    </>
   );
 }

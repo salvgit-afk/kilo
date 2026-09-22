@@ -21,12 +21,12 @@ import logging
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import PushSubscription, UserProfile
-from app.services import daily_reminders
+from app.models import NotificationLog, PushSubscription, User, UserProfile
+from app.services import daily_reminders, notification_rules
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +36,9 @@ FUSO = ZoneInfo("Europe/Rome")
 ORE_CONSENTITE = range(7, 23)
 # Un promemoria della sera che arriva il giorno dopo non serve più.
 TTL_SECONDI = 4 * 3600
+# Tetto giornaliero per persona: oltre, le notifiche smettono di essere
+# promemoria e diventano rumore che si impara a ignorare.
+MAX_PER_DAY = 3
 
 SUPPLEMENT_NAMES = {
     "protein_powder": "proteine in polvere",
@@ -150,15 +153,6 @@ def send(sub: PushSubscription, message: Message) -> None:
         raise PushFailed(f"{type(e).__name__}: {str(e)[:160]}") from e
 
 
-def _message_for_user(db: Session, user_id: int, today: dt.date) -> Message | None:
-    profili = db.scalars(select(UserProfile).where(UserProfile.user_id == user_id)).all()
-    for profilo in profili:
-        msg = build_message(daily_reminders.build(db, profilo, today=today), name=profilo.display_name)
-        if msg:
-            return msg
-    return None
-
-
 @dataclass
 class DispatchResult:
     due: int = 0
@@ -167,41 +161,142 @@ class DispatchResult:
     failed: int = 0
 
 
-def dispatch(db: Session, *, now: dt.datetime | None = None, sender=send) -> DispatchResult:
-    """Manda i promemoria arrivati alla loro ora e non ancora mandati oggi.
+def _subscriptions_by_user(db: Session) -> dict[int, list[PushSubscription]]:
+    gruppi: dict[int, list[PushSubscription]] = {}
+    for sub in db.scalars(select(PushSubscription)):
+        gruppi.setdefault(sub.user_id, []).append(sub)
+    return gruppi
 
-    «Arrivati» e non «esattamente a quest'ora»: i job gratuiti possono
-    partire in ritardo o saltare un giro, e il promemoria delle 20 deve
-    arrivare anche se il job parte alle 21.
+
+def _deliver(
+    db: Session,
+    subs: list[PushSubscription],
+    nota: notification_rules.Notification,
+    result: DispatchResult,
+    sender,
+) -> bool:
+    """Manda una notifica a tutti i dispositivi dell'account.
+
+    Torna True se almeno uno l'ha ricevuta: solo allora la notifica viene
+    registrata come mandata, altrimenti si riprova al giro dopo.
+    """
+    recapitata = False
+    for sub in list(subs):
+        try:
+            sender(sub, Message(title=nota.title, body=nota.body, section=nota.section))
+            result.sent += 1
+            recapitata = True
+        except Gone:
+            db.delete(sub)
+            subs.remove(sub)
+            result.removed += 1
+        except Exception as e:  # noqa: BLE001 — un telefono irraggiungibile non ferma gli altri
+            log.warning("Invio push non riuscito (iscrizione %s): %s", sub.id, e)
+            result.failed += 1
+    return recapitata
+
+
+def _already_sent(db: Session, user_id: int) -> set[str]:
+    return set(db.scalars(select(NotificationLog.key).where(NotificationLog.user_id == user_id)))
+
+
+def _sent_today(db: Session, user_id: int, today: dt.date) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(NotificationLog)
+            .where(NotificationLog.user_id == user_id, NotificationLog.sent_on == today)
+        )
+        or 0
+    )
+
+
+def _record(db: Session, user_id: int, key: str, today: dt.date) -> None:
+    db.add(NotificationLog(user_id=user_id, key=key, sent_on=today))
+    db.flush()
+
+
+def dispatch(db: Session, *, now: dt.datetime | None = None, sender=send) -> DispatchResult:
+    """Manda le notifiche dovute adesso, al massimo `MAX_PER_DAY` per persona.
+
+    Il job orario può partire in ritardo o saltare un giro: ogni regola
+    dichiara una finestra di ore, e dentro quella la notifica parte comunque,
+    una volta sola (`NotificationLog`).
     """
     adesso = now or now_local()
     oggi = adesso.date()
-    risultato = DispatchResult()
+    result = DispatchResult()
     if adesso.hour not in ORE_CONSENTITE:
-        return risultato
-    iscrizioni = db.scalars(
-        select(PushSubscription).where(PushSubscription.reminder_hour <= adesso.hour)
-    ).all()
-    messaggi: dict[int, Message | None] = {}
-    for sub in iscrizioni:
-        if sub.last_sent_on == oggi:
+        return result
+
+    for user_id, subs in _subscriptions_by_user(db).items():
+        utente = db.get(User, user_id)
+        if utente is None:
             continue
-        risultato.due += 1
-        if sub.user_id not in messaggi:
-            messaggi[sub.user_id] = _message_for_user(db, sub.user_id, oggi)
-        msg = messaggi[sub.user_id]
-        # Segnato anche se non c'era niente da dire: si guarda una volta al giorno.
-        sub.last_sent_on = oggi
-        if msg is None:
-            continue
-        try:
-            sender(sub, msg)
-            risultato.sent += 1
-        except Gone:
-            db.delete(sub)
-            risultato.removed += 1
-        except Exception as e:  # noqa: BLE001 — un telefono irraggiungibile non ferma gli altri
-            log.warning("Invio push non riuscito (iscrizione %s): %s", sub.id, e)
-            risultato.failed += 1
+        impostazioni = notification_rules.settings_for(db, user_id)
+        ora_sera = min(s.reminder_hour for s in subs)
+        candidate = notification_rules.build(
+            db, utente, today=oggi, fuso=FUSO, settings=impostazioni, evening_hour=ora_sera
+        )
+        gia_mandate = _already_sent(db, user_id)
+        restanti = MAX_PER_DAY - _sent_today(db, user_id, oggi)
+        for nota in candidate:
+            if restanti <= 0:
+                break
+            if nota.key in gia_mandate or not nota.hours[0] <= adesso.hour <= nota.hours[1]:
+                continue
+            result.due += 1
+            if _deliver(db, subs, nota, result, sender):
+                _record(db, user_id, nota.key, oggi)
+                restanti -= 1
     db.commit()
-    return risultato
+    return result
+
+
+def after_session(db: Session, profile: UserProfile, *, now: dt.datetime | None = None, sender=send) -> bool:
+    """Promemoria degli integratori appena finito l'allenamento.
+
+    Arriva subito e non al giro d'ora successivo: le fonti indicano le
+    proteine da subito e fino a due ore dopo, e mezz'ora è il momento in cui
+    lo shaker si prepara davvero. Se non c'è niente da prendere, tace.
+    """
+    adesso = now or now_local()
+    oggi = adesso.date()
+    if profile.user_id is None:
+        return False
+    subs = db.scalars(
+        select(PushSubscription).where(PushSubscription.user_id == profile.user_id)
+    ).all()
+    if not subs:
+        return False
+    impostazioni = notification_rules.settings_for(db, profile.user_id)
+    if not impostazioni.supplements:
+        return False
+    da_prendere = notification_rules.supplement_intake.pending(db, profile, today=oggi)
+    if not da_prendere:
+        return False
+    chiave = f"post-allenamento:{profile.id}:{oggi}"
+    if chiave in _already_sent(db, profile.user_id):
+        return False
+    if _sent_today(db, profile.user_id, oggi) >= MAX_PER_DAY:
+        return False
+    elenco = ", ".join(notification_rules._nome(d) for d, _ in da_prendere)
+    nota = notification_rules.Notification(
+        key=chiave,
+        title="Allenamento chiuso",
+        body=(
+            f"Entro mezz'ora: {elenco}. Le proteine in 250-300 ml d'acqua, o come "
+            "indica la confezione."
+        ),
+        section="integratori",
+        category="supplements",
+        priority=1,
+        hours=(0, 23),
+    )
+    risultato = DispatchResult()
+    if _deliver(db, list(subs), nota, risultato, sender):
+        _record(db, profile.user_id, chiave, oggi)
+        db.commit()
+        return True
+    db.commit()
+    return False

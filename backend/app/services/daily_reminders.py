@@ -58,7 +58,7 @@ def _has_food(db: Session, profile: UserProfile, start: dt.date, end: dt.date) -
     )
 
 
-def _workouts_due(db: Session, profile: UserProfile, today: dt.date) -> list[WorkoutPlan]:
+def workouts_due(db: Session, profile: UserProfile, today: dt.date) -> list[WorkoutPlan]:
     """Schede attive che prevedono allenamento oggi, senza sessione iniziata."""
     previste = [
         p
@@ -93,5 +93,5 @@ def build(db: Session, profile: UserProfile, *, today: dt.date) -> DailyReminder
     return DailyReminders(
         supplements=supplement_intake.pending(db, profile, today=today),
         meals_missing=usa_il_diario and not _has_food(db, profile, today, today),
-        workouts_due=_workouts_due(db, profile, today),
+        workouts_due=workouts_due(db, profile, today),
     )

@@ -104,6 +104,23 @@ export async function disablePush() {
   await sub.unsubscribe();
 }
 
+export type PushSettings = {
+  training: boolean;
+  supplements: boolean;
+  diary: boolean;
+  recipes: boolean;
+  progress: boolean;
+  meal_prep: boolean;
+  /** null = l'ora della palestra la ricava Kilo dalle sessioni passate. */
+  gym_hour: number | null;
+  effective_gym_hour: number;
+};
+
+export const readPushSettings = () => api.get<PushSettings>("/push/settings");
+
+export const savePushSettings = (s: Omit<PushSettings, "effective_gym_hour">) =>
+  api.put<PushSettings>("/push/settings", s);
+
 export async function sendTestPush() {
   const sub = await currentSubscription();
   if (!sub) throw new Error("Questo dispositivo non è iscritto.");

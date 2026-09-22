@@ -176,7 +176,8 @@ def test_niente_notifica_se_non_manca_niente(ambiente):
     r = push_notifications.dispatch(
         db, now=dt.datetime(2026, 9, 22, 20, 0, tzinfo=ROMA), sender=lambda s, m: inviati.append(m)
     )
-    assert inviati == [] and r.due == 1 and r.sent == 0
+    # `due` conta le notifiche dovute adesso: se non manca niente, nessuna.
+    assert inviati == [] and r.due == 0 and r.sent == 0
 
 
 def test_iscrizione_scaduta_viene_cancellata(ambiente):

@@ -811,3 +811,91 @@ class SyncResultOut(BaseModel):
     created: int
     updated: int
     skipped_no_muscle: int
+
+
+# --- Statistiche della pagina Progressi -----------------------------------------
+
+
+class MuscleVolumeOut(BaseModel):
+    muscle: str
+    sets_per_week: list[int]
+    average: float
+    last: int
+    range_min: int
+    range_max: int
+    status: Literal["sotto", "dentro", "sopra"]
+
+
+class VolumeStatsOut(BaseModel):
+    """`weeks` sono i lunedì delle settimane considerate, dalla più vecchia:
+    ogni `sets_per_week` ha la stessa lunghezza e lo stesso ordine."""
+
+    weeks: list[dt.date]
+    muscles: list[MuscleVolumeOut]
+
+
+class OneRmPointOut(BaseModel):
+    date: dt.date
+    one_rm: float
+    kg: float
+    reps: int
+
+
+class OneRmTrendOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    points: list[OneRmPointOut]
+    delta_pct: float
+    # Serie migliori sopra le 10 ripetizioni: la stima di Epley perde
+    # precisione e la variazione va letta con più margine.
+    high_rep_estimate: bool
+
+
+class ConsistencyWeekOut(BaseModel):
+    start: dt.date
+    done: int
+    planned: int
+
+
+class ConsistencyOut(BaseModel):
+    weeks: list[ConsistencyWeekOut]
+    streak_weeks: int
+    best_streak_weeks: int
+    done_total: int
+    planned_total: int
+
+
+class WeightPointOut(BaseModel):
+    date: dt.date
+    weight_kg: float
+    average_kg: float
+
+
+class WeightTrendOut(BaseModel):
+    """`expected_min`/`expected_max` sono nulli quando le fonti non danno un
+    ritmo di riferimento per l'obiettivo del profilo: in quel caso il verdetto
+    è `non_valutabile` e la nota lo spiega."""
+
+    points: list[WeightPointOut]
+    weekly_rate_kg: float | None
+    expected_min: float | None
+    expected_max: float | None
+    verdict: Literal[
+        "in_linea", "troppo_veloce", "troppo_lento", "pochi_dati", "non_valutabile"
+    ]
+    note: str
+
+
+class NutritionWeekOut(BaseModel):
+    start: dt.date
+    kcal_avg: float
+    protein_avg_g: float
+    days_logged: int
+    days_in_kcal_target: int
+    days_in_protein_target: int
+
+
+class NutritionStatsOut(BaseModel):
+    weeks: list[NutritionWeekOut]
+    kcal_target: float | None
+    protein_target_g: float | None

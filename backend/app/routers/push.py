@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import PushSubscription, User
+from app.models import PushSubscription, User, UserProfile
 from app.routers.auth import current_user
-from app.services import push_notifications, rate_limit
+from app.services import notification_rules, push_notifications, rate_limit
 
 router = APIRouter(prefix="/push", tags=["notifiche"])
 
@@ -41,6 +41,25 @@ class SubscriptionOut(BaseModel):
 
 class EndpointIn(BaseModel):
     endpoint: str = Field(min_length=1, max_length=1024)
+
+
+class SettingsIn(BaseModel):
+    """Quali notifiche si vogliono ricevere, per account."""
+
+    training: bool = True
+    supplements: bool = True
+    diary: bool = True
+    recipes: bool = True
+    progress: bool = True
+    meal_prep: bool = False
+    # None = l'ora dell'allenamento la ricava Kilo dalle sessioni passate.
+    gym_hour: int | None = Field(default=None, ge=5, le=23)
+
+
+class SettingsOut(SettingsIn):
+    # L'ora effettiva del promemoria dell'allenamento: quella scelta a mano,
+    # o quella ricavata dagli avvii delle ultime sessioni.
+    effective_gym_hour: int
 
 
 class DispatchOut(BaseModel):
@@ -84,12 +103,8 @@ def subscribe(
         db.add(sub)
     elif sub.user_id != user.id:
         sub.user_id = user.id
-        sub.last_sent_on = None
     sub.p256dh = payload.keys.p256dh
     sub.auth = payload.keys.auth
-    if sub.reminder_hour != payload.reminder_hour:
-        # Spostando l'ora a più tardi, il promemoria di oggi può ancora arrivare.
-        sub.last_sent_on = None
     sub.reminder_hour = payload.reminder_hour
     db.commit()
     db.refresh(sub)
@@ -140,6 +155,47 @@ def test(payload: EndpointIn, db: Session = Depends(get_db), user: User = Depend
         raise HTTPException(
             status_code=502, detail=f"Il servizio di notifiche ha rifiutato l'invio ({e.reason})."
         ) from e
+
+
+def _settings_out(db: Session, user: User) -> SettingsOut:
+    s = notification_rules.settings_for(db, user.id)
+    profilo = db.scalars(select(UserProfile).where(UserProfile.user_id == user.id)).first()
+    ora = (
+        notification_rules.gym_hour(
+            db, profilo, fuso=push_notifications.FUSO, override=s.gym_hour
+        )
+        if profilo is not None
+        else (s.gym_hour or notification_rules.DEFAULT_GYM_HOUR)
+    )
+    return SettingsOut(
+        training=s.training,
+        supplements=s.supplements,
+        diary=s.diary,
+        recipes=s.recipes,
+        progress=s.progress,
+        meal_prep=s.meal_prep,
+        gym_hour=s.gym_hour,
+        effective_gym_hour=ora,
+    )
+
+
+@router.get("/settings", response_model=SettingsOut)
+def read_settings(db: Session = Depends(get_db), user: User = Depends(current_user)) -> SettingsOut:
+    out = _settings_out(db, user)
+    db.commit()
+    return out
+
+
+@router.put("/settings", response_model=SettingsOut)
+def update_settings(
+    payload: SettingsIn, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> SettingsOut:
+    s = notification_rules.settings_for(db, user.id)
+    for campo, valore in payload.model_dump().items():
+        setattr(s, campo, valore)
+    out = _settings_out(db, user)
+    db.commit()
+    return out
 
 
 @router.post("/dispatch", response_model=DispatchOut)

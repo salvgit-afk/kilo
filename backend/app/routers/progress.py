@@ -14,15 +14,26 @@ from app.routers.auth import current_user, require_admin
 from app.routers.profile import owned_profile
 from app.schemas import (
     CatalogStatusOut,
+    ConsistencyOut,
+    ConsistencyWeekOut,
     ExerciseProgressOut,
     LoggedExerciseOut,
+    MuscleVolumeOut,
+    NutritionStatsOut,
+    NutritionWeekOut,
+    OneRmPointOut,
+    OneRmTrendOut,
     ProgressReportOut,
     SyncResultOut,
+    VolumeStatsOut,
+    WeightPointOut,
+    WeightTrendOut,
 )
 from app.services import (
     catalog_sync,
     exercise_library,
     progress_report,
+    progress_stats,
     training_log,
     translation,
 )
@@ -117,6 +128,131 @@ def logged_exercises(
         )
         for r in righe
     ]
+
+
+@router.get("/progress/volume", response_model=VolumeStatsOut)
+def volume_stats(
+    weeks: int = Query(default=8, ge=1, le=52),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> VolumeStatsOut:
+    """Serie settimanali per gruppo muscolare, confrontate con il range delle
+    fonti per il livello dell'utente (`training_volume.md`).
+
+    Il confronto è sulla media del periodo: una singola settimana può essere
+    di scarico o saltata per un'influenza, e non dice se il volume abituale
+    sia adeguato.
+    """
+    stats = progress_stats.volume_by_muscle(db, profile, weeks=weeks)
+    return VolumeStatsOut(
+        weeks=stats.weeks,
+        muscles=[
+            MuscleVolumeOut(
+                muscle=m.muscle,
+                sets_per_week=m.sets_per_week,
+                average=round(m.average, 1),
+                last=m.last,
+                range_min=m.range_min,
+                range_max=m.range_max,
+                status=m.status,
+            )
+            for m in stats.muscles
+        ],
+    )
+
+
+@router.get("/progress/one-rm/{exercise_id}", response_model=OneRmTrendOut)
+def one_rm_stats(
+    exercise_id: int,
+    weeks: int = Query(default=26, ge=1, le=260),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> OneRmTrendOut:
+    """Andamento del massimale stimato di un esercizio, una riga per sessione.
+
+    Un esercizio mai registrato da questo profilo risponde 404 e non una
+    risposta vuota: come per i profili altrui, non si distingue fra "non
+    esiste" e "non è tuo"."""
+    trend = progress_stats.one_rm_trend(db, profile, exercise_id, weeks=weeks)
+    if trend is None:
+        raise HTTPException(status_code=404, detail="Nessuna serie registrata per questo esercizio")
+
+    return OneRmTrendOut(
+        exercise_id=trend.exercise_id,
+        exercise_name=trend.exercise_name,
+        points=[
+            OneRmPointOut(date=p.date, one_rm=p.one_rm, kg=p.kg, reps=p.reps)
+            for p in trend.points
+        ],
+        delta_pct=round(trend.delta_pct, 3),
+        high_rep_estimate=trend.high_rep_estimate,
+    )
+
+
+@router.get("/progress/consistency", response_model=ConsistencyOut)
+def consistency_stats(
+    weeks: int = Query(default=12, ge=1, le=104),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> ConsistencyOut:
+    """Allenamenti svolti rispetto a quelli previsti dalle schede attive."""
+    stats = progress_stats.consistency(db, profile, weeks=weeks)
+    return ConsistencyOut(
+        weeks=[
+            ConsistencyWeekOut(start=s.start, done=s.done, planned=s.planned)
+            for s in stats.weeks
+        ],
+        streak_weeks=stats.streak_weeks,
+        best_streak_weeks=stats.best_streak_weeks,
+        done_total=stats.done_total,
+        planned_total=stats.planned_total,
+    )
+
+
+@router.get("/progress/weight-trend", response_model=WeightTrendOut)
+def weight_trend_stats(
+    weeks: int = Query(default=12, ge=1, le=104),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WeightTrendOut:
+    """Peso corporeo a media mobile di 7 giorni e ritmo settimanale."""
+    stats = progress_stats.weight_trend(db, profile, weeks=weeks)
+    return WeightTrendOut(
+        points=[
+            WeightPointOut(date=p.date, weight_kg=p.weight_kg, average_kg=p.average_kg)
+            for p in stats.points
+        ],
+        weekly_rate_kg=stats.weekly_rate_kg,
+        expected_min=stats.expected_min,
+        expected_max=stats.expected_max,
+        verdict=stats.verdict,
+        note=stats.note,
+    )
+
+
+@router.get("/progress/nutrition", response_model=NutritionStatsOut)
+def nutrition_stats(
+    weeks: int = Query(default=8, ge=1, le=52),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> NutritionStatsOut:
+    """Medie settimanali del diario rispetto ai target della giornata."""
+    stats = progress_stats.nutrition_weeks(db, profile, weeks=weeks)
+    return NutritionStatsOut(
+        weeks=[
+            NutritionWeekOut(
+                start=s.start,
+                kcal_avg=s.kcal_avg,
+                protein_avg_g=s.protein_avg_g,
+                days_logged=s.days_logged,
+                days_in_kcal_target=s.days_in_kcal_target,
+                days_in_protein_target=s.days_in_protein_target,
+            )
+            for s in stats.weeks
+        ],
+        kcal_target=stats.kcal_target,
+        protein_target_g=stats.protein_target_g,
+    )
 
 
 @router.get("/catalog/status", response_model=CatalogStatusOut)
