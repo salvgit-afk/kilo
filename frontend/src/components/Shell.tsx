@@ -254,7 +254,7 @@ export function Shell({
   useSwipeNavigation(contentRef, active, onNavigate);
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1400px] gap-6 px-4 py-5 lg:px-7">
+    <div className="mx-auto flex min-h-screen w-full max-w-[1400px] gap-6 px-4 pb-5 pt-[calc(1.25rem+env(safe-area-inset-top))] lg:px-7">
       <aside className="sticky top-5 hidden h-[calc(100vh-2.5rem)] w-[236px] shrink-0 flex-col lg:flex">
         <div className="glass sheen flex h-full flex-col p-3.5">
           <div className="mb-6 flex items-center gap-3 px-1.5 pt-1.5">

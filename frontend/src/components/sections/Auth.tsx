@@ -39,7 +39,7 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (s: AuthSession) =>
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 pb-10 pt-[calc(2.5rem+env(safe-area-inset-top))]">
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}

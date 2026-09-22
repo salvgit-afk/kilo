@@ -74,7 +74,9 @@ export function Modal({
       // mousedown e non click: trascinare una selezione di testo fuori dal
       // pannello non deve chiuderlo.
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      className={`fixed inset-0 ${z} flex justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6 ${
+      // Margini con le zone sicure: nell'app sulla Home dell'iPhone la barra
+      // di stato e l'indicatore home stanno sopra la pagina.
+      className={`fixed inset-0 ${z} flex justify-center bg-black/75 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur-sm sm:p-6 ${
         align === "top" ? "items-start sm:pt-[7vh]" : "items-center"
       }`}
     >
@@ -86,7 +88,7 @@ export function Modal({
         // Un solo limite di altezza per breakpoint: con due classi `sm:max-h`
         // vinceva quella sbagliata e il pulsante in fondo usciva dallo schermo.
         // In alto il margine è 7dvh sopra e 1.5rem sotto.
-        className={`glass flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden ${
+        className={`glass flex max-h-[calc(100dvh-1.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] w-full flex-col overflow-hidden ${
           align === "top" ? "sm:max-h-[calc(93dvh-1.5rem)]" : "sm:max-h-[calc(100dvh-3rem)]"
         } ${className}`}
       >

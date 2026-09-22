@@ -81,7 +81,7 @@ export function Onboarding({ onCreated }: { onCreated: (p: Profile) => void }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 pb-10 pt-[calc(2.5rem+env(safe-area-inset-top))]">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

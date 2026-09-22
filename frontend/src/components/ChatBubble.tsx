@@ -287,7 +287,7 @@ export function ChatBubble({
             // browser la mostrava piena per un istante prima dell'apertura e
             // dopo la chiusura. Il fondo è pieno: anche un velo di trasparenza
             // lasciava leggere la pagina dietro e confondeva chat e pagina.
-            className="glass chat-neon fixed inset-x-3 bottom-[calc(168px+env(safe-area-inset-bottom))] z-[100] flex max-h-[calc(100dvh-190px-env(safe-area-inset-bottom))] flex-col overflow-hidden bg-ink-800 backdrop-blur-none lg:inset-x-auto lg:bottom-[100px] lg:right-6 lg:h-[580px] lg:max-h-[75dvh] lg:w-[420px]"
+            className="glass chat-neon fixed inset-x-3 bottom-[calc(168px+env(safe-area-inset-bottom))] z-[100] flex max-h-[calc(100dvh-190px-env(safe-area-inset-bottom)-env(safe-area-inset-top))] flex-col overflow-hidden bg-ink-800 backdrop-blur-none lg:inset-x-auto lg:bottom-[100px] lg:right-6 lg:h-[580px] lg:max-h-[75dvh] lg:w-[420px]"
           >
             <EscapeToClose onClose={() => setOpen(false)} />
 
