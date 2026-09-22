@@ -98,6 +98,25 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://" + v[len("postgres://") :]
         return v
 
+    @field_validator("vapid_public_key", "vapid_private_key", "push_cron_secret")
+    @classmethod
+    def _strip_secret(cls, v: str) -> str:
+        """Toglie spazi, a capo e virgolette incollati per sbaglio nel pannello."""
+        return v.strip().strip("'\"").strip()
+
+    @field_validator("vapid_subject")
+    @classmethod
+    def _normalize_subject(cls, v: str) -> str:
+        """Il protocollo vuole `mailto:nome@dominio` (o un URL https) senza
+        spazi né parentesi: `mailto: nome@dominio`, `<nome@dominio>` o la sola
+        email farebbero rifiutare ogni notifica."""
+        v = v.strip().strip("'\"").replace("<", "").replace(">", "").strip()
+        if v.lower().startswith("mailto:"):
+            v = "mailto:" + v[len("mailto:"):].strip()
+        elif "@" in v and not v.startswith("https://"):
+            v = "mailto:" + v
+        return v
+
     @property
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}

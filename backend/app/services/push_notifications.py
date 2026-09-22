@@ -65,6 +65,31 @@ class Gone(Exception):
     """L'iscrizione non esiste più (app disinstallata, permesso tolto)."""
 
 
+class PushFailed(Exception):
+    """Il servizio push ha rifiutato il messaggio: `reason` dice perché."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _reason(e: Exception) -> str:
+    """Motivo leggibile dalla risposta del servizio push (Apple, Google, Mozilla).
+
+    Apple risponde per esempio 403 {"reason": "BadJwtToken"}: quasi sempre
+    un VAPID_SUBJECT non valido o chiavi incollate male.
+    """
+    risposta = getattr(e, "response", None)
+    if risposta is None:
+        return str(e)[:200]
+    testo = (getattr(risposta, "text", "") or "").strip()
+    try:
+        testo = json.loads(testo).get("reason", testo)
+    except (ValueError, AttributeError):
+        pass
+    return f"{risposta.status_code} {testo}".strip()[:200]
+
+
 def now_local() -> dt.datetime:
     return dt.datetime.now(FUSO)
 
@@ -120,7 +145,9 @@ def send(sub: PushSubscription, message: Message) -> None:
         status = getattr(e.response, "status_code", None)
         if status in (404, 410):
             raise Gone() from e
-        raise
+        raise PushFailed(_reason(e)) from e
+    except Exception as e:  # chiave o subject non validi, rete
+        raise PushFailed(f"{type(e).__name__}: {str(e)[:160]}") from e
 
 
 def _message_for_user(db: Session, user_id: int, today: dt.date) -> Message | None:
@@ -173,8 +200,8 @@ def dispatch(db: Session, *, now: dt.datetime | None = None, sender=send) -> Dis
         except Gone:
             db.delete(sub)
             risultato.removed += 1
-        except Exception:  # noqa: BLE001 — un telefono irraggiungibile non ferma gli altri
-            log.exception("Invio push non riuscito (iscrizione %s)", sub.id)
+        except Exception as e:  # noqa: BLE001 — un telefono irraggiungibile non ferma gli altri
+            log.warning("Invio push non riuscito (iscrizione %s): %s", sub.id, e)
             risultato.failed += 1
     db.commit()
     return risultato

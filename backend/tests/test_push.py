@@ -229,3 +229,41 @@ def test_invio_vero_cifra_il_messaggio(ambiente, monkeypatch):
     assert chiamate["headers"]["Content-Encoding"] == "aes128gcm"
     assert chiamate["headers"]["Authorization"].startswith("vapid ")
     assert b"ciao" not in chiamate["data"]
+
+
+@pytest.mark.parametrize("scritto, atteso", [
+    ("mailto:me@example.it", "mailto:me@example.it"),
+    ("mailto: me@example.it ", "mailto:me@example.it"),
+    ("<me@example.it>", "mailto:me@example.it"),
+    ("me@example.it", "mailto:me@example.it"),
+    ('"mailto:me@example.it"', "mailto:me@example.it"),
+    ("https://kilo.example.it", "https://kilo.example.it"),
+])
+def test_subject_vapid_normalizzato(scritto, atteso):
+    from app.config import Settings
+
+    assert Settings(vapid_subject=scritto).vapid_subject == atteso
+
+
+def test_chiavi_incollate_con_spazi_e_virgolette():
+    from app.config import Settings
+
+    s = Settings(vapid_private_key='  "abc_DEF-123"\n', push_cron_secret=" segreto ")
+    assert s.vapid_private_key == "abc_DEF-123" and s.push_cron_secret == "segreto"
+
+
+def test_prova_rifiutata_mostra_il_motivo(ambiente, monkeypatch):
+    client, db = ambiente
+    h, _ = _account(client, "a@example.com")
+    _iscrivi(client, h)
+
+    class Risposta:
+        status_code = 403
+        reason = "Forbidden"
+        text = '{"reason":"BadJwtToken"}'
+        headers = {}
+
+    monkeypatch.setattr("requests.post", lambda *a, **k: Risposta())
+    r = client.post("/push/test", headers=h, json={"endpoint": "https://push.example/abc"})
+    assert r.status_code == 502
+    assert "403 BadJwtToken" in r.json()["detail"]

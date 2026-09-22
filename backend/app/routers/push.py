@@ -135,8 +135,11 @@ def test(payload: EndpointIn, db: Session = Depends(get_db), user: User = Depend
         db.delete(sub)
         db.commit()
         raise HTTPException(status_code=410, detail="Iscrizione scaduta: riattiva i promemoria.") from e
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail="Il servizio di notifiche non ha risposto: riprova.") from e
+    except push_notifications.PushFailed as e:
+        push_notifications.log.warning("Notifica di prova rifiutata: %s", e.reason)
+        raise HTTPException(
+            status_code=502, detail=f"Il servizio di notifiche ha rifiutato l'invio ({e.reason})."
+        ) from e
 
 
 @router.post("/dispatch", response_model=DispatchOut)
