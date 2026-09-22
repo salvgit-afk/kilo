@@ -59,6 +59,22 @@ export default function Page() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  // Tocco su un promemoria: con l'app chiusa arriva `?sezione=…`, con l'app
+  // aperta un evento dal service worker (vedi PwaSetup).
+  useEffect(() => {
+    const apri = (id: unknown) => {
+      if (typeof id === "string" && (SECTION_ORDER as readonly string[]).includes(id)) setSection(id as SectionId);
+    };
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("sezione")) {
+      apri(params.get("sezione"));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    const onOpen = (e: Event) => apri((e as CustomEvent).detail);
+    window.addEventListener("kilo:open-section", onOpen);
+    return () => window.removeEventListener("kilo:open-section", onOpen);
+  }, []);
+
   const clearIntent = useCallback(() => setIntent(null), []);
   const runIntent = useCallback((next: Omit<Intent, "nonce">) => {
     setSection(next.section);

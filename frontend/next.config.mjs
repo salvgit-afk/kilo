@@ -19,6 +19,9 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://raw.githubusercontent.com https://www.themealdb.com https://wger.de",
   "font-src 'self' data:",
+  // Service worker (/sw.js) e manifest della PWA: solo dal sito stesso.
+  "worker-src 'self'",
+  "manifest-src 'self'",
   `connect-src 'self'${isDev ? " ws: https://va.vercel-scripts.com" : ""}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -50,7 +53,12 @@ const nextConfig = {
     ];
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Il service worker va sempre riletto: una versione vecchia in cache
+      // resterebbe attiva sui telefoni anche dopo il deploy.
+      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+    ];
   },
 };
 export default nextConfig;

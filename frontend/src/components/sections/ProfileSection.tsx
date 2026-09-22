@@ -22,6 +22,7 @@ import { Card, CardHeader, Notice } from "@/components/ui";
 import { Field, NumberField, OptionGroup } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
 import { REMINDER_HOUR, reminderSettings } from "@/components/ReminderBanner";
+import { PushSettings } from "@/components/PushSettings";
 
 export function ProfileSection({
   profile,
@@ -228,6 +229,13 @@ export function ProfileSection({
                   {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
                 </button>
               )}
+            </div>
+          </Card>
+
+          <Card delay={0.07}>
+            <CardHeader title="Notifiche sul telefono" subtitle="Anche con Kilo chiuso" />
+            <div className="px-5 py-4">
+              <PushSettings />
             </div>
           </Card>
 
