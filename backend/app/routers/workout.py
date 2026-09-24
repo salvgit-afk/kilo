@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -803,6 +805,55 @@ def clear_preference(
     if preferenza is not None:
         db.delete(preferenza)
         db.commit()
+
+
+@router.post("/chat/stream")
+def chat_stream(
+    payload: ChatIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+    user: User = Depends(current_user),
+) -> StreamingResponse:
+    """La stessa risposta di `/chat`, ma che arriva mentre viene scritta.
+
+    Il formato è quello degli Server-Sent Events: una riga `data:` per
+    evento, `delta` per ogni pezzo di testo e `done` alla fine con la
+    risposta definitiva, le fonti e le azioni proposte. Se lo streaming non
+    è disponibile, il client può sempre ricadere su `/chat`.
+    """
+    _limit(db, user, "chat")
+
+    def eventi():
+        for tipo, valore in chat_agent.answer_stream(
+            db, profile, payload.message,
+            history=[m.model_dump() for m in payload.history],
+            context=payload.context,
+        ):
+            if tipo == "delta":
+                corpo = {"type": "delta", "text": valore}
+            else:
+                corpo = {
+                    "type": "done",
+                    "answer": valore.answer,
+                    "knowledge_tags": valore.knowledge_tags,
+                    "used_llm": valore.used_llm,
+                    "actions": valore.actions,
+                }
+            yield f"data: {json.dumps(corpo, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        eventi(),
+        media_type="text/event-stream",
+        # Senza questa intestazione alcuni proxy accumulano la risposta e la
+        # consegnano tutta insieme, vanificando lo streaming.
+        headers={
+            # `no-transform` dice ai proxy di non comprimere: con gzip la
+            # risposta verrebbe accumulata e consegnata tutta insieme, che è
+            # esattamente quello che lo streaming deve evitare.
+            "Cache-Control": "no-store, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/chat", response_model=ChatOut)

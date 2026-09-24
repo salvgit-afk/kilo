@@ -36,6 +36,7 @@ import {
 } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { FoodPhotoPanel } from "@/components/FoodPhoto";
 import { RecipeToDiaryDialog } from "@/components/RecipeToDiary";
 import { ApiError, notifyLogged } from "@/lib/api";
 import { KiloNote } from "@/components/KiloNote";
@@ -248,6 +249,14 @@ function BarcodeIcon() {
   );
 }
 
+function PhotoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-current" aria-hidden>
+      <path d="M9 3h6l1.2 2H20a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3.8L9 3Zm3 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z" />
+    </svg>
+  );
+}
+
 /** Prodotto non trovato (o incompleto) su Open Food Facts: si copia l'etichetta. */
 function ManualProductForm({
   barcode,
@@ -455,8 +464,9 @@ function FoodSearchDialog({
   const [selected, setSelected] = useState<FoodResult | null>(null);
   const [grams, setGrams] = useState<number | null>(100);
   const [saving, setSaving] = useState(false);
-  // "scan": fotocamera; "manual": prodotto non trovato, si inserisce dall'etichetta.
-  const [mode, setMode] = useState<"search" | "scan" | "manual">("search");
+  // "scan": codice a barre; "manual": prodotto non trovato, si inserisce
+  // dall'etichetta; "photo": foto dell'etichetta o del piatto.
+  const [mode, setMode] = useState<"search" | "scan" | "manual" | "photo">("search");
   const [lookingUp, setLookingUp] = useState(false);
   const [manualBarcode, setManualBarcode] = useState<string | null>(null);
   const [manualReason, setManualReason] = useState<string | null>(null);
@@ -562,7 +572,7 @@ function FoodSearchDialog({
       {/* Intestazione fissa: ricerca e pasto */}
       <div className="shrink-0 space-y-3 border-b border-white/[0.06] px-4 py-4 sm:px-5">
         <div className="flex items-center gap-2.5">
-          <div className="relative flex-1">
+          <div className="relative min-w-0 flex-1">
             <svg
               viewBox="0 0 24 24"
               className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 fill-white/25"
@@ -597,6 +607,22 @@ function FoodSearchDialog({
             <BarcodeIcon />
             <span className="hidden sm:inline">Scansiona</span>
           </button>
+          <button
+            onClick={() => {
+              setSelected(null);
+              setMode(mode === "photo" ? "search" : "photo");
+            }}
+            aria-pressed={mode === "photo"}
+            title="Fotografa l'etichetta nutrizionale o il piatto"
+            className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[12.5px] font-semibold transition ${
+              mode === "photo"
+                ? "border-iris-400/60 bg-iris-400 text-ink-900"
+                : "border-iris-400/40 bg-iris-400/[0.12] text-iris-200 hover:bg-iris-400/[0.2]"
+            }`}
+          >
+            <PhotoIcon />
+            <span className="hidden sm:inline">Foto</span>
+          </button>
           <CloseButton onClose={onClose} />
         </div>
         <OptionGroup
@@ -618,6 +644,14 @@ function FoodSearchDialog({
               scansione dello stesso prodotto è immediata.
             </p>
           </div>
+        )}
+
+        {mode === "photo" && (
+          <FoodPhotoPanel
+            profileId={profileId}
+            mealType={meal}
+            onAdded={onAdded}
+          />
         )}
 
         {mode === "manual" && (
@@ -649,6 +683,26 @@ function FoodSearchDialog({
               <span className="mt-0.5 block text-[12px] leading-snug text-white/50">
                 È il modo più preciso per i prodotti confezionati: trovi quello esatto, non una
                 voce con lo stesso nome. Per frutta, carne o riso sfusi usa la ricerca.
+              </span>
+            </span>
+          </button>
+        )}
+
+        {mode === "search" && query.trim().length < 2 && !selected && (
+          <button
+            onClick={() => setMode("photo")}
+            className="mx-2 mb-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-2xl border border-iris-400/20 bg-iris-400/[0.05] px-4 py-3 text-left transition hover:border-iris-400/45 hover:bg-iris-400/[0.1]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-iris-400/20 text-iris-100">
+              <PhotoIcon />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-semibold text-white">
+                Niente codice a barre? Usa la fotocamera
+              </span>
+              <span className="mt-0.5 block text-[11.5px] leading-snug text-white/45">
+                Leggo la tabella nutrizionale da una foto, oppure provo a riconoscere il piatto: i
+                valori restano da controllare.
               </span>
             </span>
           </button>

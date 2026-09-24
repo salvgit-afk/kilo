@@ -12,6 +12,7 @@ Vedi `knowledge_base/evidence_conduct.md`.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import random
@@ -67,6 +68,7 @@ def generate_structured(
     model: str | None = None,
     max_output_tokens: int | None = None,
     purpose: str = "generico",
+    image: tuple[bytes, str] | None = None,
 ) -> dict[str, Any]:
     """Chiede a Gemini una risposta JSON conforme a `response_schema`.
 
@@ -74,7 +76,11 @@ def generate_structured(
       separati dal testo dell'utente, che resiste meglio a chi prova a
       scavalcarle;
     - `timeout` è il tempo **complessivo**, nuovi tentativi compresi;
-    - `purpose` etichetta la chiamata nei log dei token consumati.
+    - `purpose` etichetta la chiamata nei log dei token consumati;
+    - `image` è una coppia (byte, tipo MIME) inviata insieme al testo: serve
+      per leggere un'etichetta nutrizionale o riconoscere un piatto. L'immagine
+      va in fondo alle parti, dopo le istruzioni: è un dato da guardare, non
+      una fonte di ordini.
 
     Solleva `LLMNotConfigured` / `LLMError`: sta al chiamante decidere il
     fallback (di norma: generare comunque l'output in modo deterministico dai
@@ -91,8 +97,14 @@ def generate_structured(
     }
     if max_output_tokens:
         config["maxOutputTokens"] = max_output_tokens
+    parti: list[dict[str, Any]] = [{"text": prompt}]
+    if image is not None:
+        dati_immagine, tipo = image
+        parti.append(
+            {"inlineData": {"mimeType": tipo, "data": base64.b64encode(dati_immagine).decode()}}
+        )
     payload: dict[str, Any] = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"role": "user", "parts": parti}],
         "generationConfig": config,
     }
     if system:
@@ -182,3 +194,119 @@ def _post(model: str, payload: dict[str, Any], api_key: str, timeout: float) -> 
         json=payload,
         timeout=timeout,
     )
+
+
+def stream_structured(
+    prompt: str,
+    response_schema: dict[str, Any],
+    *,
+    system: str | None = None,
+    temperature: float = 0.2,
+    timeout: float = 60.0,
+    model: str | None = None,
+    max_output_tokens: int | None = None,
+    purpose: str = "generico",
+):
+    """Come `generate_structured`, ma restituisce il JSON un pezzo alla volta.
+
+    Gemini in streaming manda il testo della risposta in frammenti (SSE):
+    qui si riemettono man mano, così l'applicazione può mostrare la risposta
+    mentre si scrive. Lo schema resta, quindi il risultato finale è lo stesso
+    JSON vincolato; chi chiama accumula i frammenti e li interpreta con
+    `partial_string` finché non arriva quello completo.
+
+    Genera stringhe (i frammenti grezzi). Se lo streaming fallisce prima del
+    primo frammento solleva `LLMError` come la versione non in streaming.
+    """
+    settings = get_settings()
+    if not settings.gemini_configured:
+        raise LLMNotConfigured("GEMINI_API_KEY non configurata nel file .env")
+
+    config: dict[str, Any] = {
+        "temperature": temperature,
+        "responseMimeType": "application/json",
+        "responseSchema": response_schema,
+    }
+    if max_output_tokens:
+        config["maxOutputTokens"] = max_output_tokens
+    payload: dict[str, Any] = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": config,
+    }
+    if system:
+        payload["systemInstruction"] = {"parts": [{"text": system}]}
+
+    modello = model or settings.gemini_model
+    url = _GEMINI_URL.format(model=modello).replace(":generateContent", ":streamGenerateContent")
+    try:
+        with httpx.stream(
+            "POST",
+            url,
+            params={"alt": "sse"},
+            headers={"x-goog-api-key": settings.gemini_api_key},
+            json=payload,
+            timeout=timeout,
+        ) as risposta:
+            if risposta.status_code == 429:
+                raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
+            if risposta.status_code >= 400:
+                risposta.read()
+                raise LLMError(f"HTTP {risposta.status_code}")
+            for riga in risposta.iter_lines():
+                if not riga.startswith("data:"):
+                    continue
+                dati = riga[5:].strip()
+                if not dati or dati == "[DONE]":
+                    continue
+                try:
+                    blocco = json.loads(dati)
+                except ValueError:
+                    continue
+                if "usageMetadata" in blocco:
+                    _log_usage(purpose, modello, blocco["usageMetadata"])
+                for candidato in blocco.get("candidates") or []:
+                    for parte in (candidato.get("content") or {}).get("parts") or []:
+                        testo = parte.get("text")
+                        if testo:
+                            yield testo
+    except LLMError:
+        raise
+    except Exception as e:
+        logger.warning("Streaming LLM fallito (%s): %s", purpose, e)
+        raise LLMError(str(e)) from e
+
+
+def partial_string(raw: str, key: str) -> str:
+    """Valore (anche incompleto) di una chiave stringa dentro un JSON a metà.
+
+    Serve a mostrare la risposta mentre arriva: il JSON completo non c'è
+    ancora, ma la parte già scritta di `"risposta": "..."` sì. Si fermano le
+    sequenze di escape spezzate a metà, che altrimenti comparirebbero a
+    schermo come caratteri strani.
+    """
+    ancora = f'"{key}"'
+    inizio = raw.find(ancora)
+    if inizio < 0:
+        return ""
+    i = raw.find('"', inizio + len(ancora) + 1)
+    if i < 0:
+        return ""
+    fuori = []
+    i += 1
+    while i < len(raw):
+        c = raw[i]
+        if c == '"':
+            break
+        if c == "\\":
+            sequenza = raw[i : i + 6] if raw[i + 1 : i + 2] == "u" else raw[i : i + 2]
+            if len(sequenza) < (6 if raw[i + 1 : i + 2] == "u" else 2):
+                break  # escape spezzato dal frammento: si aspetta il resto
+            try:
+                fuori.append(json.loads(f'"{sequenza}"'))
+            except ValueError:
+                break
+            i += len(sequenza)
+            continue
+        fuori.append(c)
+        i += 1
+    return "".join(fuori)

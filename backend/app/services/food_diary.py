@@ -373,6 +373,7 @@ def create_manual_product(
     protein_100g: float,
     carbs_100g: float,
     fat_100g: float,
+    fiber_100g: float | None = None,
     barcode: str | None = None,
 ) -> Ingredient:
     """Prodotto inserito dall'etichetta, visibile solo a chi lo inserisce."""
@@ -390,6 +391,7 @@ def create_manual_product(
         protein_100g=protein_100g,
         carbs_100g=carbs_100g,
         fat_100g=fat_100g,
+        fiber_100g=fiber_100g,
         created_by_user_id=user_id,
     )
     db.add(ingrediente)

@@ -1,0 +1,226 @@
+{
+  "_nota": "Set di prova della generazione scheda. La parte numerica del generatore è DETERMINISTICA (serie, ripetizioni, RIR, recuperi e scelta degli esercizi arrivano dai parametri della knowledge base, non dall'LLM): i casi di categoria «scheda» girano quindi anche senza chiave Gemini, ed è proprio la proprietà da tenere ferma. L'LLM interviene solo in `explain_plan`, che riscrive la motivazione: i casi di categoria «spiegazione» sono gli unici che consumano quota, e senza chiave risultano «non valutati». Il catalogo esercizi qui sotto è inventato ma costruito come quello vero (nomi in inglese, `equipment` a elenco separato da virgole, `priority` bassa per gli esercizi di base): serve a non dipendere dalla rete né dal database di produzione.",
+
+  "catalogo": [
+    {"name": "Barbell Bench Press", "primary_muscle": "Chest", "equipment": "barbell, bench", "is_compound": true, "priority": 10},
+    {"name": "Incline Dumbbell Press", "primary_muscle": "Chest", "equipment": "dumbbell, bench", "is_compound": true, "priority": 20},
+    {"name": "Push-Up", "primary_muscle": "Chest", "equipment": "none (bodyweight exercise)", "is_compound": true},
+    {"name": "Cable Crossover", "primary_muscle": "Chest", "equipment": "cable", "is_compound": false},
+    {"name": "Dumbbell Fly", "primary_muscle": "Chest", "equipment": "dumbbell, bench", "is_compound": false},
+
+    {"name": "Barbell Row", "primary_muscle": "Lats", "equipment": "barbell", "is_compound": true, "priority": 10},
+    {"name": "One-Arm Dumbbell Row", "primary_muscle": "Lats", "equipment": "dumbbell, bench", "is_compound": true, "priority": 20},
+    {"name": "Pull-Up", "primary_muscle": "Lats", "equipment": "none (bodyweight exercise)", "is_compound": true},
+    {"name": "Lat Pulldown", "primary_muscle": "Lats", "equipment": "cable", "is_compound": true},
+    {"name": "Straight-Arm Pulldown", "primary_muscle": "Lats", "equipment": "cable", "is_compound": false},
+    {"name": "Dumbbell Pullover", "primary_muscle": "Lats", "equipment": "dumbbell, bench", "is_compound": false},
+
+    {"name": "Barbell Shrug", "primary_muscle": "Trapezius", "equipment": "barbell", "is_compound": false, "priority": 10},
+    {"name": "Dumbbell Shrug", "primary_muscle": "Trapezius", "equipment": "dumbbell", "is_compound": false},
+    {"name": "Cable Face Pull", "primary_muscle": "Trapezius", "equipment": "cable", "is_compound": false},
+    {"name": "Prone Y-Raise", "primary_muscle": "Trapezius", "equipment": "none (bodyweight exercise)", "is_compound": false},
+
+    {"name": "Overhead Barbell Press", "primary_muscle": "Shoulders", "equipment": "barbell", "is_compound": true, "priority": 10},
+    {"name": "Seated Dumbbell Press", "primary_muscle": "Shoulders", "equipment": "dumbbell, bench", "is_compound": true, "priority": 20},
+    {"name": "Pike Push-Up", "primary_muscle": "Shoulders", "equipment": "none (bodyweight exercise)", "is_compound": true},
+    {"name": "Dumbbell Lateral Raise", "primary_muscle": "Shoulders", "equipment": "dumbbell", "is_compound": false},
+    {"name": "Cable Lateral Raise", "primary_muscle": "Shoulders", "equipment": "cable", "is_compound": false},
+
+    {"name": "Barbell Curl", "primary_muscle": "Biceps", "equipment": "barbell", "is_compound": false, "priority": 10},
+    {"name": "Incline Dumbbell Curl", "primary_muscle": "Biceps", "equipment": "dumbbell, bench", "is_compound": false},
+    {"name": "Cable Curl", "primary_muscle": "Biceps", "equipment": "cable", "is_compound": false},
+    {"name": "Chin-Up", "primary_muscle": "Biceps", "equipment": "none (bodyweight exercise)", "is_compound": true},
+
+    {"name": "Close-Grip Bench Press", "primary_muscle": "Triceps", "equipment": "barbell, bench", "is_compound": true, "priority": 10},
+    {"name": "Bench Dip", "primary_muscle": "Triceps", "equipment": "none (bodyweight exercise)", "is_compound": true},
+    {"name": "Overhead Dumbbell Extension", "primary_muscle": "Triceps", "equipment": "dumbbell", "is_compound": false},
+    {"name": "Cable Pushdown", "primary_muscle": "Triceps", "equipment": "cable", "is_compound": false},
+
+    {"name": "Barbell Back Squat", "primary_muscle": "Quads", "equipment": "barbell", "is_compound": true, "priority": 10},
+    {"name": "Goblet Squat", "primary_muscle": "Quads", "equipment": "dumbbell", "is_compound": true, "priority": 20},
+    {"name": "Bodyweight Split Squat", "primary_muscle": "Quads", "equipment": "none (bodyweight exercise)", "is_compound": true},
+    {"name": "Leg Press", "primary_muscle": "Quads", "equipment": "machine", "is_compound": true},
+    {"name": "Leg Extension", "primary_muscle": "Quads", "equipment": "machine", "is_compound": false},
+    {"name": "Dumbbell Bulgarian Split Squat", "primary_muscle": "Quads", "equipment": "dumbbell", "is_compound": false},
+
+    {"name": "Barbell Romanian Deadlift", "primary_muscle": "Hamstrings", "equipment": "barbell", "is_compound": true, "priority": 10},
+    {"name": "Dumbbell Romanian Deadlift", "primary_muscle": "Hamstrings", "equipment": "dumbbell", "is_compound": true, "priority": 20},
+    {"name": "Seated Leg Curl", "primary_muscle": "Hamstrings", "equipment": "machine", "is_compound": false},
+    {"name": "Lying Leg Curl", "primary_muscle": "Hamstrings", "equipment": "machine", "is_compound": false},
+    {"name": "Nordic Hamstring Curl", "primary_muscle": "Hamstrings", "equipment": "none (bodyweight exercise)", "is_compound": false},
+
+    {"name": "Barbell Hip Thrust", "primary_muscle": "Glutes", "equipment": "barbell, bench", "is_compound": true, "priority": 10},
+    {"name": "Dumbbell Hip Thrust", "primary_muscle": "Glutes", "equipment": "dumbbell, bench", "is_compound": true, "priority": 20},
+    {"name": "Glute Bridge", "primary_muscle": "Glutes", "equipment": "none (bodyweight exercise)", "is_compound": false},
+    {"name": "Cable Kickback", "primary_muscle": "Glutes", "equipment": "cable", "is_compound": false},
+
+    {"name": "Standing Calf Raise", "primary_muscle": "Calves", "equipment": "machine", "is_compound": false, "priority": 10},
+    {"name": "Dumbbell Standing Calf Raise", "primary_muscle": "Calves", "equipment": "dumbbell", "is_compound": false},
+    {"name": "Seated Calf Raise", "primary_muscle": "Calves", "equipment": "machine", "is_compound": false},
+    {"name": "Bodyweight Calf Raise", "primary_muscle": "Calves", "equipment": "none (bodyweight exercise)", "is_compound": false},
+
+    {"name": "Cable Crunch", "primary_muscle": "Abs", "equipment": "cable", "is_compound": false, "priority": 10},
+    {"name": "Hanging Knee Raise", "primary_muscle": "Abs", "equipment": "none (bodyweight exercise)", "is_compound": false},
+    {"name": "Weighted Crunch", "primary_muscle": "Abs", "equipment": "dumbbell", "is_compound": false},
+    {"name": "Reverse Crunch", "primary_muscle": "Abs", "equipment": "none (bodyweight exercise)", "is_compound": false}
+  ],
+
+  "profili": {
+    "principiante-2g": {"sex": "male", "birth_date": "2001-06-15", "height_cm": 176, "weight_kg": 70, "goal": "hypertrophy", "experience_level": "beginner", "training_days_per_week": 2, "diet_type": "omnivore"},
+    "intermedio-4g": {"sex": "male", "birth_date": "1994-03-02", "height_cm": 180, "weight_kg": 82, "goal": "hypertrophy", "experience_level": "intermediate", "training_days_per_week": 4, "diet_type": "omnivore"},
+    "dimagrimento-3g": {"sex": "female", "birth_date": "1990-11-08", "height_cm": 164, "weight_kg": 72, "goal": "fat_loss", "experience_level": "beginner", "training_days_per_week": 3, "diet_type": "omnivore"},
+    "manubri-casa": {"sex": "female", "birth_date": "1996-02-20", "height_cm": 168, "weight_kg": 61, "goal": "hypertrophy", "experience_level": "intermediate", "training_days_per_week": 3, "diet_type": "omnivore", "available_equipment": "dumbbell, bench"},
+    "corpo-libero": {"sex": "male", "birth_date": "1999-07-30", "height_cm": 175, "weight_kg": 68, "goal": "maintenance", "experience_level": "beginner", "training_days_per_week": 3, "diet_type": "omnivore", "available_equipment": "tappetino"},
+    "forza-avanzato-5g": {"sex": "male", "birth_date": "1988-05-12", "height_cm": 183, "weight_kg": 90, "goal": "strength", "experience_level": "advanced", "training_days_per_week": 5, "diet_type": "omnivore"},
+    "over65": {"sex": "female", "birth_date": "1955-01-25", "height_cm": 160, "weight_kg": 63, "goal": "general_health", "experience_level": "beginner", "training_days_per_week": 3, "diet_type": "omnivore"}
+  },
+
+  "casi": [
+    {
+      "id": "principiante-2-giorni",
+      "categoria": "scheda",
+      "profilo": "principiante-2g",
+      "attese": {
+        "giorni": 2,
+        "split": "full_body",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "tag_attesi": ["volume_allenamento", "recupero", "progressione", "ipertrofia"],
+        "ripetizioni_attese": {"compound": [6, 8], "isolation": [8, 10]},
+        "recuperi_ammessi": [90, 120],
+        "rir": 3,
+        "motivazione_contiene": ["serie settimanali", "rir 3"]
+      }
+    },
+    {
+      "id": "intermedio-4-giorni",
+      "categoria": "scheda",
+      "profilo": "intermedio-4g",
+      "attese": {
+        "giorni": 4,
+        "split": "upper_lower",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "tag_attesi": ["volume_allenamento", "ipertrofia"],
+        "ripetizioni_attese": {"compound": [6, 8], "isolation": [8, 10]},
+        "recuperi_ammessi": [90, 120],
+        "rir": 2,
+        "muscoli_attesi": ["Chest", "Lats", "Quads", "Hamstrings", "Glutes", "Abs"]
+      }
+    },
+    {
+      "id": "dimagrimento-3-giorni",
+      "categoria": "scheda",
+      "profilo": "dimagrimento-3g",
+      "attese": {
+        "giorni": 3,
+        "split": "full_body",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "ripetizioni_attese": {"compound": [6, 8], "isolation": [10, 12]},
+        "recuperi_ammessi": [90, 120],
+        "rir": 3,
+        "nome_contiene": "definizione"
+      }
+    },
+    {
+      "id": "solo-manubri",
+      "categoria": "scheda",
+      "profilo": "manubri-casa",
+      "attese": {
+        "giorni": 3,
+        "split": "full_body",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "attrezzi_vietati": ["barbell", "cable", "machine"],
+        "nessuna_avvertenza_contiene": ["Nessun esercizio disponibile"]
+      }
+    },
+    {
+      "id": "solo-corpo-libero",
+      "categoria": "scheda",
+      "profilo": "corpo-libero",
+      "attese": {
+        "giorni": 3,
+        "split": "full_body",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "attrezzi_vietati": ["barbell", "dumbbell", "cable", "machine"],
+        "nessuna_avvertenza_contiene": ["Nessun esercizio disponibile"]
+      }
+    },
+    {
+      "id": "forza-avanzato-5-giorni",
+      "categoria": "scheda",
+      "profilo": "forza-avanzato-5g",
+      "attese": {
+        "giorni": 5,
+        "split": "push_pull_legs",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "ripetizioni_attese": {"compound": [3, 5], "isolation": [6, 8]},
+        "recuperi_ammessi": [240],
+        "rir": 1,
+        "tag_attesi": ["forza"]
+      }
+    },
+    {
+      "id": "over65-equilibrio",
+      "categoria": "scheda",
+      "profilo": "over65",
+      "attese": {
+        "giorni": 3,
+        "split": "full_body",
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "tag_attesi": ["attivita_generale"],
+        "avvertenze_contengono": ["equilibrio"],
+        "ripetizioni_attese": {"compound": [8, 10], "isolation": [10, 12]}
+      }
+    },
+    {
+      "id": "screening-volume-al-minimo",
+      "categoria": "scheda",
+      "profilo": "intermedio-4g",
+      "screening": {"bone_joint_problem": true},
+      "attese": {
+        "giorni": 4,
+        "serie_nel_range_fonti": true,
+        "no_duplicati_nel_giorno": true,
+        "attrezzatura_rispettata": true,
+        "tag_attesi": ["screening"],
+        "avvertenze_contengono": ["medico"],
+        "volume_al_minimo": true
+      }
+    },
+    {
+      "id": "spiegazione-intermedio",
+      "categoria": "spiegazione",
+      "profilo": "intermedio-4g",
+      "attese": {
+        "max_parole": 220,
+        "contiene_una_fra": ["rir 2", "rir: 2", "2 ripetizioni"],
+        "non_contiene": ["creatina", "integrator", "proteine in polvere", "brucia grassi"],
+        "numeri_scheda_invariati": true
+      }
+    },
+    {
+      "id": "spiegazione-over65",
+      "categoria": "spiegazione",
+      "profilo": "over65",
+      "attese": {
+        "max_parole": 220,
+        "contiene_una_fra": ["equilibrio", "funzional"],
+        "non_contiene": ["creatina", "integrator", "cedimento totale"],
+        "numeri_scheda_invariati": true
+      }
+    }
+  ]
+}

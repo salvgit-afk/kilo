@@ -49,6 +49,11 @@ seguito dal contenuto in prosa che l'agente usa come contesto.
 | `hypertrophy_prescription.md` | `ipertrofia`, `tecniche_avanzate`, `cardio` | Scheda con obiettivo massa muscolare; domande su ripetizioni, drop set/superserie, cardio insieme ai pesi |
 | `biomechanics_technique.md` | `biomeccanica`, `tecnica_esecuzione`, `ampiezza_movimento` | Domande su tecnica, ampiezza di movimento, allungamento, cadenza, stretching; motiva la preferenza di generatore e sostituzioni per leg curl da seduti ed estensioni dei tricipiti sopra la testa |
 | `resistance_training_acsm.md` | `progressione`, `forza`, `frequenza_allenamento`, `periodizzazione` | **Ogni** generazione scheda; domande su carichi, frequenza, progressione, livello di esperienza |
+| `training_dose_response.md` | `dose_risposta`, `volume_settimanale` | Domande su quante serie/quante volte a settimana; forma della curva dose-risposta di volume e frequenza (Pelland 2026). Approfondisce `training_volume.md` |
+| `stretch_mediated_hypertrophy.md` | `allungamento`, `parziali` | Domande su allenamento in allungamento, ripetizioni parziali, scelta fra varianti di uno stesso esercizio; è la fonte del campo `lengthened_note` di `exercise_guidance.py` |
+| `advanced_techniques_efficiency.md` | `tecniche_intensita`, `allenamento_breve` | Domande su drop set, rest-pause, myo-reps, cluster set, rest-redistribution; utente che dichiara di avere poco tempo |
+| `detraining_and_return.md` | `pausa_allenamento`, `ripresa` | Utente fermo da un periodo, di ritorno dopo una pausa, o che sa di doversi fermare (viaggio, infortunio) |
+| `muscle_activation_emg.md` | `attivazione_muscolare`, `emg` | Domande su "quale esercizio attiva di più", studi EMG, connessione mente-muscolo, "non sento il muscolo" |
 | `calorie_and_1rm_formulas.md` | `calorie`, `1rm` | Calcolo target calorico, report progressione |
 | `protein_intake.md` | `proteine` | Piano alimentare, valutazione integratore proteico |
 | `diets_body_composition.md` | `composizione_corporea`, `surplus_calorico`, `tipi_dieta` | Target con obiettivo massa o definizione; domande su surplus, keto/low-carb, digiuno intermittente |
@@ -68,6 +73,8 @@ seguito dal contenuto in prosa che l'agente usa come contesto.
 | `supplement_evidence_categories.md` | `categorie_integratori` | Domande generiche sugli integratori o su integratori senza file dedicato (tribulus, arginina, carnitina, bicarbonato, nitrati…) |
 | `supplement_quality_safety.md` | `qualita_prodotto` | **Sempre insieme** a qualunque integratore dichiarato (creatina, proteine, ecc.) — rischio da contaminazione/etichettatura, non da dosaggio |
 | `vegetarian_vegan_nutrition.md` | `vegetariano`, `vegano` | Piano alimentare/ricette per utenti che dichiarano dieta vegetariana o vegana |
+| `sleep_and_recovery.md` | `sonno`, `recupero_notturno` | Utente che riferisce di dormire poco o male; domande su recupero notturno, stanchezza, ore di sonno |
+| `women_training_menstrual_cycle.md` | `donne`, `ciclo_mestruale` | Domande su allenamento e nutrizione nelle donne, periodizzazione sul ciclo, pillola, menopausa |
 | `evidence_conduct.md` | *(nessuno — regola trasversale)* | **Sempre** in ogni prompt di generazione, indipendentemente dal topic |
 
 ## Come li usa l'agente (meccanismo)
@@ -142,6 +149,47 @@ testo integrale:
 - `creatine.md` e `nutrient_timing.md` — **da `media` ad `alta`**, con due
   correzioni: lo "0,03 g/kg" di mantenimento della creatina e la finestra
   "1 ora prima / 1-4 ore dopo" del timing non comparivano nelle fonti.
+
+**Aggiornamento 2026-09-24**: sette documenti nuovi, tutti verificati sugli
+abstract strutturati integrali recuperati dalle API E-utilities di NCBI
+(`eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&...`), che
+restituiscono il testo senza le pagine anti-bot di PubMed. Restano ad
+`affidabilità: media` tutti tranne `training_dose_response.md` perché sono
+estrazioni da abstract, non da testo integrale.
+
+- `training_dose_response.md` (nuovo, `affidabilità: alta`) — la
+  meta-regressione Pelland et al. (Sports Medicine 2026) sulla relazione
+  dose-risposta di volume e frequenza, già usata in `training_volume.md` ma
+  mai riportata per esteso. Documenta il metodo di conteggio "frazionario"
+  (0,5 per le serie indirette) e dice quali range di `training_volume.md`
+  restano sostenuti dalla fonte e quali sono scelte di progetto.
+- `stretch_mediated_hypertrophy.md` (nuovo) — dà una fonte esplicita al campo
+  `lengthened_note` di `app/services/exercise_guidance.py`, studio per studio.
+  Include il contrappeso onesto: la meta-analisi sull'ipertrofia regionale
+  (Varovic 2025) trova differenze banali, e nei soggetti allenati (Wolf 2025)
+  parziali in allungamento e movimento completo danno gli stessi risultati.
+- `sleep_and_recovery.md` (nuovo) — **correzione di un'aspettativa**: la
+  revisione sistematica 2025 su sonno e forza (Easow, Sleep and Breathing) è
+  narrativa e **non riporta alcun effect size aggregato**. L'unica cifra
+  aggregata disponibile viene dalla meta-analisi di Craven (Sports Medicine
+  2022): −7,56% di prestazione con perdita di sonno. Il file dichiara
+  esplicitamente che una "dose di sonno per l'ipertrofia" non è prescrivibile.
+- `advanced_techniques_efficiency.md` (nuovo) — meta-analisi 2026 su drop set,
+  rest-pause, cluster set e rest-redistribution: a parità di volume e impegno
+  l'ipertrofia è uguale, il vantaggio è il tempo (circa metà seduta, secondo
+  Iversen 2021).
+- `detraining_and_return.md` (nuovo) — soglia delle 4 settimane (Mujika &
+  Padilla 2000), meta-analisi di Bosquet 2013, dose minima di mantenimento
+  (Bickel 2011: un terzo o un nono del volume basta ai giovani, non agli
+  anziani) e lo studio Halonen 2024 sulle pause programmate.
+- `muscle_activation_emg.md` (nuovo) — perché l'EMG di superficie non predice
+  la crescita, e cosa mostrano davvero gli studi sulla connessione
+  mente-muscolo. Serve soprattutto a evitare che l'agente ripeta affermazioni
+  da palestra.
+- `women_training_menstrual_cycle.md` (nuovo) — le revisioni concludono che
+  **non ci sono prove sufficienti** per periodizzare l'allenamento sul ciclo
+  mestruale; il file lo dice apertamente e riporta solo ciò che è documentato,
+  inclusi i numeri nutrizionali del position stand ISSN 2023 sulle atlete.
 
 I restanti file (proteine ISSN, caffeina, recupero, idratazione,
 beta-alanina, HMB, BCAA) restano a `affidabilità: media`. Molti sono open

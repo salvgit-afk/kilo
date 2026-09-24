@@ -768,3 +768,33 @@ export const TAG_LABELS: Record<string, string> = {
   tipi_dieta: "Tipi di dieta",
   categorie_integratori: "Categorie di evidenza degli integratori",
 };
+
+// --- Diario dalla fotocamera ------------------------------------------------
+
+/**
+ * Valori letti da una foto di etichetta nutrizionale.
+ *
+ * Non salvano niente da soli: riempiono il modulo dell'alimento manuale, che
+ * l'utente conferma. Ogni numero può mancare — se non si legge, il backend lo
+ * lascia `null` invece di inventarlo. Con `per_serving` i valori erano per
+ * porzione e non per 100 g: vanno convertiti prima di usarli.
+ */
+export type LabelPhoto = {
+  name: string;
+  brand: string | null;
+  kcal_100g: number | null;
+  protein_100g: number | null;
+  carbs_100g: number | null;
+  fat_100g: number | null;
+  fiber_100g: number | null;
+  serving_g: number | null;
+  per_serving: boolean;
+  warnings: string[];
+};
+
+/**
+ * Bozza letta da una foto del piatto: stessa forma dell'importazione di una
+ * ricetta, così il percorso «correggo i grammi e verso nel diario» è uno solo.
+ * Dalla foto ogni quantità è una stima (`estimated` sempre vero).
+ */
+export type MealPhoto = ImportedRecipe;

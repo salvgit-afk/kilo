@@ -460,6 +460,8 @@ class ManualProductIn(BaseModel):
     protein_100g: float = Field(ge=0, le=100)
     carbs_100g: float = Field(ge=0, le=100)
     fat_100g: float = Field(ge=0, le=100)
+    # Letta dall'etichetta quando c'è: entra nel totale di fibra della giornata.
+    fiber_100g: float | None = Field(default=None, ge=0, le=100)
 
 
 class MealItemIn(BaseModel):
@@ -577,6 +579,27 @@ class RecipeImportOut(BaseModel):
     instructions: str | None
     items: list[RecipeItemOut]
     warnings: list[str]
+
+
+class LabelPhotoOut(BaseModel):
+    """Valori letti da una foto di etichetta nutrizionale.
+
+    Non salva niente: riempie il modulo dell'alimento manuale, che l'utente
+    conferma. `warnings` dice cosa controllare (valori per porzione, numeri
+    che non tornano fra loro).
+    """
+
+    name: str
+    brand: str | None = None
+    kcal_100g: float | None = None
+    protein_100g: float | None = None
+    carbs_100g: float | None = None
+    fat_100g: float | None = None
+    fiber_100g: float | None = None
+    serving_g: float | None = None
+    # I valori letti erano per porzione e non per 100 g.
+    per_serving: bool = False
+    warnings: list[str] = []
 
 
 class RecipeToDiaryIn(BaseModel):

@@ -85,6 +85,9 @@ DAILY_LIMITS = {
     "recipe_import": 25,
     # Notifica di prova dal Profilo.
     "push_test": 10,
+    # Foto di etichette e piatti: una chiamata al modello ciascuna, e le
+    # immagini costano più token del testo.
+    "photo_scan": 40,
 }
 
 

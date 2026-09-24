@@ -182,3 +182,172 @@ def test_la_chat_non_invia_il_nome(db, monkeypatch):
     assert "Mariarosa" not in visti["prompt"] + visti["system"]
     assert "REGOLE VINCOLANTI" in visti["system"]
     assert visti["prompt"].startswith("<domanda>")
+
+
+# --- Streaming ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "grezzo, atteso",
+    [
+        ('{"risposta": "Ciao, come', "Ciao, come"),
+        ('{"risposta": "Riga\\nDue", "azioni": []}', "Riga\nDue"),
+        ('{"risposta": "perch\\u00e9', "perché"),
+        # Escape spezzato a metà dal frammento: si aspetta il pezzo mancante
+        # invece di mostrare caratteri strani.
+        ('{"risposta": "perch\\u00', "perch"),
+        ('{"azioni": []}', ""),
+        ("", ""),
+    ],
+)
+def test_risposta_parziale_mentre_arriva(grezzo, atteso):
+    assert llm_client.partial_string(grezzo, "risposta") == atteso
+
+
+class _FintoStream:
+    """Risposta SSE finta, nella forma in cui la manda Gemini."""
+
+    def __init__(self, righe, status_code=200):
+        self.righe = righe
+        self.status_code = status_code
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def iter_lines(self):
+        return iter(self.righe)
+
+    def read(self):
+        return b""
+
+
+def test_streaming_restituisce_i_frammenti(monkeypatch):
+    righe = [
+        'data: {"candidates":[{"content":{"parts":[{"text":"{\\"risposta\\": \\"Cia"}]}}]}',
+        "",
+        'data: {"candidates":[{"content":{"parts":[{"text":"o\\"}"}]}}],"usageMetadata":{"promptTokenCount":10}}',
+        "data: [DONE]",
+    ]
+    monkeypatch.setattr(llm_client.httpx, "stream", lambda *a, **k: _FintoStream(righe))
+    pezzi = list(llm_client.stream_structured("domanda", {"type": "object"}))
+    assert "".join(pezzi) == '{"risposta": "Ciao"}'
+    assert llm_client.partial_string(pezzi[0], "risposta") == "Cia"
+
+
+def test_streaming_quota_esaurita(monkeypatch):
+    monkeypatch.setattr(llm_client.httpx, "stream", lambda *a, **k: _FintoStream([], status_code=429))
+    with pytest.raises(llm_client.LLMQuotaExceeded):
+        list(llm_client.stream_structured("domanda", {"type": "object"}))
+
+
+def test_streaming_errore_di_rete_diventa_LLMError(monkeypatch):
+    def esplode(*_a, **_k):
+        raise llm_client.httpx.ConnectError("rete assente")
+
+    monkeypatch.setattr(llm_client.httpx, "stream", esplode)
+    with pytest.raises(llm_client.LLMError):
+        list(llm_client.stream_structured("domanda", {"type": "object"}))
+
+
+def test_chat_in_streaming_manda_pezzi_e_poi_le_azioni(db, monkeypatch):
+    """La risposta arriva a pezzi; azioni e fonti solo alla fine."""
+    import datetime as dt
+
+    from app.models import ActivityLevel, ExperienceLevel, Goal, Sex, UserProfile
+
+    p = UserProfile(
+        display_name="Luca", birth_date=dt.date(1996, 1, 1), sex=Sex.MALE, height_cm=180,
+        weight_kg=80, goal=Goal.HYPERTROPHY, experience_level=ExperienceLevel.BEGINNER,
+        activity_level=ActivityLevel.MODERATELY_ACTIVE, training_days_per_week=3,
+    )
+    db.add(p)
+    db.commit()
+
+    pezzi = [
+        '{"risposta": "Per la massa ',
+        'servono 1,6-2,2 g/kg.", "azioni": [',
+        '{"tipo": "apri_sezione", "etichetta": "Apri il diario", "valore": "diario"}]}',
+    ]
+    monkeypatch.setattr(llm_client, "stream_structured", lambda *a, **k: iter(pezzi))
+
+    eventi = list(chat_agent.answer_stream(db, p, "quante proteine per la massa?"))
+    testo = "".join(v for t, v in eventi if t == "delta")
+    tipo, finale = eventi[-1]
+    assert testo == "Per la massa servono 1,6-2,2 g/kg."
+    assert tipo == "done" and finale.answer == testo
+    assert finale.actions and finale.actions[0]["section"] == "diario"
+    assert "proteine" in finale.knowledge_tags
+
+
+def test_chat_in_streaming_risposta_troncata_non_perde_il_testo(db, monkeypatch):
+    import datetime as dt
+
+    from app.models import ActivityLevel, ExperienceLevel, Goal, Sex, UserProfile
+
+    p = UserProfile(
+        display_name="Luca", birth_date=dt.date(1996, 1, 1), sex=Sex.MALE, height_cm=180,
+        weight_kg=80, goal=Goal.HYPERTROPHY, experience_level=ExperienceLevel.BEGINNER,
+        activity_level=ActivityLevel.MODERATELY_ACTIVE, training_days_per_week=3,
+    )
+    db.add(p)
+    db.commit()
+    monkeypatch.setattr(
+        llm_client, "stream_structured", lambda *a, **k: iter(['{"risposta": "Ti sp'])
+    )
+    _, finale = list(chat_agent.answer_stream(db, p, "dimmi qualcosa"))[-1]
+    assert finale.answer == "Ti sp" and finale.actions == []
+
+
+def test_chat_in_streaming_quota_esaurita(db, monkeypatch):
+    import datetime as dt
+
+    from app.models import ActivityLevel, ExperienceLevel, Goal, Sex, UserProfile
+
+    p = UserProfile(
+        display_name="Luca", birth_date=dt.date(1996, 1, 1), sex=Sex.MALE, height_cm=180,
+        weight_kg=80, goal=Goal.HYPERTROPHY, experience_level=ExperienceLevel.BEGINNER,
+        activity_level=ActivityLevel.MODERATELY_ACTIVE, training_days_per_week=3,
+    )
+    db.add(p)
+    db.commit()
+
+    def esaurita(*_a, **_k):
+        raise llm_client.LLMQuotaExceeded("quota")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(llm_client, "stream_structured", esaurita)
+    eventi = list(chat_agent.answer_stream(db, p, "ciao"))
+    assert len(eventi) == 1 and "esaurito i messaggi" in eventi[0][1].answer
+
+
+def test_la_chat_normale_e_quella_in_streaming_usano_lo_stesso_prompt(db, monkeypatch):
+    """Se le due strade divergessero, le evals coprirebbero solo una delle due."""
+    import datetime as dt
+
+    from app.models import ActivityLevel, ExperienceLevel, Goal, Sex, UserProfile
+
+    p = UserProfile(
+        display_name="Luca", birth_date=dt.date(1996, 1, 1), sex=Sex.MALE, height_cm=180,
+        weight_kg=80, goal=Goal.HYPERTROPHY, experience_level=ExperienceLevel.BEGINNER,
+        activity_level=ActivityLevel.MODERATELY_ACTIVE, training_days_per_week=3,
+    )
+    db.add(p)
+    db.commit()
+    visti = {}
+
+    def finto(prompt, schema, **kwargs):
+        visti["normale"] = (prompt, kwargs.get("system"))
+        return {"risposta": "ok", "azioni": []}
+
+    def finto_stream(prompt, schema, **kwargs):
+        visti["stream"] = (prompt, kwargs.get("system"))
+        return iter(['{"risposta": "ok"}'])
+
+    monkeypatch.setattr(llm_client, "generate_structured", finto)
+    monkeypatch.setattr(llm_client, "stream_structured", finto_stream)
+    chat_agent.answer(db, p, "quante serie a settimana?")
+    list(chat_agent.answer_stream(db, p, "quante serie a settimana?"))
+    assert visti["normale"] == visti["stream"]

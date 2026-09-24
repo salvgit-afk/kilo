@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,6 +42,7 @@ from app.schemas import (
     MealOut,
     NutritionTargetsOut,
     RecipeImportIn,
+    LabelPhotoOut,
     RecipeImportOut,
     RecipeItemOut,
     RecipeSuggestionOut,
@@ -51,6 +52,7 @@ from app.schemas import (
 )
 from app.services import (
     food_diary,
+    food_photo,
     gap_filler,
     meal_suggestions,
     nutrition_targets,
@@ -481,6 +483,73 @@ def read_diary(
     )
 
 
+def _immagine(file: UploadFile) -> tuple[bytes, str]:
+    """Contenuto e tipo della foto caricata, con i controlli di base."""
+    dati = file.file.read(food_photo.MAX_IMAGE_BYTES + 1)
+    tipo = (file.content_type or "").split(";")[0].strip().lower()
+    try:
+        food_photo._check(dati, tipo)
+    except food_photo.PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return dati, tipo
+
+
+def _quota_foto(db: Session, user: User) -> None:
+    try:
+        rate_limit.consume_daily(db, user.id, "photo_scan")
+    except rate_limit.RateLimited as e:
+        raise HTTPException(
+            status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
+        ) from e
+
+
+@router.post("/diary/photo/label", response_model=LabelPhotoOut)
+def read_label_photo(
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+    profile: UserProfile = Depends(owned_profile),
+) -> LabelPhotoOut:
+    """Legge la tabella nutrizionale da una foto.
+
+    Serve quando il codice a barre non c'è o non viene riconosciuto: con il
+    codice a barre si legge un prodotto reale da Open Food Facts, qui si
+    trascrivono i numeri stampati, che restano da confermare.
+    """
+    dati, tipo = _immagine(photo)
+    _quota_foto(db, user)
+    db.commit()
+    try:
+        lettura = food_photo.read_label(dati, tipo)
+    except food_photo.PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return LabelPhotoOut(**vars(lettura))
+
+
+@router.post("/diary/photo/meal", response_model=RecipeImportOut)
+def read_meal_photo(
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+    profile: UserProfile = Depends(owned_profile),
+) -> RecipeImportOut:
+    """Riconosce gli alimenti in una foto del piatto e ne stima le quantità.
+
+    Restituisce la stessa bozza dell'importazione di una ricetta: quantità
+    stimate da correggere, macro presi dal catalogo alimenti.
+    """
+    dati, tipo = _immagine(photo)
+    _quota_foto(db, user)
+    db.commit()
+    try:
+        bozza = food_photo.read_meal(db, dati, tipo)
+    except food_photo.PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except recipe_import.RecipeImportError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return _import_out(bozza)
+
+
 @router.get("/recipes/suggest", response_model=list[RecipeSuggestionOut])
 def suggest_recipes(
     query: str | None = Query(default=None, max_length=100),
@@ -634,6 +703,11 @@ def import_recipe(
     except recipe_import.RecipeImportError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
+    return _import_out(bozza)
+
+
+def _import_out(bozza) -> RecipeImportOut:
+    """Bozza di ricetta (da testo o da foto) nella forma attesa dall'app."""
     return RecipeImportOut(
         name=bozza.name,
         servings=bozza.servings,

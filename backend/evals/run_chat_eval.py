@@ -24,11 +24,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
-import re
 import sys
 import time
-from collections import Counter
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -37,32 +34,23 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base
 from app.models import SupplementDeclaration, UserProfile
 from app.services import chat_agent, llm_client
+from evals import harness
 
 DIR = Path(__file__).resolve().parent
 GOLDEN = DIR / "chat_golden_set.json"
 BASELINE = DIR / "baseline.json"
-RESULTS = DIR / "results"
 MAX_WORDS = 230
-
-
-def normalize(text: str) -> str:
-    """Minuscole, trattini uniformi e senza spazi attorno, virgola decimale → punto."""
-    t = text.lower().replace("–", "-").replace("—", "-")
-    t = re.sub(r"\s*-\s*", "-", t)
-    return re.sub(r"(\d),(\d)", r"\1.\2", t)
 
 
 def check(case: dict, reply: chat_agent.ChatReply) -> list[str]:
     """Problemi trovati nella risposta; lista vuota = superato."""
     problemi = []
-    testo = normalize(reply.answer)
 
     attese = case.get("answer_any") or []
-    if attese and not any(normalize(a) in testo for a in attese):
+    if not harness.una_fra(reply.answer, attese):
         problemi.append(f"manca uno fra {attese}")
-    for vietata in case.get("answer_none") or []:
-        if normalize(vietata) in testo:
-            problemi.append(f"contiene «{vietata}»")
+    for vietata in harness.nessuna_fra(reply.answer, case.get("answer_none")):
+        problemi.append(f"contiene «{vietata}»")
     if not case.get("supplement_action") and any(
         a.get("section") == "integratori" for a in reply.actions
     ):
@@ -91,20 +79,16 @@ def build_profiles(db, profili: dict) -> dict[str, UserProfile]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", help="id dei casi da eseguire, separati da virgola")
+    harness.argomenti_comuni(parser)
     parser.add_argument("--pause", type=float, default=4.5, help="secondi fra una chiamata e l'altra")
-    parser.add_argument("--save-baseline", action="store_true", help="salva questo risultato come riferimento")
     args = parser.parse_args()
 
     if not llm_client.is_configured():
         print("GEMINI_API_KEY non configurata: niente da valutare.")
         return 2
 
-    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    casi = golden["casi"]
-    if args.only:
-        scelti = set(args.only.split(","))
-        casi = [c for c in casi if c["id"] in scelti]
+    golden = harness.carica_golden(GOLDEN)
+    casi = harness.seleziona(golden["casi"], args.only)
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -117,10 +101,10 @@ def main() -> int:
             time.sleep(args.pause)
         reply = chat_agent.answer(db, profili[caso["profilo"]], caso["question"], history=caso.get("history"))
         if not reply.used_llm:
-            stato, problemi = "non valutato", [reply.answer[:120]]
+            stato, problemi = harness.NON_VALUTATO, [reply.answer[:120]]
         else:
             problemi = check(caso, reply)
-            stato = "ok" if not problemi else "fallito"
+            stato = harness.stato_di(problemi)
         esiti[caso["id"]] = {
             "stato": stato,
             "categoria": caso["categoria"],
@@ -128,44 +112,14 @@ def main() -> int:
             "risposta": reply.answer,
             "azioni": reply.actions,
         }
-        segno = {"ok": "✓", "fallito": "✗", "non valutato": "?"}[stato]
-        print(f"{segno} {caso['id']:28} {'; '.join(problemi)[:110]}")
+        harness.stampa_esito(caso["id"], stato, problemi)
 
-    valutati = [e for e in esiti.values() if e["stato"] != "non valutato"]
-    superati = sum(e["stato"] == "ok" for e in valutati)
-    print(f"\nSuperati {superati}/{len(valutati)} ({len(esiti) - len(valutati)} non valutati)")
-    per_categoria = Counter(e["categoria"] for e in valutati if e["stato"] == "ok")
-    totali = Counter(e["categoria"] for e in valutati)
-    for categoria in sorted(totali):
-        print(f"  {categoria:14} {per_categoria[categoria]}/{totali[categoria]}")
-
-    risultato = {
-        "data": dt.datetime.now().isoformat(timespec="seconds"),
-        "modello": llm_client.get_settings().gemini_model,
-        "superati": superati,
-        "valutati": len(valutati),
-        "casi": esiti,
-    }
-    RESULTS.mkdir(exist_ok=True)
-    percorso = RESULTS / f"{dt.datetime.now():%Y-%m-%d-%H%M}.json"
-    percorso.write_text(json.dumps(risultato, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Risultato salvato in {percorso.relative_to(DIR.parent)}")
-
-    regressioni = []
-    if BASELINE.exists():
-        riferimento = json.loads(BASELINE.read_text(encoding="utf-8"))["casi"]
-        regressioni = [
-            cid for cid, e in esiti.items()
-            if e["stato"] == "fallito" and riferimento.get(cid, {}).get("stato") == "ok"
-        ]
-        if regressioni:
-            print(f"REGRESSIONI rispetto al riferimento: {', '.join(regressioni)}")
-
-    if args.save_baseline:
-        BASELINE.write_text(json.dumps(risultato, ensure_ascii=False, indent=2), encoding="utf-8")
-        print("Salvato come nuovo riferimento (evals/baseline.json)")
-
-    return 1 if regressioni else 0
+    return harness.finalizza(
+        esiti,
+        baseline=BASELINE,
+        intestazione={"modello": llm_client.get_settings().gemini_model},
+        salva_baseline=args.save_baseline,
+    )
 
 
 if __name__ == "__main__":

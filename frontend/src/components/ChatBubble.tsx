@@ -15,7 +15,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SPLIT_LABELS, api, type ChatAction, type ChatMessage, type ChatReply } from "@/lib/api";
+import { SPLIT_LABELS, api, session, type ChatAction, type ChatMessage, type ChatReply } from "@/lib/api";
 import { COACH_EVENT, SECTION_LABELS, type CoachAsk, type Intent } from "@/lib/coach";
 import type { SectionId } from "@/components/Shell";
 import { SourceTags } from "@/components/ui";
@@ -140,18 +140,49 @@ export function ChatBubble({
       setBusy(true);
       busyRef.current = true;
 
+      const corpo = {
+        message: domanda,
+        history: storico,
+        context: context ?? `Sezione ${SECTION_LABELS[sectionRef.current]}`,
+      };
+
       try {
-        const reply = await api.post<ChatReply>(`/workout/chat?profile_id=${profileId}`, {
-          message: domanda,
-          history: storico,
-          context: context ?? `Sezione ${SECTION_LABELS[sectionRef.current]}`,
+        // La risposta arriva mentre viene scritta: si aggiunge un messaggio
+        // vuoto e lo si riempie. Se lo streaming non parte (proxy, browser
+        // vecchio), si ripiega sulla risposta in un colpo solo.
+        let iniziata = false;
+        const aggiorna = (delta: string) => {
+          setMessages((prev) => {
+            const copia = [...prev];
+            const ultimo = copia[copia.length - 1];
+            if (ultimo?.role === "assistant") {
+              copia[copia.length - 1] = { ...ultimo, content: ultimo.content + delta };
+            }
+            return copia;
+          });
+        };
+
+        const reply = await streamChat(corpo, profileId, (delta) => {
+          if (!iniziata) {
+            iniziata = true;
+            push({ role: "assistant", content: delta, ai: true });
+            return;
+          }
+          aggiorna(delta);
         });
-        push({
-          role: "assistant",
-          content: reply.answer,
-          tags: reply.knowledge_tags,
-          actions: reply.actions,
-          ai: reply.used_llm,
+
+        setMessages((prev) => {
+          const finale: Message = {
+            role: "assistant",
+            content: reply.answer,
+            tags: reply.knowledge_tags,
+            actions: reply.actions,
+            ai: reply.used_llm,
+          };
+          if (!iniziata) return [...prev, finale];
+          const copia = [...prev];
+          copia[copia.length - 1] = finale;
+          return copia;
         });
       } catch (e) {
         push({
@@ -462,4 +493,81 @@ export function ChatBubble({
       </AnimatePresence>
     </>
   );
+}
+
+
+/**
+ * Chiede la risposta in streaming e restituisce quella definitiva.
+ *
+ * Il backend manda Server-Sent Events: `delta` per ogni pezzo di testo e
+ * `done` con azioni e fonti. Se lo streaming fallisce prima di aver mostrato
+ * qualcosa, si riprova con la chiamata normale: meglio una risposta che
+ * arriva tutta insieme che nessuna risposta.
+ */
+async function streamChat(
+  corpo: { message: string; history: ChatMessage[]; context: string },
+  profileId: number,
+  onDelta: (delta: string) => void
+): Promise<ChatReply> {
+  const token = session.get();
+  let risposta: Response;
+  try {
+    risposta = await fetch(`/api/workout/chat/stream?profile_id=${profileId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(corpo),
+      cache: "no-store",
+    });
+  } catch {
+    return api.post<ChatReply>(`/workout/chat?profile_id=${profileId}`, corpo);
+  }
+
+  if (!risposta.ok || !risposta.body) {
+    if (risposta.status === 429 || risposta.status === 401) {
+      // Quota finita o sessione scaduta: il percorso normale sa già spiegarlo.
+      return api.post<ChatReply>(`/workout/chat?profile_id=${profileId}`, corpo);
+    }
+    return api.post<ChatReply>(`/workout/chat?profile_id=${profileId}`, corpo);
+  }
+
+  const lettore = risposta.body.getReader();
+  const decoder = new TextDecoder();
+  let resto = "";
+  let finale: ChatReply | null = null;
+  let mostrato = false;
+
+  for (;;) {
+    const { done, value } = await lettore.read();
+    if (done) break;
+    resto += decoder.decode(value, { stream: true });
+    const righe = resto.split("\n\n");
+    resto = righe.pop() ?? "";
+    for (const riga of righe) {
+      const dati = riga.replace(/^data:\s*/, "").trim();
+      if (!dati) continue;
+      try {
+        const evento = JSON.parse(dati);
+        if (evento.type === "delta" && evento.text) {
+          mostrato = true;
+          onDelta(evento.text);
+        } else if (evento.type === "done") {
+          finale = {
+            answer: evento.answer,
+            knowledge_tags: evento.knowledge_tags ?? [],
+            used_llm: evento.used_llm ?? false,
+            actions: evento.actions ?? [],
+          };
+        }
+      } catch {
+        /* evento incompleto o non leggibile: si ignora */
+      }
+    }
+  }
+
+  if (finale) return finale;
+  if (mostrato) throw new Error("la risposta si è interrotta a metà");
+  return api.post<ChatReply>(`/workout/chat?profile_id=${profileId}`, corpo);
 }

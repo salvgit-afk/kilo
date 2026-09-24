@@ -19,6 +19,7 @@ dosaggio per qualcosa che la knowledge base non copre.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -35,9 +36,9 @@ logger = logging.getLogger("chat_agent")
 # ispezionabile: si può sempre dire quali documenti hanno prodotto una
 # risposta, che è il requisito posto da `evidence_conduct.md`.
 KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
-    "volume": ("volume_allenamento",),
+    "volume": ("volume_allenamento", "dose_risposta"),
     "serie": ("volume_allenamento",),
-    "quante serie": ("volume_allenamento",),
+    "quante serie": ("volume_allenamento", "dose_risposta", "volume_settimanale"),
     "recuper": ("recupero",),
     # "Recuperare tra gli allenamenti" è sonno, DOMS e volume, non il riposo
     # fra una serie e l'altra.
@@ -59,21 +60,21 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "progressione": ("progressione",),
     "principiante": ("progressione",),
     "forza": ("forza",),
-    "frequenza": ("frequenza_allenamento",),
-    "quante volte": ("frequenza_allenamento",),
+    "frequenza": ("frequenza_allenamento", "dose_risposta"),
+    "quante volte": ("frequenza_allenamento", "dose_risposta"),
     "periodizz": ("periodizzazione",),
-    "drop set": ("tecniche_avanzate",),
-    "superseri": ("tecniche_avanzate",),
-    "superset": ("tecniche_avanzate",),
+    "drop set": ("tecniche_avanzate", "tecniche_intensita"),
+    "superseri": ("tecniche_avanzate", "tecniche_intensita", "allenamento_breve"),
+    "superset": ("tecniche_avanzate", "tecniche_intensita", "allenamento_breve"),
     "pre-affaticamento": ("tecniche_avanzate",),
     "biomeccanic": ("biomeccanica",),
     "tecnica": ("tecnica_esecuzione",),
     "esecuzione": ("tecnica_esecuzione",),
     "cadenza": ("tecnica_esecuzione",),
     "eccentric": ("tecnica_esecuzione",),
-    "allungamento": ("ampiezza_movimento",),
+    "allungamento": ("ampiezza_movimento", "allungamento"),
     "ampiezza": ("ampiezza_movimento",),
-    "parziali": ("ampiezza_movimento",),
+    "parziali": ("ampiezza_movimento", "parziali", "allungamento"),
     "stretching": ("ampiezza_movimento",),
     "leg curl": ("biomeccanica",),
     "cardio": ("cardio",),
@@ -117,7 +118,7 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "omega": ("omega3",),
     "ashwagandha": ("integratori_oltre_muscolo",),
     "moringa": ("integratori_oltre_muscolo",),
-    "sonno": ("doms", "integratori_oltre_muscolo"),
+    "sonno": ("sonno", "doms", "integratori_oltre_muscolo"),
     "stress": ("integratori_oltre_muscolo",),
     "integrator": ("qualita_prodotto", "categorie_integratori"),
     "tribulus": ("categorie_integratori",),
@@ -144,6 +145,93 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "pettoral": ("biomeccanica",),
     "dopo l'allenamento": ("timing_pasti",),
     "prima di dormire": ("timing_pasti",),
+    # Dose-risposta di volume e frequenza (`training_dose_response.md`).
+    "dose": ("dose_risposta",),
+    "troppe serie": ("dose_risposta", "volume_settimanale"),
+    "serie a settimana": ("volume_settimanale", "dose_risposta"),
+    "settimanale": ("volume_settimanale",),
+    # Allungamento e parziali (`stretch_mediated_hypertrophy.md`).
+    "allungato": ("allungamento", "ampiezza_movimento"),
+    "allungat": ("allungamento",),
+    "stiramento": ("allungamento",),
+    "mezze ripetizioni": ("parziali", "allungamento"),
+    "ripetizioni parziali": ("parziali", "allungamento"),
+    "range completo": ("parziali", "ampiezza_movimento"),
+    "fino in fondo": ("parziali", "ampiezza_movimento"),
+    # Sonno e recupero notturno (`sleep_and_recovery.md`).
+    "dormo": ("sonno", "recupero_notturno"),
+    "dormire": ("sonno", "recupero_notturno"),
+    "dormito": ("sonno", "recupero_notturno"),
+    "insonnia": ("sonno",),
+    "notte": ("sonno",),
+    "ore di sonno": ("sonno", "recupero_notturno"),
+    "riposo notturno": ("sonno", "recupero_notturno"),
+    "stanco": ("sonno", "autoregolazione", "doms"),
+    "stanchezza": ("sonno", "autoregolazione", "doms"),
+    "sveglia": ("sonno",),
+    "turni di notte": ("sonno",),
+    # Tecniche di intensità ed efficienza temporale
+    # (`advanced_techniques_efficiency.md`).
+    "rest pause": ("tecniche_intensita",),
+    "rest-pause": ("tecniche_intensita",),
+    "myo-reps": ("tecniche_intensita",),
+    "myo reps": ("tecniche_intensita",),
+    "cluster": ("tecniche_intensita",),
+    "stripping": ("tecniche_intensita", "tecniche_avanzate"),
+    "tecniche di intensit": ("tecniche_intensita",),
+    "poco tempo": ("allenamento_breve", "tecniche_intensita"),
+    "non ho tempo": ("allenamento_breve", "tecniche_intensita"),
+    "allenamento breve": ("allenamento_breve",),
+    "allenamento veloce": ("allenamento_breve",),
+    "mezz'ora": ("allenamento_breve",),
+    "30 minuti": ("allenamento_breve",),
+    "accorciare": ("allenamento_breve",),
+    # Pausa e ripresa (`detraining_and_return.md`).
+    "pausa": ("pausa_allenamento", "ripresa"),
+    "fermo da": ("pausa_allenamento", "ripresa"),
+    "fermo per": ("pausa_allenamento", "ripresa"),
+    "smesso": ("pausa_allenamento", "ripresa"),
+    "smettere": ("pausa_allenamento",),
+    "ricomincia": ("ripresa", "pausa_allenamento"),
+    "riprendere": ("ripresa", "pausa_allenamento"),
+    "ripresa": ("ripresa", "pausa_allenamento"),
+    "torno ad allenarmi": ("ripresa", "pausa_allenamento"),
+    "dopo le vacanze": ("ripresa", "pausa_allenamento"),
+    "vacanz": ("pausa_allenamento", "ripresa"),
+    "non mi alleno da": ("pausa_allenamento", "ripresa"),
+    "perdo massa": ("pausa_allenamento",),
+    "perdere i progressi": ("pausa_allenamento",),
+    "detraining": ("pausa_allenamento",),
+    "memoria muscolare": ("pausa_allenamento", "ripresa"),
+    "mantenere": ("pausa_allenamento",),
+    "infortun": ("pausa_allenamento", "screening"),
+    # Attivazione muscolare ed EMG (`muscle_activation_emg.md`).
+    "attivazione": ("attivazione_muscolare", "emg"),
+    "attiva di più": ("attivazione_muscolare", "emg"),
+    "elettromiograf": ("emg", "attivazione_muscolare"),
+    "emg": ("emg", "attivazione_muscolare"),
+    "mente-muscolo": ("attivazione_muscolare",),
+    "mente muscolo": ("attivazione_muscolare",),
+    "connessione mente": ("attivazione_muscolare",),
+    "non lo sento": ("attivazione_muscolare", "tecnica_esecuzione"),
+    "non sento": ("attivazione_muscolare", "tecnica_esecuzione"),
+    "sentire il muscolo": ("attivazione_muscolare",),
+    "isolare": ("attivazione_muscolare", "scelta_esercizi"),
+    "reclutamento": ("attivazione_muscolare", "emg"),
+    # Donne e ciclo mestruale (`women_training_menstrual_cycle.md`).
+    "ciclo": ("ciclo_mestruale", "donne"),
+    "mestruaz": ("ciclo_mestruale", "donne"),
+    "mestruale": ("ciclo_mestruale", "donne"),
+    "ovulaz": ("ciclo_mestruale", "donne"),
+    "follicolare": ("ciclo_mestruale", "donne"),
+    "luteale": ("ciclo_mestruale", "donne"),
+    "pillola": ("ciclo_mestruale", "donne"),
+    "contraccett": ("ciclo_mestruale", "donne"),
+    "menopausa": ("donne", "ciclo_mestruale"),
+    "donna": ("donne",),
+    "donne": ("donne",),
+    "femminile": ("donne",),
+    "ragazza": ("donne",),
     # Sicurezza: sintomi che richiedono un medico. Senza queste chiavi "mi fa
     # male il petto quando corro" richiamava solo il documento sui DOMS.
     "dolore al petto": ("screening",),
@@ -436,6 +524,43 @@ def _untrusted(text: str) -> str:
     return (text or "").replace("<", "‹").replace(">", "›")
 
 
+def build_request(
+    db: Session,
+    profile: UserProfile,
+    question: str,
+    *,
+    history: list[dict] | None = None,
+    context: str | None = None,
+) -> tuple[str, str, list[str]]:
+    """Istruzioni di sistema, messaggio e tag delle fonti per una domanda.
+
+    Separata da `answer` perché la usano sia la risposta in un colpo solo sia
+    quella che arriva a pezzi (`answer_stream`): il prompt deve restare uno,
+    altrimenti le due strade prenderebbero strade diverse senza accorgersene.
+
+    Regole, dati dell'utente e fonti vanno nel prompt di sistema; nel
+    messaggio solo ciò che scrive l'utente, fra tag. Così il modello
+    distingue le istruzioni fidate dal testo che non deve eseguire.
+    """
+    context = (context or "").strip()[:500]
+    tags = _tags_for(f"{question} {context}")
+    contesto = _user_context(db, profile)
+    fonti = sources_for(question, context)
+
+    conversazione = ""
+    for turno in (history or [])[-MAX_HISTORY_TURNS:]:
+        ruolo = "Utente" if turno.get("role") == "user" else "Tu"
+        conversazione += f"\n{ruolo}: {_untrusted(turno.get('content', ''))}"
+
+    sistema = _SYSTEM_PROMPT.format(contesto=contesto, fonti=fonti)
+    prompt = (
+        (f"<conversazione>{conversazione}\n</conversazione>\n" if conversazione else "")
+        + (f"<schermata>{_untrusted(context)}</schermata>\n" if context else "")
+        + f"<domanda>{_untrusted(question)}</domanda>"
+    )
+    return sistema, prompt, tags
+
+
 def answer(
     db: Session,
     profile: UserProfile,
@@ -451,25 +576,7 @@ def answer(
     if not question:
         return ChatReply(answer="Dimmi pure, in cosa posso aiutarti?", used_llm=False)
 
-    context = (context or "").strip()[:500]
-    tags = _tags_for(f"{question} {context}")
-    contesto = _user_context(db, profile)
-    fonti = sources_for(question, context)
-
-    conversazione = ""
-    for turno in (history or [])[-MAX_HISTORY_TURNS:]:
-        ruolo = "Utente" if turno.get("role") == "user" else "Tu"
-        conversazione += f"\n{ruolo}: {_untrusted(turno.get('content', ''))}"
-
-    # Regole, dati dell'utente e fonti vanno nel system prompt; nel messaggio
-    # solo ciò che scrive l'utente, fra tag. Così il modello distingue le
-    # istruzioni fidate dal testo che non deve eseguire.
-    sistema = _SYSTEM_PROMPT.format(contesto=contesto, fonti=fonti)
-    prompt = (
-        (f"<conversazione>{conversazione}\n</conversazione>\n" if conversazione else "")
-        + (f"<schermata>{_untrusted(context)}</schermata>\n" if context else "")
-        + f"<domanda>{_untrusted(question)}</domanda>"
-    )
+    sistema, prompt, tags = build_request(db, profile, question, history=history, context=context)
 
     try:
         risposta = llm_client.generate_structured(
@@ -541,3 +648,91 @@ def disclaim_claimed_actions(text: str, *, has_actions: bool) -> str:
         else "Precisazione: non posso modificare nulla da solo, quindi non è cambiato niente."
     )
     return f"{text}\n\n{nota}"
+
+
+# --- Risposta a pezzi -------------------------------------------------------
+
+
+# Messaggi di ripiego, identici a quelli della risposta in un colpo solo.
+_QUOTA_ESAURITA = (
+    "Per oggi ho esaurito i messaggi a disposizione: riprova domani mattina. "
+    "Nel frattempo schede, diario, note e promemoria funzionano normalmente."
+)
+_NON_DISPONIBILE = (
+    "L'assistente conversazionale non è disponibile in questo momento. Le sezioni "
+    "dell'app continuano a funzionare: schede, diario, ricette e progressi non "
+    "dipendono da questa funzione."
+)
+
+
+def answer_stream(
+    db: Session,
+    profile: UserProfile,
+    question: str,
+    *,
+    history: list[dict] | None = None,
+    context: str | None = None,
+):
+    """La stessa risposta di `answer`, ma mano a mano che viene scritta.
+
+    Genera coppie `(tipo, valore)`:
+      - `("delta", testo)` per ogni pezzo nuovo della risposta;
+      - `("done", ChatReply)` alla fine, con azioni e fonti.
+
+    Le azioni arrivano solo alla fine, ed è giusto così: sono pulsanti che
+    l'utente può premere, e non devono comparire mentre la frase che li
+    giustifica è ancora a metà.
+    """
+    from app.services import llm_client
+
+    question = (question or "").strip()
+    if not question:
+        yield "done", ChatReply(answer="Dimmi pure, in cosa posso aiutarti?", used_llm=False)
+        return
+
+    sistema, prompt, tags = build_request(db, profile, question, history=history, context=context)
+
+    grezzo = ""
+    mostrato = ""
+    try:
+        for pezzo in llm_client.stream_structured(
+            prompt,
+            _SCHEMA,
+            system=sistema,
+            timeout=60.0,
+            max_output_tokens=4096,
+            purpose="chat",
+        ):
+            grezzo += pezzo
+            testo = llm_client.partial_string(grezzo, "risposta")
+            if len(testo) > len(mostrato):
+                yield "delta", testo[len(mostrato) :]
+                mostrato = testo
+    except llm_client.LLMQuotaExceeded:
+        yield "done", ChatReply(answer=_QUOTA_ESAURITA, used_llm=False)
+        return
+    except (llm_client.LLMNotConfigured, llm_client.LLMError) as e:
+        logger.info("Chat in streaming non disponibile (%s)", e)
+        yield "done", ChatReply(answer=_NON_DISPONIBILE, used_llm=False)
+        return
+
+    try:
+        risposta = json.loads(grezzo)
+    except ValueError:
+        # JSON incompleto (risposta troncata): si tiene il testo già mostrato,
+        # senza azioni, invece di buttare via tutto.
+        risposta = {"risposta": mostrato, "azioni": []}
+
+    testo = (risposta.get("risposta") or mostrato or "").strip()
+    if not testo:
+        yield "done", ChatReply(
+            answer="Non sono riuscito a formulare una risposta. Riprova a chiedermelo.",
+            used_llm=False,
+        )
+        return
+
+    azioni = _clean_actions(risposta.get("azioni"), question)
+    finale = disclaim_claimed_actions(testo, has_actions=bool(azioni))
+    # L'avvertenza sulle azioni può essere aggiunta in coda al testo già
+    # mostrato: il frontend riceve la versione definitiva e sostituisce.
+    yield "done", ChatReply(answer=finale, knowledge_tags=tags, actions=azioni)

@@ -186,15 +186,20 @@ _CONVERSION_SCHEMA = {
 _CONVERSION_PROMPT = """Converti in grammi le quantità di ingredienti scritte
 in linguaggio comune.
 
-La ricetta è per {porzioni} porzioni: le quantità sono per la ricetta intera.
+La ricetta è per {porzioni} porzioni e le quantità scritte valgono già per
+la ricetta intera.
 
 REGOLE:
 - Rispondi solo con la quantità in grammi, stimata in modo ragionevole per un
   ingrediente di dimensioni medie.
+- Se la quantità È indicata, convertila e basta: **non moltiplicarla per le
+  porzioni**. "1 banana" resta una banana (circa 120 g) anche se la ricetta è
+  per 4 persone; "2 cucchiai di olio" restano 18 g.
 - Considera l'ingrediente: "1 clove" di aglio pesa circa 3 g, "1" cipolla
-  circa 150 g, un cucchiaio da tavola di olio 9 g, un cucchiaino di olio 5 g.
-- Se la quantità NON è indicata, usa la porzione standard italiana per una
-  persona moltiplicata per {porzioni}:
+  circa 150 g, un cucchiaio da tavola di olio 9 g, un cucchiaino di olio 5 g,
+  un uovo circa 50 g.
+- Solo se la quantità NON è indicata, usa la porzione standard italiana per
+  una persona moltiplicata per {porzioni}:
 {porzioni_standard}
 - Se la quantità è indicata come "to taste", "q.b.", "a piacere", "for
   garnish" o simili, usa una quantità simbolica piccola (1-2 g per le spezie).
