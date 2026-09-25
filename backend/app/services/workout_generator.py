@@ -87,6 +87,34 @@ def weekly_sets_range(profile: UserProfile) -> tuple[int, int, int]:
     table = WEEKLY_SETS_HYPERTROPHY if profile.goal == Goal.HYPERTROPHY else WEEKLY_SETS_DEFAULT
     return table.get(profile.experience_level, table[ExperienceLevel.BEGINNER])
 
+
+# Oltre il massimo della tabella non c'è un muro: `training_dose_response.md`
+# (Pelland 2026) non trova nessun punto in cui i guadagni si fermano. Ma
+# nemmeno via libera: 24 serie settimanali è la dose più alta provata in uno
+# studio controllato su allenati (Aube 2022), dove non ha dato più ipertrofia
+# delle 12 o 18 e la forza andava peggio. Da lì in poi non esistono prove
+# controllate di un vantaggio, quindi è il nostro limite di sicurezza.
+DOCUMENTED_CEILING_SETS = 24
+# Quanto si può salire sopra il massimo del proprio livello: sei serie, cioè
+# circa due aumenti del 20%, per non passare da "consigliato" a "mai provato"
+# in un colpo solo.
+CEILING_MARGIN_SETS = 6
+
+
+def safety_ceiling_sets(profile: UserProfile) -> int:
+    """Massimo assoluto di serie settimanali per gruppo muscolare.
+
+    Si raggiunge solo con l'autoregolazione, un aumento per volta e a patto
+    che l'utente dichiari di recuperare bene: è il territorio oltre il range
+    consigliato, dove le prove si fanno rade.
+    """
+    _, _, massimo = weekly_sets_range(profile)
+    if profile.goal != Goal.HYPERTROPHY:
+        # Per forza, dimagrimento e mantenimento il range resta quello: il
+        # volume alto non è la leva principale di quegli obiettivi.
+        return massimo
+    return min(massimo + CEILING_MARGIN_SETS, DOCUMENTED_CEILING_SETS)
+
 # `rest_periods_and_rir.md`: nessun beneficio ipertrofico oltre i 90 secondi,
 # ma i multi-articolari ne richiedono di più per mantenere il carico.
 REST_COMPOUND_SECONDS = 120
@@ -702,7 +730,12 @@ REGOLE VINCOLANTI:
 - Non usare toni assoluti ("devi", "è obbligatorio") dove le fonti stesse
   esprimono cautela o range.
 - Scrivi in italiano, dando del tu, in modo diretto e concreto.
-- Massimo 150 parole per la spiegazione.
+- **Massimo 110 parole**: due paragrafi brevi, niente introduzioni né
+  riepiloghi finali, nessuna frase che riassume quello che hai appena detto.
+  Chi legge vuole sapere perché la scheda è così, non un tema.
+- Cita almeno una volta, con i numeri esatti: serie e ripetizioni, il RIR e
+  i recuperi. Sono la parte che l'utente vede nella scheda.
+- Niente elenchi dentro la spiegazione: i punti chiave hanno un campo loro.
 
 PROFILO UTENTE
 - Età: {eta} anni, obiettivo dichiarato: {obiettivo}
@@ -772,7 +805,7 @@ def explain_plan(generated: GeneratedPlan, profile: UserProfile) -> str:
         logger.info("Spiegazione LLM non disponibile (%s): uso quella deterministica", e)
         return generated.rationale
 
-    spiegazione = (risposta.get("spiegazione") or "").strip()
+    spiegazione = _accorcia(risposta.get("spiegazione") or "")
     if not spiegazione:
         return generated.rationale
 
@@ -780,6 +813,23 @@ def explain_plan(generated: GeneratedPlan, profile: UserProfile) -> str:
     if punti:
         spiegazione += "\n\n" + "\n".join(f"• {p}" for p in punti)
     return spiegazione
+
+
+# Tetto rigido della spiegazione: il prompt ne chiede 110, ma il modello a
+# volte dilaga e un muro di testo non lo legge nessuno. Non conta i punti
+# chiave, che sono elenchi brevi e si leggono a colpo d'occhio.
+MAX_EXPLANATION_WORDS = 140
+
+
+def _accorcia(testo: str, limite: int = MAX_EXPLANATION_WORDS) -> str:
+    """Taglia la spiegazione troppo lunga all'ultima frase intera."""
+    testo = (testo or "").strip()
+    parole = testo.split()
+    if len(parole) <= limite:
+        return testo
+    troncato = " ".join(parole[:limite])
+    fine = max(troncato.rfind(". "), troncato.rfind("! "), troncato.rfind("? "))
+    return (troncato[: fine + 1] if fine > 0 else troncato.rstrip(",;:") + ".").strip()
 
 
 # --- Persistenza -------------------------------------------------------------

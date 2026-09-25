@@ -33,7 +33,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutPlanExercise,
 )
-from app.services.workout_generator import weekly_sets_range
+from app.services.workout_generator import safety_ceiling_sets, weekly_sets_range
 
 logger = logging.getLogger("autoregulation")
 
@@ -51,6 +51,12 @@ DOMS_EXCESSIVE_HOURS = 72
 # Sotto queste settimane di allenamento è presto per concludere che il piano
 # non funzioni: le variazioni di massa muscolare richiedono settimane.
 MIN_WEEKS_BEFORE_JUDGING = 4
+
+# Settimane da lasciar passare fra un aumento e il successivo, anche quando
+# tutto va bene: è il ciclo di circa 4 settimane di `hypertrophy_prescription.md`
+# (IUSCA). Vale soprattutto sopra il range consigliato, dove ogni aumento
+# porta in territorio meno studiato.
+WEEKS_BETWEEN_INCREASES = 4
 
 
 @dataclass
@@ -78,6 +84,26 @@ def _is_recovery_limited(feedback: TrainingFeedback) -> bool:
         or (feedback.doms_duration_hours or 0) > DOMS_EXCESSIVE_HOURS
         or feedback.affects_performance
     )
+
+
+def _weeks_since_last_increase(db: Session, profile: UserProfile) -> int | None:
+    """Da quante settimane non si aumenta il volume. `None` se non è mai successo."""
+    ultimo = db.scalars(
+        select(AgentRecommendationLog)
+        .where(
+            AgentRecommendationLog.profile_id == profile.id,
+            AgentRecommendationLog.recommendation_type == RecommendationType.VOLUME_ADJUSTED,
+            AgentRecommendationLog.summary.startswith(VolumeAdjustment.INCREASE),
+        )
+        .order_by(AgentRecommendationLog.id.desc())
+        .limit(1)
+    ).first()
+    if ultimo is None or ultimo.created_at is None:
+        return None
+    creato = ultimo.created_at
+    if creato.tzinfo is None:
+        creato = creato.replace(tzinfo=dt.timezone.utc)
+    return (dt.datetime.now(dt.timezone.utc) - creato).days // 7
 
 
 def _current_weekly_sets(db: Session, plan: WorkoutPlan) -> int:
@@ -156,10 +182,21 @@ def evaluate_feedback(
             )
 
     elif nessun_progresso and not recupero_limitante:
+        # Oltre il massimo del range si può andare, ma una serie alla volta e
+        # solo con il recupero in ordine: vedi `training_dose_response.md`.
+        tetto = safety_ceiling_sets(profile)
+        oltre_il_range = corrente >= massimo
+        settimane_dall_aumento = _weeks_since_last_increase(db, profile)
+        troppo_presto = (
+            settimane_dall_aumento is not None
+            and settimane_dall_aumento < WEEKS_BETWEEN_INCREASES
+        )
         # Per difetto e non arrotondato: l'aumento non deve superare il limite
         # IUSCA del 20%. Almeno una serie in più, altrimenti sotto le 5 serie
         # l'arrotondamento non aumenterebbe mai.
-        suggerito = min(massimo, max(corrente + 1, int(corrente * (1 + ADJUSTMENT_RATIO))))
+        suggerito = min(tetto, max(corrente + 1, int(corrente * (1 + ADJUSTMENT_RATIO))))
+        if troppo_presto:
+            suggerito = corrente
         adjustment = (
             VolumeAdjustment.INCREASE if suggerito > corrente else VolumeAdjustment.MAINTAIN
         )
@@ -168,15 +205,41 @@ def evaluate_feedback(
             f"tempi normali: c'è margine per aumentare lo stimolo. Passo da "
             f"{corrente} a {suggerito} serie settimanali per gruppo muscolare."
         )
-        if suggerito <= corrente:
-            reason = (
-                "Non vedi progressi e recuperi bene, ma sei già al massimo del "
-                "range previsto per il tuo livello di esperienza. Prima di "
-                "aumentare ancora il volume conviene verificare apporto calorico "
-                "e proteico, sonno e la reale vicinanza al cedimento delle serie."
+        if suggerito > corrente and oltre_il_range:
+            tags.append("dose_risposta")
+            reason += (
+                f" Superi il massimo consigliato per il tuo livello ({massimo} serie): "
+                "le fonti non indicano un punto oltre il quale i guadagni si fermano, "
+                "ma il rendimento per serie aggiunta cala e sopra le 24 serie non "
+                "esistono studi che mostrino un vantaggio. Si sale un passo alla "
+                "volta, e se il recupero peggiora si torna indietro."
             )
             caveats.append(
-                "Volume già al massimo del range: valuta alimentazione, sonno e "
+                "Sei oltre il range consigliato: tieni d'occhio sonno, dolori e "
+                "qualità delle sessioni, e riduci se peggiorano."
+            )
+        elif troppo_presto:
+            reason = (
+                "Recuperi bene, ma hai aumentato il volume da meno di "
+                f"{WEEKS_BETWEEN_INCREASES} settimane: le fonti indicano di lasciar "
+                "passare circa un mese fra un aumento e il successivo, altrimenti non "
+                "si capisce quale variazione abbia prodotto l'effetto. Mantengo "
+                f"{corrente} serie settimanali per ora."
+            )
+            caveats.append(
+                "Ultimo aumento troppo recente: dai tempo al volume attuale di "
+                "mostrare i suoi effetti."
+            )
+        elif suggerito <= corrente:
+            reason = (
+                f"Non vedi progressi e recuperi bene, ma sei già a {corrente} serie "
+                "settimanali, il limite oltre il quale nessuno studio controllato "
+                "mostra un vantaggio. Aggiungere serie qui è una scommessa: conviene "
+                "prima verificare apporto calorico e proteico, sonno e la reale "
+                "vicinanza al cedimento delle serie."
+            )
+            caveats.append(
+                "Volume al limite di sicurezza: valuta alimentazione, sonno e "
                 "intensità effettiva prima di aggiungere serie."
             )
             tags.append("cedimento")

@@ -32,10 +32,13 @@ const STATUS: Record<VolumeStatus, { label: string; pill: string; bar: string }>
     pill: "border-lime-400/25 bg-lime-400/10 text-lime-200",
     bar: "from-lime-400 to-lime-500",
   },
+  // Non è un errore: le fonti non indicano un punto oltre il quale i
+  // guadagni si fermano, solo che ogni serie in più rende meno. Perciò
+  // informativo (iris) e non allarmante (rose).
   sopra: {
-    label: "Sopra il range",
-    pill: "border-rose-400/25 bg-rose-400/10 text-rose-200",
-    bar: "from-rose-400 to-rose-500",
+    label: "Oltre il consigliato",
+    pill: "border-iris-400/30 bg-iris-400/10 text-iris-100",
+    bar: "from-iris-300 to-iris-500",
   },
 };
 
@@ -77,7 +80,8 @@ export function VolumeCard({ profileId, weeks }: { profileId: number; weeks: num
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/[0.06] pt-3">
               <p className="text-[11.5px] leading-snug text-white/35">
                 I range settimanali per gruppo muscolare vengono dalle fonti del progetto, non da
-                una regola inventata qui.
+                una regola inventata qui. Oltre il consigliato i guadagni continuano, ma ogni
+                serie in più rende meno: il segnale da guardare è il recupero.
               </p>
               <SourceTags tags={["volume_allenamento"]} />
             </div>

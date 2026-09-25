@@ -117,6 +117,37 @@ scegliere le serie. Ecco cosa questo documento **conferma** e cosa
    frazionario il volume effettivo è più alto, e nei profili con molti
    multi-articolari la differenza non è piccola.
 
+## Fino a dove si sale: il limite che usa Kilo
+
+La meta-regressione non indica un tetto, ma due studi controllati su persone
+allenate dicono qualcosa su cosa succede ai volumi alti.
+
+| Studio | Disegno | Risultato |
+|---|---|---|
+| Aube et al., *J Strength Cond Res* 2022;36(3):600-607 (PMID 32058362) | 8 settimane, 35 allenati (squat ≥ 2× peso corporeo), **12 vs 18 vs 24 serie** settimanali per gli arti inferiori | Nessuna differenza fra i gruppi su spessore muscolare e massa magra della coscia. Sul massimale di squat la tendenza (p = 0,052) favoriva le 18 serie sulle 24 (+16,2% contro +5,4%) |
+| Enes et al., *Med Sci Sports Exerc* 2024;56(3):553-563 (PMID 37796222) | 12 settimane, 31 uomini allenati, volume **costante** contro progressioni di **+4 o +6 serie ogni 2 settimane** | Forza: la progressione più ripida ha dato i guadagni maggiori. Ipertrofia: nessuna differenza fra i gruppi, con gli intervalli di confidenza che suggeriscono un **appiattimento ai volumi più alti** |
+
+Da qui la regola dell'applicazione: **24 serie settimanali per gruppo
+muscolare** sono il limite oltre il quale Kilo non spinge. Non perché oltre
+faccia male — nessuna fonte lo dice — ma perché è la dose più alta provata in
+uno studio controllato su allenati, e lì non ha dato più ipertrofia delle 12
+o delle 18.
+
+Sotto quel limite, sopra il massimo consigliato dal livello, si può salire
+solo con tre condizioni, tutte già usate altrove in Kilo:
+
+1. l'utente dichiara di recuperare bene e senza dolori che rovinano le
+   sessioni successive (`doms_and_autoregulation.md`);
+2. un aumento per volta, non oltre il **20%** del volume precedente
+   (`hypertrophy_prescription.md`, IUSCA);
+3. almeno **4 settimane** dall'aumento precedente, perché altrimenti non si
+   capisce quale variazione abbia prodotto l'effetto.
+
+**Traduzione operativa dichiarata**: il valore 24 come limite e il margine di
+6 serie sopra il massimo del livello sono scelte di progetto. Le fonti danno
+la forma della curva (più volume, più risultati, con rendimenti decrescenti)
+e i dati dei due studi sopra, non una soglia da applicare a tutti.
+
 ## Uso in Kilo
 
 - **Quando l'utente chiede "quante serie devo fare?"**: rispondere che più
@@ -133,6 +164,10 @@ scegliere le serie. Ecco cosa questo documento **conferma** e cosa
   tricipiti, non zero e non una intera.
 - **Mai** citare questa fonte per affermare che esiste un numero massimo di
   serie oltre il quale si peggiora: l'abstract non lo dice.
+- **Quando l'utente è già oltre il range consigliato**: non trattarlo come un
+  errore. Dire che i guadagni continuano ma rendono meno per serie aggiunta,
+  che sopra le 24 serie non ci sono studi controllati a supporto, e che il
+  segnale da guardare è il recupero.
 
 **Traduzione operativa dichiarata**: il valore 0,5 per le serie indirette è
 nella fonte; l'applicazione di quel valore ai gruppi muscolari del catalogo di

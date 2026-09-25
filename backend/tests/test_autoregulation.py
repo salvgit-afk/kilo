@@ -183,15 +183,60 @@ def test_volume_non_scende_sotto_il_minimo_del_livello(scenario):
         assert rec.suggested_weekly_sets >= minimo
 
 
-def test_volume_non_supera_il_massimo_del_livello(scenario):
+def test_volume_non_supera_il_tetto_di_sicurezza(scenario):
+    """Sopra il range consigliato si può salire, ma non all'infinito: 24 serie
+    è la dose più alta provata in uno studio controllato (Aube 2022)."""
     db, profilo, plan = scenario
-    _, _, massimo = wg.weekly_sets_range(profilo)
+    tetto = wg.safety_ceiling_sets(profilo)
 
-    for _ in range(5):
+    for _ in range(8):
         feedback = _feedback(profilo, plan, progress_perception=ProgressPerception.NONE)
         rec = ar.evaluate_feedback(db, profilo, feedback, plan=plan)
         ar.apply_volume_change(db, plan, rec)
-        assert rec.suggested_weekly_sets <= massimo
+        assert rec.suggested_weekly_sets <= tetto
+
+
+def test_oltre_il_range_lo_dice_e_avvisa(scenario):
+    """Superare il consigliato non è un errore, ma va dichiarato."""
+    db, profilo, plan = scenario
+    _, _, massimo = wg.weekly_sets_range(profilo)
+
+    superato = None
+    for _ in range(8):
+        feedback = _feedback(profilo, plan, progress_perception=ProgressPerception.NONE)
+        rec = ar.evaluate_feedback(db, profilo, feedback, plan=plan)
+        ar.apply_volume_change(db, plan, rec)
+        if rec.suggested_weekly_sets > massimo and rec.changes_volume:
+            superato = rec
+            break
+
+    assert superato is not None, "con recupero buono il volume deve poter superare il range"
+    assert "massimo consigliato" in superato.reason
+    assert any("oltre il range" in c for c in superato.caveats)
+    assert "dose_risposta" in superato.knowledge_tags
+
+
+def test_niente_aumenti_a_meno_di_quattro_settimane_dall_ultimo(scenario):
+    """IUSCA: un aumento per ciclo di circa quattro settimane."""
+    import datetime as dt
+
+    from app.models import AgentRecommendationLog, RecommendationType, VolumeAdjustment
+
+    db, profilo, plan = scenario
+    db.add(
+        AgentRecommendationLog(
+            profile_id=profilo.id,
+            recommendation_type=RecommendationType.VOLUME_ADJUSTED,
+            summary=f"{VolumeAdjustment.INCREASE}: da 10 a 12 serie/settimana.",
+            created_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7),
+        )
+    )
+    db.commit()
+
+    feedback = _feedback(profilo, plan, progress_perception=ProgressPerception.NONE)
+    rec = ar.evaluate_feedback(db, profilo, feedback, plan=plan)
+    assert not rec.changes_volume
+    assert "meno di 4 settimane" in rec.reason
 
 
 def test_aumento_non_supera_il_20_percento(scenario):
