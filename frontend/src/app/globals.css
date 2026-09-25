@@ -61,6 +61,22 @@ body::before {
     animation: chat-neon-respiro 3.6s ease-in-out infinite;
   }
 
+  /* Scheletro di caricamento: la forma dell'app con un riflesso che scorre,
+     al posto della rotellina mentre il server si sveglia. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: rgb(255 255 255 / 0.06);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+    animation: skeleton-luccica 1.4s ease-in-out infinite;
+  }
+
   .glass-hover {
     @apply transition-all duration-300;
   }
@@ -392,6 +408,18 @@ body:has([role="dialog"][aria-modal="true"]) .chat-fab {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-neon {
+    animation: none;
+  }
+}
+
+@keyframes skeleton-luccica {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
     animation: none;
   }
 }

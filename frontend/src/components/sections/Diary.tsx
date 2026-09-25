@@ -23,7 +23,7 @@ import {
   type GapSuggestions,
 } from "@/lib/api";
 import { mealForNow, type Intent } from "@/lib/coach";
-import { Card, Empty, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
+import { Card, Empty, Notice, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import {
   AskCoachButton,
@@ -41,7 +41,8 @@ import { RecipeToDiaryDialog } from "@/components/RecipeToDiary";
 import { ApiError, notifyLogged } from "@/lib/api";
 import { KiloNote } from "@/components/KiloNote";
 
-const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
+import { MEAL_ORDER, MealTimeline } from "@/components/diary/MealTimeline";
+import { DaySummary } from "@/components/diary/DaySummary";
 
 export function Diary({
   profileId,
@@ -88,8 +89,7 @@ export function Diary({
 
   if (loading || !data) return <Spinner label="Carico il diario…" />;
 
-  const { totals, targets, remaining, progress } = data;
-  const byType = Object.fromEntries(data.meals.map((m) => [m.meal_type, m]));
+  const { targets } = data;
 
   return (
     <>
@@ -102,108 +102,17 @@ export function Diary({
       <KiloNote section="diario" />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_350px]">
-        <div className="space-y-3">
-          {MEAL_ORDER.map((type) => {
-            const meal = byType[type];
-            return (
-              <Card key={type} hover>
-                <div className="flex items-center justify-between gap-3 px-5 py-3.5">
-                  <div className="flex items-baseline gap-3">
-                    <h3 className="text-[14px] font-semibold text-white">{MEAL_LABELS[type]}</h3>
-                    {meal && meal.items.length > 0 && (
-                      <span className="font-mono text-[12px] tabular-nums text-white/45">
-                        {Math.round(meal.kcal)} kcal · P {Math.round(meal.protein_g)}g
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button
-                      onClick={() => setAddingRecipe(type)}
-                      title="Aggiungi una ricetta salvata con tutti i suoi ingredienti"
-                      className="flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 text-[12.5px] text-white/60 transition hover:border-iris-400/40 hover:bg-iris-400/[0.09] hover:text-iris-200"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                        <path d="M4 3h13a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3V3Zm2 2v13a1 1 0 0 0 1 1h11V6a1 1 0 0 0-1-1H6Zm3 3h7v2H9V8Zm0 4h7v2H9v-2Z" />
-                      </svg>
-                      <span className="hidden sm:inline">Ricetta</span>
-                    </button>
-                    <button
-                      onClick={() => setAdding({ meal: type })}
-                      className="flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                        <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z" />
-                      </svg>
-                      Aggiungi
-                    </button>
-                  </div>
-                </div>
-
-                {meal && meal.items.length > 0 && (
-                  <div className="border-t border-white/[0.06] px-2 py-1.5">
-                    {meal.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="group flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-white/[0.03]"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] text-white/80">{item.name}</p>
-                          <p className="text-[11px] text-white/35">{Math.round(item.quantity_g)} g</p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="font-mono text-[12.5px] tabular-nums text-white/70">
-                            {Math.round(item.kcal)} kcal
-                          </p>
-                          <p className="font-mono text-[10.5px] tabular-nums text-white/30">
-                            P{Math.round(item.protein_g)} C{Math.round(item.carbs_g)} G
-                            {Math.round(item.fat_g)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            await api.del(`/nutrition/diary/items/${item.id}`);
-                            load();
-                          }}
-                          aria-label="Elimina"
-                          className="shrink-0 rounded-lg p-1.5 text-white/20 opacity-0 transition group-hover:opacity-100 hover:bg-rose-400/10 hover:text-rose-300"
-                        >
-                          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                            <path d="M7 6V4h10v2h4v2h-2v12H5V8H3V6h4Zm2 4v8h2v-8H9Zm4 0v8h2v-8h-2Z" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+        <MealTimeline
+          meals={data.meals}
+          onAdd={(meal) => setAdding({ meal })}
+          onAddRecipe={(meal) => setAddingRecipe(meal)}
+          onChanged={load}
+        />
 
         <div className="space-y-4">
           {gap && <GapCard gap={gap} profileId={profileId} onAdded={load} />}
 
-          <Card>
-            <div className="flex flex-col items-center gap-4 px-5 py-5">
-              <ProgressRing
-                value={progress.kcal ?? 0}
-                label={`${Math.round(totals.kcal ?? 0)}`}
-                sublabel={`di ${Math.round(targets.target_kcal)} kcal`}
-              />
-              <p className="text-center text-[12.5px] text-white/45">
-                {remaining.kcal > 0
-                  ? `Ti restano ${Math.round(remaining.kcal)} kcal`
-                  : `Hai superato di ${Math.abs(Math.round(remaining.kcal))} kcal`}
-              </p>
-            </div>
-
-            <div className="space-y-3 border-t border-white/[0.06] px-5 py-4">
-              <StatBar label="Proteine" value={totals.protein_g ?? 0} target={targets.protein_g} tone="lime" />
-              <StatBar label="Carboidrati" value={totals.carbs_g ?? 0} target={targets.carbs_g} tone="iris" />
-              <StatBar label="Grassi" value={totals.fat_g ?? 0} target={targets.fat_g} tone="rose" />
-              <StatBar label="Fibra" value={totals.fiber_g ?? 0} target={targets.fiber_g} tone="lime" />
-            </div>
-          </Card>
+          <DaySummary data={data} />
 
           {targets.warnings.map((w, i) => (
             <Notice key={i}>{w}</Notice>

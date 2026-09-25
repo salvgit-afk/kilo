@@ -19,11 +19,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api, session, type AuthSession, type Profile } from "@/lib/api";
 import type { Intent } from "@/lib/coach";
 import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
-import { Spinner } from "@/components/ui";
 import { ChatBubble } from "@/components/ChatBubble";
 import { ReminderBanner } from "@/components/ReminderBanner";
 import { NotesProvider } from "@/lib/notes";
 import { useSectionBadges } from "@/lib/badges";
+import { AppSkeleton } from "@/components/AppSkeleton";
 import { Auth } from "@/components/sections/Auth";
 import { Onboarding } from "@/components/sections/Onboarding";
 import { Today } from "@/components/sections/Today";
@@ -108,13 +108,7 @@ export default function Page() {
     setProfile(null);
   }
 
-  if (loading) {
-    return (
-      <div className="grid min-h-screen place-items-center">
-        <Spinner label="Carico…" />
-      </div>
-    );
-  }
+  if (loading) return <AppSkeleton />;
 
   if (!account) return <Auth onAuthenticated={onAuthenticated} />;
   if (!profile) return <Onboarding onCreated={setProfile} />;

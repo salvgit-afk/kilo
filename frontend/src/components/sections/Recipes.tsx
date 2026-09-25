@@ -28,9 +28,10 @@ import { ApiError, api, type RecipeSuggestion, type SavedRecipe } from "@/lib/ap
 import type { Intent } from "@/lib/coach";
 import { Card, Empty, Notice, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
-import { AskCoachButton } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { RecipeImport } from "@/components/RecipeImport";
+import { RecipeCard } from "@/components/recipes/RecipeCard";
+import { CATEGORIE, ICONE, Icona, type CategoriaId } from "@/components/recipes/categorie";
 
 // Ricette per volta: la prima pagina arriva subito, le altre su richiesta.
 const PAGE_SIZE = 4;
@@ -42,7 +43,16 @@ function suggestUrl(profileId: number, query: string, exclude: string[]): string
   return `/nutrition/recipes/suggest?${params.toString()}`;
 }
 
-const SPUNTI = ["pollo", "salmone", "tonno", "uova", "lenticchie", "colazione", "spuntino"];
+// Le ricerche rapide, con il colore della categoria che fanno uscire.
+const SPUNTI: { cerca: string; nome: string; cat: CategoriaId; icona?: string }[] = [
+  { cerca: "pollo", nome: "Pollo", cat: "carne" },
+  { cerca: "salmone", nome: "Salmone", cat: "pesce" },
+  { cerca: "tonno", nome: "Tonno", cat: "pesce" },
+  { cerca: "uova", nome: "Uova", cat: "colazione", icona: ICONE.uovo },
+  { cerca: "lenticchie", nome: "Lenticchie", cat: "legumi" },
+  { cerca: "colazione", nome: "Colazione", cat: "colazione" },
+  { cerca: "spuntino", nome: "Spuntino", cat: "dolci" },
+];
 
 export function Recipes({
   profileId,
@@ -241,6 +251,34 @@ export function Recipes({
         )
       ) : (
         <>
+          {/* Scorre in orizzontale: a 390 px le pillole non ci stanno tutte. */}
+          <div
+            role="group"
+            aria-label="Prova con"
+            className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {SPUNTI.map((s) => {
+              const c = CATEGORIE[s.cat];
+              const attiva = recipes !== null && lastQuery === s.cerca;
+              return (
+                <button
+                  key={s.cerca}
+                  disabled={loading}
+                  aria-pressed={attiva}
+                  onClick={() => {
+                    setQuery(s.cerca);
+                    search(s.cerca);
+                  }}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border bg-gradient-to-br px-3.5 py-2 text-[13px] font-medium transition disabled:opacity-40 ${c.sfondo} ${c.testo} ${
+                    attiva ? "border-white/40" : "border-white/10 hover:border-white/25"
+                  }`}
+                >
+                  <Icona d={s.icona ?? c.icona} className="h-3.5 w-3.5" /> {s.nome}
+                </button>
+              );
+            })}
+          </div>
+
           <Card className="mb-4">
             <div className="flex flex-col gap-3 p-4 sm:flex-row">
               <input
@@ -253,22 +291,6 @@ export function Recipes({
               <button className="btn-primary sm:w-44" onClick={() => search(query)} disabled={loading}>
                 {loading ? "Cerco…" : "Trova ricette"}
               </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] px-4 py-2.5">
-              <span className="mr-1 text-[11px] text-white/30">Prova con</span>
-              {SPUNTI.map((s) => (
-                <button
-                  key={s}
-                  disabled={loading}
-                  onClick={() => {
-                    setQuery(s);
-                    search(s);
-                  }}
-                  className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-[12.5px] text-white/55 transition hover:border-lime-400/30 hover:bg-lime-400/[0.07] hover:text-lime-200 disabled:opacity-40"
-                >
-                  {s}
-                </button>
-              ))}
             </div>
           </Card>
 
@@ -356,171 +378,5 @@ export function Recipes({
         </>
       )}
     </>
-  );
-}
-
-function RecipeCard({
-  recipe: r,
-  index,
-  savedView = false,
-  onToggleSaved,
-}: {
-  recipe: RecipeSuggestion;
-  index: number;
-  /** Nella vista Salvate i motivi del punteggio non valgono più: erano di quel giorno. */
-  savedView?: boolean;
-  onToggleSaved: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const bookmark = r.meal_id && (
-    <button
-      onClick={onToggleSaved}
-      aria-pressed={r.saved}
-      aria-label={r.saved ? "Rimuovi dalle ricette salvate" : "Salva la ricetta"}
-      title={r.saved ? "Rimuovi dalle salvate" : "Salva la ricetta"}
-      className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl border backdrop-blur-md transition ${
-        r.saved
-          ? "border-lime-400/50 bg-lime-400/90 text-ink-900"
-          : "border-white/20 bg-black/40 text-white/80 hover:border-lime-400/50 hover:text-lime-200"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill={r.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
-        <path d="M6 3h12v18l-6-4-6 4V3Z" strokeLinejoin="round" />
-      </svg>
-    </button>
-  );
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.07, duration: 0.45 }}
-      className="glass sheen glass-hover overflow-hidden"
-    >
-      {r.thumbnail_url ? (
-        <div className="relative h-44 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={r.thumbnail_url}
-            alt={r.name}
-            className="h-full w-full object-cover transition duration-700 hover:scale-105"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/35 to-transparent" />
-          <div className="absolute right-3 top-3">{bookmark}</div>
-          <div className="absolute bottom-3 left-4 right-4">
-            <h3 className="text-[16px] font-semibold leading-tight text-white drop-shadow">{r.name}</h3>
-            <p className="mt-0.5 text-[11.5px] text-white/55">
-              {[r.category, r.area ? `cucina ${r.area.toLowerCase()}` : null].filter(Boolean).join(" · ")}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-start justify-between gap-3 px-4 pt-4">
-          <h3 className="text-[16px] font-semibold leading-tight text-white">{r.name}</h3>
-          {bookmark}
-        </div>
-      )}
-
-      <div className="p-4">
-        <div className="mb-3 grid grid-cols-4 gap-2 rounded-xl border border-white/[0.07] bg-black/25 p-3">
-          {[
-            ["kcal", Math.round(r.kcal_per_serving)],
-            ["prot.", `${Math.round(r.protein_per_serving)}g`],
-            ["carb.", `${Math.round(r.carbs_per_serving)}g`],
-            ["grassi", `${Math.round(r.fat_per_serving)}g`],
-          ].map(([l, v]) => (
-            <div key={l} className="text-center">
-              <p className="font-mono text-[14px] tabular-nums text-white">{v}</p>
-              <p className="text-[9.5px] uppercase tracking-wide text-white/30">{l}</p>
-            </div>
-          ))}
-        </div>
-
-        {r.source === "kilo" ? (
-          <p className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-white/30">
-            <span className="rounded bg-lime-400/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-lime-200">
-              Ricetta Kilo · dosi esatte
-            </span>
-            per porzione · {r.servings === 1 ? "1 porzione" : `${r.servings} porzioni`}
-            {r.minutes ? <> · {r.minutes} min</> : null}
-          </p>
-        ) : (
-          <p className="mb-3 text-[11px] text-white/30">
-            {r.source === "import" ? (
-              <span className="mr-1.5 rounded bg-iris-400/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-iris-200">
-                tua
-              </span>
-            ) : (
-              <span className="mr-1.5 rounded bg-amber-300/15 px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-amber-100">
-                stimata
-              </span>
-            )}
-            per porzione · {r.servings} porzioni ·{" "}
-            <span className={r.coverage < 0.9 ? "text-amber-300/70" : ""}>
-              {Math.round(r.coverage * 100)}% ingredienti riconosciuti
-            </span>
-            {r.original_name && <> · titolo originale «{r.original_name}»</>}
-          </p>
-        )}
-
-        {!savedView && r.reasons.length > 0 && (
-          <ul className="mb-3 space-y-1.5">
-            {r.reasons.map((reason, k) => (
-              <li key={k} className="flex gap-2 text-[12.5px] leading-snug text-white/60">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-lime-400" />
-                {reason}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setExpanded(!expanded)} className="btn-ghost flex-1 text-[12.5px]">
-            {expanded ? "Nascondi" : "Ingredienti e preparazione"}
-          </button>
-          {r.youtube_url && (
-            <a href={r.youtube_url} target="_blank" rel="noopener noreferrer" className="btn-ghost text-[12.5px]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-rose-300">
-                <path d="M8 5v14l11-7L8 5Z" />
-              </svg>
-              Video
-            </a>
-          )}
-        </div>
-
-        {expanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} className="overflow-hidden">
-            <div className="mt-3 space-y-3">
-              <div>
-                <p className="label">Ingredienti</p>
-                <ul className="space-y-1">
-                  {r.ingredients.map((ing, k) => (
-                    <li key={k} className="text-[12.5px] text-white/60">
-                      {ing}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              {r.instructions && (
-                <div>
-                  <p className="label">Preparazione</p>
-                  <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-white/55">{r.instructions}</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        <div className="mt-3 border-t border-white/[0.06] pt-3">
-          <AskCoachButton
-            size="sm"
-            question={`Ho trovato la ricetta «${r.name}»: ${Math.round(r.kcal_per_serving)} kcal, ${Math.round(r.protein_per_serving)} g di proteine, ${Math.round(r.carbs_per_serving)} g di carboidrati e ${Math.round(r.fat_per_serving)} g di grassi a porzione. Come la adatto ai miei target di oggi?`}
-            context="Sezione Ricette"
-            label="Come la adatto ai miei macro?"
-          />
-        </div>
-      </div>
-    </motion.div>
   );
 }
