@@ -126,8 +126,17 @@ def controlla_scheda(caso: dict, plan: wg.GeneratedPlan, profilo: UserProfile) -
 
     if attese.get("serie_nel_range_fonti"):
         minimo, _, massimo = wg.weekly_sets_range(profilo)
+        # I complementari della full body hanno apposta un solo esercizio da
+        # serie piene: il resto del volume arriva dalle indirette.
+        complementari = (
+            {m for coppia in wg.FULL_BODY_ACCESSORY_ROTATION for m in coppia}
+            if plan.split_type == "full_body"
+            else set()
+        )
         fuori = {
-            m: s for m, s in plan.weekly_sets_per_muscle.items() if not minimo <= s <= massimo
+            m: s
+            for m, s in plan.weekly_sets_per_muscle.items()
+            if s > massimo or (s < minimo and m not in complementari)
         }
         if fuori:
             problemi.append(f"serie settimanali fuori dal range {minimo}-{massimo}: {fuori}")
@@ -137,7 +146,12 @@ def controlla_scheda(caso: dict, plan: wg.GeneratedPlan, profilo: UserProfile) -
         # +1 di tolleranza: il volume settimanale viene diviso per il numero
         # di sedute e riarrotondato, quindi può fermarsi una serie sopra il
         # minimo senza che il parametro sia cambiato.
-        troppo = {m: s for m, s in plan.weekly_sets_per_muscle.items() if s > minimo + 1}
+        troppo = {
+            m: s
+            for m, s in plan.weekly_sets_per_muscle.items()
+            if s > minimo + 1
+            and m not in {x for coppia in wg.FULL_BODY_ACCESSORY_ROTATION for x in coppia}
+        }
         if troppo:
             problemi.append(f"volume non riportato al minimo ({minimo}): {troppo}")
 

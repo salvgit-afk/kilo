@@ -164,6 +164,7 @@ export function Workout({
           ...m,
           [res.plan.id]: {
             weekly_sets_per_muscle: res.weekly_sets_per_muscle,
+            weekly_sets_equivalent: res.weekly_sets_equivalent,
             warnings: res.warnings,
             knowledge_tags: res.knowledge_tags,
           },
@@ -484,11 +485,11 @@ export function Workout({
 
             {meta && (
               <Card delay={0.1}>
-                <CardHeader title="Volume settimanale" subtitle="Serie per gruppo muscolare" />
+                <CardHeader title="Volume settimanale" subtitle="Serie per gruppo, le indirette contano mezza" />
                 <div className="space-y-2 px-5 py-4">
-                  {Object.entries(meta.weekly_sets_per_muscle).map(([m, s]) => (
+                  {Object.entries(meta.weekly_sets_equivalent ?? meta.weekly_sets_per_muscle).map(([m, s]) => (
                     <div key={m} className="flex items-center gap-3">
-                      <span className="w-24 shrink-0 truncate text-[12px] text-white/50">
+                      <span className="w-32 shrink-0 truncate text-[12px] text-white/50">
                         {MUSCLE_LABELS[m] ?? m}
                       </span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
@@ -499,8 +500,8 @@ export function Workout({
                           transition={{ duration: 0.7 }}
                         />
                       </div>
-                      <span className="w-6 text-right font-mono text-[12px] tabular-nums text-white/70">
-                        {s}
+                      <span className="w-8 text-right font-mono text-[12px] tabular-nums text-white/70">
+                        {s.toLocaleString("it-IT")}
                       </span>
                     </div>
                   ))}

@@ -182,10 +182,35 @@ LEG_MUSCLES = ("Quads", "Hamstrings", "Glutes", "Calves")
 CORE_MUSCLES = ("Abs",)
 
 # Full body: si allenano i distretti principali a ogni sessione, coprendo i
-# pattern fondamentali (spinta, trazione, gambe, core). I muscoli piccoli
-# arrivano come secondari dei multi-articolari. Iterare su tutti i gruppi
-# produrrebbe sessioni da 15+ esercizi, inapplicabili.
+# pattern fondamentali (spinta, trazione, gambe, core). Iterare su tutti i
+# gruppi produrrebbe sessioni da 15+ esercizi, inapplicabili.
 FULL_BODY_MUSCLES = ("Chest", "Lats", "Quads", "Glutes", "Shoulders", "Abs")
+
+# ...e due complementari per seduta, a rotazione. Contando le serie indirette
+# a metà (`training_dose_response.md`) i tricipiti arrivano quasi al volume
+# pieno da panca e spinte, i bicipiti solo a metà dalle trazioni; i femorali
+# dallo squat non ricevono stimolo utile (`compound_indirect_stimulus.md`,
+# Kubo 2019) e i deltoidi posteriori quasi niente. La frequenza per
+# muscolo, a parità di serie settimanali, non cambia l'ipertrofia: basta che
+# ognuno compaia abbastanza volte nella settimana, non in ogni seduta.
+FULL_BODY_ACCESSORY_ROTATION = (
+    ("Hamstrings", "Biceps"),
+    ("Triceps", "Rear delts"),
+    ("Hamstrings", "Biceps"),
+)
+
+# Gruppi che nel catalogo non sono un muscolo primario a sé: i deltoidi
+# posteriori stanno sotto "Shoulders" e si riconoscono dal nome.
+PSEUDO_MUSCLES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "Rear delts": (
+        "Shoulders",
+        ("rear delt", "rear deltoid", "rear lateral", "reverse fly", "reverse flye", "face pull"),
+    ),
+}
+
+# Oltre queste serie una seduta dura più di un'ora e un quarto: lo si dice,
+# con l'alternativa, invece di tagliare il volume in silenzio.
+LONG_SESSION_SETS = 26
 
 # Attrezzatura che non richiede nulla: sempre disponibile.
 BODYWEIGHT = "none (bodyweight exercise)"
@@ -213,6 +238,9 @@ class PlannedExercise:
     rir: int
     rest_seconds: int
     note: str | None = None
+    # Il gruppo per cui è stato scelto: di solito il primario, ma per i
+    # deltoidi posteriori è "Rear delts" anche se il catalogo dice "Shoulders".
+    target_muscle: str | None = None
 
 
 @dataclass
@@ -226,6 +254,9 @@ class GeneratedPlan:
     warnings: list[str] = field(default_factory=list)
     knowledge_tags: list[str] = field(default_factory=list)
     split_type: str | None = None
+    # Dirette intere più indirette a metà: il volume che il muscolo riceve
+    # davvero, non solo quello programmato (`training_dose_response.md`).
+    weekly_sets_equivalent: dict[str, float] = field(default_factory=dict)
 
 
 class GenerationError(RuntimeError):
@@ -236,7 +267,10 @@ class GenerationError(RuntimeError):
 
 
 def _full_body(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
-    return [(f"Giorno {chr(65 + i)}", FULL_BODY_MUSCLES) for i in range(days_per_week)]
+    return [
+        (f"Giorno {chr(65 + i)}", FULL_BODY_MUSCLES + FULL_BODY_ACCESSORY_ROTATION[i % 3])
+        for i in range(days_per_week)
+    ]
 
 
 def _upper_lower(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
@@ -412,6 +446,7 @@ def _pick_exercises(
     wanted: int,
     rotation: int = 0,
     preferences: dict[int, bool] | None = None,
+    prefer_isolation: bool = False,
 ) -> list[Exercise]:
     """Sceglie gli esercizi per un gruppo muscolare.
 
@@ -429,13 +464,18 @@ def _pick_exercises(
     diverse le giornate A e B di uno stesso distretto, invece di ripetere gli
     stessi esercizi due volte a settimana.
     """
+    primario, parole = PSEUDO_MUSCLES.get(muscle, (muscle, ()))
     candidates = list(
         db.scalars(
             select(Exercise)
-            .where(Exercise.primary_muscle == muscle, exercise_library.catalog_condition(db))
+            .where(Exercise.primary_muscle == primario, exercise_library.catalog_condition(db))
             .order_by(*exercise_library.catalog_order())
         )
     )
+    if parole:
+        candidates = [
+            ex for ex in candidates if any(p in (ex.name or "").lower().replace("-", " ") for p in parole)
+        ]
     preferences = preferences or {}
     # Gli esercizi esplicitamente sgraditi non vengono riproposti: sarebbe il
     # contrario dello scopo delle preferenze.
@@ -473,6 +513,11 @@ def _pick_exercises(
     )
 
     if wanted <= 1:
+        if prefer_isolation:
+            # Complementare di una full body: i multi-articolari della seduta
+            # ci sono già, qui serve lo stimolo diretto, possibilmente in
+            # allungamento (leg curl da seduti, estensioni sopra la testa).
+            return _slice(isolation or usable, 1, rotation)
         # Un solo esercizio: si preferisce il multi-articolare, che copre più
         # massa muscolare per serie.
         return _slice(compound or usable, 1, rotation)
@@ -546,7 +591,6 @@ def generate_plan(
 
     preferences = _preference_map(db, profile.id)
     planned: list[PlannedExercise] = []
-    weekly_sets: dict[str, int] = {}
     muscles_without_exercises: set[str] = set()
     # Quante volte un muscolo è già stato programmato: usato per ruotare gli
     # esercizi fra le sessioni (Upper A e Upper B non devono essere identiche).
@@ -561,8 +605,14 @@ def generate_plan(
 
     for day_label, muscles in split:
         order = 0
+        # I complementari della full body hanno un esercizio da serie piene:
+        # il resto del volume arriva dalle serie indirette dei multi-articolari.
+        complementari = (
+            set(muscles) - set(FULL_BODY_MUSCLES) if resolved_split == SplitType.FULL_BODY else set()
+        )
         sets_by_muscle = {
-            m: max(1, round(weekly_target / frequency[m])) for m in muscles
+            m: TARGET_SETS_PER_EXERCISE if m in complementari else max(1, round(weekly_target / frequency[m]))
+            for m in muscles
         }
         for muscle, sets in sets_by_muscle.items():
             if sets > MAX_SETS_PER_MUSCLE_PER_SESSION and muscle not in overloaded_muscles:
@@ -577,7 +627,7 @@ def generate_plan(
             rotation = times_programmed.get(muscle, 0)
             exercises = _pick_exercises(
                 db, muscle, allowed, wanted=exercise_count, rotation=rotation,
-                preferences=preferences,
+                preferences=preferences, prefer_isolation=muscle in complementari,
             )
             times_programmed[muscle] = rotation + 1
 
@@ -609,10 +659,25 @@ def generate_plan(
                             if exercise.is_compound
                             else REST_ISOLATION_SECONDS
                         ),
+                        target_muscle=muscle,
                     )
                 )
-                weekly_sets[muscle] = weekly_sets.get(muscle, 0) + sets_for_exercise
                 order += 1
+
+    weekly_sets = direct_weekly_sets(planned)
+
+    lunghe = [
+        (giorno, serie)
+        for giorno in dict.fromkeys(p.day_label for p in planned)
+        if (serie := sum(p.sets for p in planned if p.day_label == giorno)) > LONG_SESSION_SETS
+    ]
+    if lunghe:
+        warnings.append(
+            "Sedute lunghe: "
+            + ", ".join(f"{g} ha {n} serie" for g, n in lunghe)
+            + ", oltre un'ora e un quarto. Se preferisci sedute più corte, con 4 giorni "
+            "uno split Upper/Lower distribuisce lo stesso volume in meno serie per seduta."
+        )
 
     if not planned:
         raise GenerationError(
@@ -646,6 +711,8 @@ def generate_plan(
         )
 
     knowledge_tags = ["volume_allenamento", "recupero", "intensità", "progressione"]
+    if resolved_split == SplitType.FULL_BODY:
+        knowledge_tags.append("stimolo_indiretto")
     if profile.goal == Goal.HYPERTROPHY:
         knowledge_tags.append("ipertrofia")
     elif profile.goal == Goal.STRENGTH:
@@ -669,10 +736,49 @@ def generate_plan(
         days_per_week=profile.training_days_per_week,
         exercises=planned,
         weekly_sets_per_muscle=weekly_sets,
+        weekly_sets_equivalent=equivalent_weekly_sets(planned),
         rationale=_deterministic_rationale(profile, weekly_target, rir),
         warnings=warnings,
         knowledge_tags=knowledge_tags,
     )
+
+
+# Serie indirette: contano mezza serie per i muscoli secondari
+# (`training_dose_response.md`, metodo frazionario di Pelland 2026). Eccezione
+# documentata: lo squat non fa crescere i femorali (Kubo 2019,
+# `compound_indirect_stimulus.md`), quindi i femorali secondari di un
+# esercizio per i quadricipiti non contano.
+INDIRECT_SET_WEIGHT = 0.5
+_NO_INDIRECT_FROM = {("Quads", "Hamstrings")}
+_TRACKED_MUSCLES = set(PUSH_MUSCLES + PULL_MUSCLES + LEG_MUSCLES + CORE_MUSCLES) | set(PSEUDO_MUSCLES)
+
+
+def direct_weekly_sets(exercises: list[PlannedExercise]) -> dict[str, int]:
+    """Serie settimanali programmate per gruppo, solo quelle dirette."""
+    totali: dict[str, int] = {}
+    for item in exercises:
+        muscolo = item.target_muscle or item.exercise.primary_muscle or "?"
+        totali[muscolo] = totali.get(muscolo, 0) + item.sets
+    return totali
+
+
+def equivalent_weekly_sets(exercises: list[PlannedExercise]) -> dict[str, float]:
+    """Serie settimanali per gruppo: dirette intere più indirette a metà."""
+    totali: dict[str, float] = {}
+    for item in exercises:
+        primario = item.exercise.primary_muscle or "?"
+        diretto = item.target_muscle or primario
+        totali[diretto] = totali.get(diretto, 0) + item.sets
+        for secondario in (item.exercise.secondary_muscles or "").split(","):
+            secondario = secondario.strip()
+            if (
+                secondario in _TRACKED_MUSCLES
+                and secondario not in (diretto, primario)
+                and (primario, secondario) not in _NO_INDIRECT_FROM
+            ):
+                totali[secondario] = totali.get(secondario, 0) + item.sets * INDIRECT_SET_WEIGHT
+    # Mezze serie: più precisione sarebbe finta, il metodo stesso è un'approssimazione.
+    return {m: round(v * 2) / 2 for m, v in totali.items()}
 
 
 def _allocate_exercise_slots(needs: list[int], budget: int) -> list[int]:
@@ -884,11 +990,8 @@ def apply_manual_targets(
             item.reps_min, item.reps_max = reps
 
     if sets is not None:
-        settimanali: dict[str, int] = {}
-        for item in generated.exercises:
-            muscolo = item.exercise.primary_muscle or "?"
-            settimanali[muscolo] = settimanali.get(muscolo, 0) + item.sets
-        generated.weekly_sets_per_muscle = settimanali
+        generated.weekly_sets_per_muscle = direct_weekly_sets(generated.exercises)
+        generated.weekly_sets_equivalent = equivalent_weekly_sets(generated.exercises)
 
     parti = []
     if sets is not None:

@@ -130,8 +130,13 @@ def test_volume_non_si_moltiplica_con_la_frequenza(catalogo):
     sei = wg.generate_plan(catalogo, _profilo(training_days_per_week=6))
 
     minimo, _, massimo = wg.weekly_sets_range(_profilo())
+    # I complementari della full body hanno apposta meno serie dirette: il
+    # resto arriva dalle indirette dei multi-articolari.
+    complementari = {m for coppia in wg.FULL_BODY_ACCESSORY_ROTATION for m in coppia}
     for plan in (tre, sei):
-        assert all(minimo <= v <= massimo for v in plan.weekly_sets_per_muscle.values())
+        for muscolo, v in plan.weekly_sets_per_muscle.items():
+            assert v <= massimo, muscolo
+            assert muscolo in complementari or v >= minimo, muscolo
 
 
 # --- Recuperi e RIR (rest_periods_and_rir.md) -------------------------------
@@ -665,3 +670,35 @@ def test_ibrido_con_altri_giorni_diventa_upper_lower():
     assert wg.split_name("upper_lower_ppl", 4) == "Upper/Lower"
     assert wg.split_name("upper_lower_ppl", 5) == "Upper/Lower + Push/Pull/Gambe"
     assert wg.split_name("push_pull_legs", 5) == "Push/Pull/Gambe"
+
+
+
+def test_full_body_copre_anche_i_muscoli_piccoli(catalogo):
+    """Tre giorni full body: oltre ai sei distretti, due complementari a
+    rotazione, con un isolamento da tre serie ciascuno e al massimo otto
+    esercizi per seduta."""
+    plan = wg.generate_plan(catalogo, _profilo(training_days_per_week=3), split_type="full_body")
+    per_giorno: dict[str, list] = {}
+    for e in plan.exercises:
+        per_giorno.setdefault(e.day_label, []).append(e)
+    assert all(len(es) <= wg.MAX_EXERCISES_PER_SESSION for es in per_giorno.values())
+    gruppi = {e.target_muscle for e in plan.exercises}
+    assert {"Hamstrings", "Biceps", "Triceps"} <= gruppi
+    for e in plan.exercises:
+        if e.target_muscle in {"Hamstrings", "Biceps", "Triceps", "Rear delts"}:
+            assert e.sets == wg.TARGET_SETS_PER_EXERCISE
+
+
+def test_serie_equivalenti_contano_le_indirette_a_meta():
+    panca = Exercise(name="Bench Press", primary_muscle="Chest", secondary_muscles="Triceps, Shoulders")
+    squat = Exercise(name="Squat", primary_muscle="Quads", secondary_muscles="Hamstrings, Glutes")
+
+    def voce(ex, serie):
+        return wg.PlannedExercise(exercise=ex, day_label="A", order_index=0, sets=serie,
+                                  reps_min=6, reps_max=8, rir=2, rest_seconds=120)
+
+    eq = wg.equivalent_weekly_sets([voce(panca, 3), voce(squat, 4)])
+    assert eq["Chest"] == 3 and eq["Triceps"] == 1.5 and eq["Shoulders"] == 1.5
+    assert eq["Quads"] == 4 and eq["Glutes"] == 2
+    # Lo squat non fa crescere i femorali (Kubo 2019): non contano.
+    assert "Hamstrings" not in eq

@@ -40,9 +40,11 @@ note_di_onestà: >
 - Non esiste un numero "giusto per tutti": la forma della curva resta incerta
   e la capacità di recupero, il sonno e lo stress variano da persona a
   persona.
-- **Nota su Kilo**: il generatore conta solo le serie degli esercizi con
-  quel muscolo come primario. Con il metodo "frazionario" il volume reale è
-  un po' più alto (es. le distensioni aggiungono mezze serie ai tricipiti).
+- **Nota su Kilo**: il generatore programma le serie dirette, ma nel
+  riepilogo della scheda mostra anche il volume equivalente con il metodo
+  "frazionario" (le distensioni aggiungono mezze serie ai tricipiti).
+  Eccezione: gli esercizi per i quadricipiti non contano per i femorali
+  (`compound_indirect_stimulus.md`, Kubo 2019).
 
 ## Come tradurlo in parametri per la generazione di una scheda
 

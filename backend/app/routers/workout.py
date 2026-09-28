@@ -205,6 +205,7 @@ def generate_plan(
     return PlanGenerationOut(
         plan=WorkoutPlanOut.model_validate(plan),
         weekly_sets_per_muscle=generated.weekly_sets_per_muscle,
+        weekly_sets_equivalent=generated.weekly_sets_equivalent,
         warnings=generated.warnings,
         knowledge_tags=generated.knowledge_tags,
     )

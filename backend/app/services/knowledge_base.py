@@ -53,6 +53,7 @@ TAG_TO_FILE: dict[str, str] = {
     "periodizzazione": "resistance_training_acsm.md",
     "dose_risposta": "training_dose_response.md",
     "volume_settimanale": "training_dose_response.md",
+    "stimolo_indiretto": "compound_indirect_stimulus.md",
     "allungamento": "stretch_mediated_hypertrophy.md",
     "parziali": "stretch_mediated_hypertrophy.md",
     "sonno": "sleep_and_recovery.md",

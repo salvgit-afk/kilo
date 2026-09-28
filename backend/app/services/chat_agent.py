@@ -150,6 +150,11 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "troppe serie": ("dose_risposta", "volume_settimanale"),
     "serie a settimana": ("volume_settimanale", "dose_risposta"),
     "settimanale": ("volume_settimanale",),
+    # Muscoli secondari dei multi-articolari (`compound_indirect_stimulus.md`).
+    "femorali": ("stimolo_indiretto", "allungamento"),
+    "serie indirette": ("stimolo_indiretto", "volume_settimanale"),
+    "muscoli secondari": ("stimolo_indiretto",),
+    "full body": ("stimolo_indiretto", "frequenza_allenamento"),
     # Allungamento e parziali (`stretch_mediated_hypertrophy.md`).
     "allungato": ("allungamento", "ampiezza_movimento"),
     "allungat": ("allungamento",),

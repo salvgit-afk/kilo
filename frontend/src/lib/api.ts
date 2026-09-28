@@ -256,6 +256,8 @@ export type WorkoutPlan = {
 export type PlanGeneration = {
   plan: WorkoutPlan;
   weekly_sets_per_muscle: Record<string, number>;
+  /** Dirette intere più indirette a metà: il volume che il muscolo riceve davvero. */
+  weekly_sets_equivalent?: Record<string, number>;
   warnings: string[];
   knowledge_tags: string[];
 };
@@ -640,6 +642,7 @@ export const MUSCLE_LABELS: Record<string, string> = {
   Calves: "Polpacci",
   Abs: "Addominali",
   Trapezius: "Trapezio",
+  "Rear delts": "Deltoidi posteriori",
   Brachialis: "Brachiale",
   Soleus: "Soleo",
   "Serratus anterior": "Dentato anteriore",

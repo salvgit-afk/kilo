@@ -218,6 +218,8 @@ class PlanGenerationOut(BaseModel):
 
     plan: WorkoutPlanOut
     weekly_sets_per_muscle: dict[str, int]
+    # Dirette intere più indirette a metà (Pelland 2026).
+    weekly_sets_equivalent: dict[str, float] = {}
     warnings: list[str]
     knowledge_tags: list[str]
 
