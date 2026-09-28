@@ -27,7 +27,7 @@ from app.schemas import (
     SupplementIntakeOut,
     SupplementOut,
 )
-from app.services import food_diary, supplement_intake, supplements
+from app.services import clock, food_diary, supplement_intake, supplements
 
 router = APIRouter(
     prefix="/supplements", tags=["integratori"], dependencies=[Depends(current_user)]
@@ -135,7 +135,7 @@ def intake_diary(
     `today` è la data locale del client: i conteggi (serie, giorni saltati)
     si calcolano rispetto al suo giorno, non a quello UTC del server.
     """
-    oggi = today or dt.date.today()
+    oggi = today or clock.today()
     return [
         _intake_out(supplement_intake.summarize(db, d, today=oggi))
         for d in supplement_intake.active_declarations(db, profile)
@@ -155,10 +155,10 @@ def log_intake(
     if dichiarazione is None or dichiarazione.profile_id != profile.id:
         raise HTTPException(status_code=404, detail="Integratore non trovato")
 
-    oggi = today or dt.date.today()
+    oggi = today or clock.today()
     # Il giorno del client può essere avanti di uno rispetto al server (UTC),
     # non di più.
-    if payload.date > min(oggi, dt.date.today() + dt.timedelta(days=1)):
+    if payload.date > min(oggi, clock.today() + dt.timedelta(days=1)):
         raise HTTPException(status_code=422, detail="Non si segnano assunzioni future")
 
     supplement_intake.set_doses(db, dichiarazione, payload.date, payload.doses)

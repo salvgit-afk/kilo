@@ -147,6 +147,10 @@ export default function Page() {
                 isAdmin={account.is_admin}
                 onUpdated={setProfile}
                 onReset={logout}
+                onDataReset={() => {
+                  setProfile(null);
+                  setSection("oggi");
+                }}
               />
             )}
           </motion.div>

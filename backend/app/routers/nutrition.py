@@ -31,6 +31,8 @@ from app.routers.auth import current_user
 from app.routers.profile import ensure_owner, owned_profile
 from app.schemas import (
     BarcodeFoodOut,
+    DiaryDayOut,
+    DiaryDaysOut,
     DiaryOut,
     FoodNamesIn,
     FoodSearchOut,
@@ -51,6 +53,7 @@ from app.schemas import (
     SavedRecipeOut,
 )
 from app.services import (
+    clock,
     food_diary,
     food_photo,
     gap_filler,
@@ -283,8 +286,10 @@ def fill_gap(
     restando nelle calorie rimaste. Proposte: l'utente conferma."""
     profile, targets = _compute_targets(profile)
     totali = food_diary.daily_totals(db, profile)
+    # Le proteine degli integratori valgono per i giorni in cui si è segnato
+    # qualcosa (e per oggi): un giorno vuoto dello storico resta a zero.
     proteine_integratori = supplements.protein_from_supplements(db, profile)
-    if proteine_integratori:
+    if proteine_integratori and (pasti or giorno == clock.today()):
         totali.protein_g += proteine_integratori
         totali.kcal += proteine_integratori * nutrition_targets.KCAL_PER_G_PROTEIN
 
@@ -444,7 +449,7 @@ def read_diary(
     sé.
     """
     profile, targets = _compute_targets(profile)
-    giorno = date or dt.date.today()
+    giorno = date or clock.today()
 
     pasti = db.scalars(
         select(MealLog).where(
@@ -456,8 +461,10 @@ def read_diary(
 
     totali = food_diary.daily_totals(db, profile, date=giorno)
 
+    # Le proteine degli integratori valgono per i giorni in cui si è segnato
+    # qualcosa (e per oggi): un giorno vuoto dello storico resta a zero.
     proteine_integratori = supplements.protein_from_supplements(db, profile)
-    if proteine_integratori:
+    if proteine_integratori and (pasti or giorno == clock.today()):
         totali.protein_g += proteine_integratori
         totali.kcal += proteine_integratori * nutrition_targets.KCAL_PER_G_PROTEIN
 
@@ -480,6 +487,38 @@ def read_diary(
         targets=_targets_out(targets),
         remaining=totali.remaining_against(targets),
         progress=totali.progress_against(targets),
+    )
+
+
+@router.get("/diary/days", response_model=DiaryDaysOut)
+def diary_days(
+    start: dt.date,
+    end: dt.date,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> DiaryDaysOut:
+    """Calorie per giorno fra `start` ed `end` compresi, solo dei giorni con
+    qualcosa segnato. Stesso conto di `/diary`, integratori proteici compresi."""
+    if end < start or (end - start).days > 62:
+        raise HTTPException(status_code=422, detail="Intervallo di date non valido (al massimo due mesi).")
+    profile, targets = _compute_targets(profile)
+    giorni = db.scalars(
+        select(MealLog.date)
+        .where(
+            MealLog.profile_id == profile.id,
+            MealLog.date >= start,
+            MealLog.date <= end,
+            MealLog.is_planned.is_(False),
+        )
+        .distinct()
+    ).all()
+    extra = supplements.protein_from_supplements(db, profile) * nutrition_targets.KCAL_PER_G_PROTEIN
+    return DiaryDaysOut(
+        target_kcal=targets.target_kcal,
+        days=[
+            DiaryDayOut(date=g, kcal=round(food_diary.daily_totals(db, profile, date=g).kcal + extra, 1))
+            for g in sorted(set(giorni))
+        ],
     )
 
 

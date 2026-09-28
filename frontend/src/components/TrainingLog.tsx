@@ -26,7 +26,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
   exerciseName,
@@ -53,6 +53,7 @@ import {
 } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
+import { primeRestSound, restTimer, useRest, type Rest } from "@/lib/restTimer";
 
 // --- Formati ----------------------------------------------------------------------
 
@@ -423,8 +424,6 @@ export function SessionDialog({
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlanExercise | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rest, setRest] = useState<{ endsAt: number; total: number } | null>(null);
-  const [now, setNow] = useState(Date.now());
   const [finishing, setFinishing] = useState(false);
   const creating = useRef<Promise<WorkoutSessionLog> | null>(null);
   const sessionRef = useRef<WorkoutSessionLog | null>(null);
@@ -470,23 +469,8 @@ export function SessionDialog({
     };
   }, [profileId, plan.id, dayLabel, exercises, oggi]);
 
-  // Recupero.
-  useEffect(() => {
-    if (!rest) return;
-    const t = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(t);
-  }, [rest]);
-  const remaining = rest ? Math.max(0, Math.ceil((rest.endsAt - now) / 1000)) : 0;
-  useEffect(() => {
-    if (rest && remaining === 0) {
-      try {
-        navigator.vibrate?.([120, 60, 120]);
-      } catch {
-        /* vibrazione non supportata */
-      }
-      setRest(null);
-    }
-  }, [rest, remaining]);
+  // Recupero: condiviso con la pillola della scheda, sopravvive a "Riduci".
+  const { rest, remaining } = useRest(phase === "running" ? session?.id : null);
 
   function update(s: WorkoutSessionLog | null) {
     setSession(s);
@@ -531,7 +515,7 @@ export function SessionDialog({
       const r = await api.post<SessionSummary>(`/workout/sessions/${s.id}/finish`);
       setSummary(r);
       update(r.session);
-      setRest(null);
+      restTimer.clearSession(s.id);
       setPhase("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Non sono riuscito a chiudere l'allenamento.");
@@ -545,6 +529,8 @@ export function SessionDialog({
   }
 
   async function saveRow(item: PlanExercise, row: Row, index: number, hint: Hint) {
+    // Prima di ogni attesa: il suono di fine recupero si sblocca solo dentro il tocco.
+    primeRestSound();
     const pesi = row.kg ?? hint.kg;
     const ripetizioni = row.reps ?? hint.reps;
     const rir = row.rir ?? hint.rir;
@@ -565,14 +551,27 @@ export function SessionDialog({
           set_number: index + 1,
         });
         id = creata.id;
-        const recupero = targets[item.id].rest_seconds;
-        setRest({ endsAt: Date.now() + recupero * 1000, total: recupero });
+        const prossima = nextStep(item, index, pesi, ripetizioni);
+        if (prossima) restTimer.start({ sessionId: s.id, total: targets[item.id].rest_seconds, ...prossima });
       }
       patchRow(item.id, row.key, { setId: id, busy: false, kg: pesi, reps: ripetizioni, rir, saved: { kg: pesi, reps: ripetizioni, rir } });
     } catch (e) {
       patchRow(item.id, row.key, { busy: false });
       setError(e instanceof Error ? `Serie non salvata: ${e.message}` : "Serie non salvata.");
     }
+  }
+
+  /** Cosa viene dopo la serie appena salvata; niente dopo l'ultima dell'allenamento. */
+  function nextStep(item: PlanExercise, index: number, pesi: number, ripetizioni: number) {
+    const serie = rows[item.id]?.length ?? 0;
+    if (index + 1 < serie) {
+      return { next: `Poi la serie ${index + 2}`, detail: `${kg(pesi)} kg × ${ripetizioni} · ${exerciseName(item.exercise)}` };
+    }
+    const n = exercises.findIndex((e) => e.id === item.id);
+    const dopo = exercises[n + 1];
+    return dopo
+      ? { next: `Poi: ${exerciseName(dopo.exercise)}`, detail: `Esercizio ${n + 2} di ${exercises.length}` }
+      : null;
   }
 
   async function deleteRow(item: PlanExercise, row: Row) {
@@ -671,7 +670,11 @@ export function SessionDialog({
         </ModalHeader>
 
         {/* Corpo */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 sm:px-5 ${
+            phase === "running" && rest ? "pb-24" : "pb-4"
+          }`}
+        >
           {error && (
             <div className="mb-3">
               <Notice>{error}</Notice>
@@ -853,42 +856,15 @@ export function SessionDialog({
           )}
         </div>
 
-        {/* Piede: avvio, recupero, fine */}
-        <div className="shrink-0 border-t border-white/[0.06] bg-ink-900/50">
+        {/* Piede: avvio, fine. Il recupero galleggia sopra, senza spostare niente. */}
+        <div className="relative shrink-0 border-t border-white/[0.06] bg-ink-900/50">
+          <AnimatePresence>
+            {phase === "running" && rest && (
+              <RestCapsule key="recupero" rest={rest} remaining={remaining} />
+            )}
+          </AnimatePresence>
           <AnimatePresence mode="wait" initial={false}>
-            {phase === "running" && rest ? (
-              <motion.div
-                key="recupero"
-                initial={{ y: 24, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 24, opacity: 0 }}
-                className="px-4 py-3 sm:px-5"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-wide text-white/40">Recupero</p>
-                    <p className="font-mono text-[26px] font-semibold leading-none tabular-nums text-white">
-                      {restLabel(remaining)}
-                    </p>
-                  </div>
-                  <button className="btn-ghost h-11 px-3" onClick={() => setRest({ ...rest, endsAt: rest.endsAt - 15000 })}>
-                    −15s
-                  </button>
-                  <button className="btn-ghost h-11 px-3" onClick={() => setRest({ ...rest, endsAt: rest.endsAt + 15000 })}>
-                    +15s
-                  </button>
-                  <button className="btn-primary h-11 px-4" onClick={() => setRest(null)}>
-                    Salta
-                  </button>
-                </div>
-                <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.08]">
-                  <div
-                    className="h-full rounded-full bg-lime-400 transition-[width] duration-300"
-                    style={{ width: `${Math.min(100, (remaining / rest.total) * 100)}%` }}
-                  />
-                </div>
-              </motion.div>
-            ) : phase === "running" ? (
+            {phase === "running" ? (
               <motion.div key="corso" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 px-4 py-3 sm:px-5">
                 <button className="btn-ghost flex-1 justify-center py-3" onClick={onClose} title="L'allenamento continua: lo riapri dalla scheda">
                   Riduci
@@ -946,6 +922,126 @@ export function SessionDialog({
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+// --- Recupero ---------------------------------------------------------------------
+
+/** Anello del recupero: si svuota man mano che il tempo passa. */
+export function RestRing({
+  fraction,
+  size,
+  stroke,
+  children,
+}: {
+  fraction: number;
+  size: number;
+  stroke: number;
+  children?: ReactNode;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <span
+      className="relative grid shrink-0 place-items-center rounded-full shadow-[0_0_18px_-6px_rgba(174,212,74,0.9)]"
+      style={{ width: size, height: size }}
+    >
+      <svg width={size} height={size} className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#aed44a"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - Math.max(0, Math.min(1, fraction)))}
+          className="transition-[stroke-dashoffset] duration-300 ease-linear"
+        />
+      </svg>
+      <span className="relative">{children}</span>
+    </span>
+  );
+}
+
+export function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden>
+      <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** La capsula sopra i pulsanti: conto alla rovescia, poi "tocca a te". */
+function RestCapsule({ rest, remaining }: { rest: Rest; remaining: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 16, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 420, damping: 32 }}
+      className="absolute inset-x-3 bottom-full z-10 mb-3 sm:inset-x-4"
+      role="timer"
+      aria-live="polite"
+    >
+      <motion.div
+        layout
+        className={`flex items-center gap-3 rounded-full border py-2 pl-2 pr-2 transition-colors duration-300 ${
+          rest.done
+            ? "border-lime-300 bg-lime-400 text-ink-900 shadow-[0_0_34px_-6px_rgba(174,212,74,0.9)]"
+            : "border-lime-400/60 bg-[#101214] shadow-[0_0_24px_-8px_rgba(174,212,74,0.7),0_12px_40px_-12px_rgba(0,0,0,0.9)]"
+        }`}
+      >
+        {rest.done ? (
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink-900/15">
+            <CheckIcon />
+          </span>
+        ) : (
+          <RestRing fraction={remaining / rest.total} size={44} stroke={4}>
+            <span className="block h-1.5 w-1.5 rounded-full bg-lime-400" />
+          </RestRing>
+        )}
+        <div className="min-w-0 flex-1">
+          {rest.done ? (
+            <>
+              <p className="truncate text-[14px] font-semibold">{rest.next.replace(/^Poi:? ?/, "Tocca a te: ")}</p>
+              <p className="truncate text-[11.5px] text-ink-900/70">{rest.detail}</p>
+            </>
+          ) : (
+            <>
+              <p className="font-mono text-[22px] font-semibold leading-none tabular-nums text-white">{clock(remaining)}</p>
+              <p className="mt-0.5 truncate text-[11.5px] text-white/50">{rest.next.toLowerCase()}</p>
+            </>
+          )}
+        </div>
+        {rest.done ? (
+          <button
+            onClick={() => restTimer.clear()}
+            className="shrink-0 rounded-full bg-ink-900 px-4 py-2.5 text-[13px] font-semibold text-lime-200"
+          >
+            Ok
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => restTimer.shift(15)}
+              aria-label="Aggiungi 15 secondi"
+              className="grid h-10 w-12 shrink-0 place-items-center rounded-full bg-white/[0.08] font-mono text-[12.5px] text-white/80 transition hover:bg-white/[0.14]"
+            >
+              +15
+            </button>
+            <button
+              onClick={() => restTimer.clear()}
+              className="grid h-10 shrink-0 place-items-center rounded-full bg-lime-400 px-4 text-[13px] font-semibold text-ink-900 transition hover:bg-lime-300"
+            >
+              Salta
+            </button>
+          </>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 

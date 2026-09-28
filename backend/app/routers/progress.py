@@ -31,6 +31,7 @@ from app.schemas import (
 )
 from app.services import (
     catalog_sync,
+    clock,
     exercise_library,
     progress_report,
     progress_stats,
@@ -54,7 +55,7 @@ def read_report(
     confronto fra due misurazioni soprattutto rumore. Quando le pesate sono
     troppo poche, la risposta lo dichiara in `weight_smoothed`.
     """
-    fine = dt.date.today()
+    fine = clock.today()
     report = progress_report.build_report(
         db, profile, since=fine - dt.timedelta(weeks=weeks), until=fine
     )
@@ -116,7 +117,7 @@ def logged_exercises(
 ) -> list[LoggedExerciseOut]:
     """Esercizi con carichi registrati nel periodo, i più frequenti prima:
     il selettore del grafico della progressione dei carichi."""
-    dal = dt.date.today() - dt.timedelta(weeks=weeks)
+    dal = clock.today() - dt.timedelta(weeks=weeks)
     righe = training_log.logged_exercises(db, profile.id, since=dal)
     translation.ensure_translated(db, [r.exercise for r in righe])
     return [

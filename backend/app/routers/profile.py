@@ -22,12 +22,20 @@ from app.schemas import (
     ProfileIn,
     ProfileOut,
     ProfileUpdate,
+    ResetIn,
     ScreeningIn,
     ScreeningOut,
     WeightLogIn,
     WeightLogOut,
 )
-from app.services import agent_notes, daily_reminders, supplement_intake, weekly_summary
+from app.services import (
+    agent_notes,
+    clock,
+    daily_reminders,
+    data_reset,
+    supplement_intake,
+    weekly_summary,
+)
 
 router = APIRouter(prefix="/profile", tags=["profilo"])
 
@@ -155,7 +163,7 @@ def log_weight(
     profile = get_profile(profile_id, db, user)
     log = WeightLog(
         profile_id=profile.id,
-        date=payload.date or dt.date.today(),
+        date=payload.date or clock.today(),
         weight_kg=payload.weight_kg,
         body_fat_pct=payload.body_fat_pct,
         note=payload.note,
@@ -201,7 +209,7 @@ def reminders(
     `today` è la data locale del client.
     """
     profile = get_profile(profile_id, db, user)
-    oggi = today or dt.date.today()
+    oggi = today or clock.today()
     promemoria = daily_reminders.build(db, profile, today=oggi)
     return DailyRemindersOut(
         date=oggi,
@@ -235,7 +243,7 @@ def notes(
             knowledge_tags=n.knowledge_tags, question=n.question,
             priority=n.priority, action=n.action,
         )
-        for n in agent_notes.build(db, profile, today=today or dt.date.today())
+        for n in agent_notes.build(db, profile, today=today or clock.today())
     ]
 
 
@@ -258,7 +266,7 @@ def weekly(
     user: User = Depends(current_user),
 ) -> WeeklySummaryOut:
     """Riepilogo della settimana conclusa (lunedì-domenica) prima di `today`."""
-    r = weekly_summary.build(db, get_profile(profile_id, db, user), today=today or dt.date.today())
+    r = weekly_summary.build(db, get_profile(profile_id, db, user), today=today or clock.today())
     return WeeklySummaryOut(
         week_start=r.week_start,
         week_end=r.week_end,
@@ -274,3 +282,21 @@ def weekly(
         supplements=[SupplementWeekOut(**vars(i)) for i in r.supplements],
         focus=r.focus,
     )
+
+
+@router.post("/{profile_id}/reset", status_code=204, response_model=None)
+def reset_all(
+    profile_id: int,
+    payload: ResetIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> None:
+    """Azzera dati: cancella i profili dell'utente e tutto ciò che contengono.
+
+    Restano l'account, i dispositivi iscritti alle notifiche e i prodotti
+    inseriti a mano; al prossimo caricamento si riparte dall'onboarding.
+    """
+    get_profile(profile_id, db, user)
+    if payload.confirm.strip().upper() != "AZZERA":
+        raise HTTPException(status_code=422, detail='Per confermare scrivi "AZZERA".')
+    data_reset.reset_everything(db, user)

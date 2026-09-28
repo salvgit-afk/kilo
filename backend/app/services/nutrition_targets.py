@@ -38,6 +38,7 @@ from app.models import (
     Sex,
     UserProfile,
 )
+from app.services import clock
 
 logger = logging.getLogger("nutrition_targets")
 
@@ -285,7 +286,7 @@ def persist_plan(
         )
     ):
         previous.is_active = False
-        previous.ended_at = dt.date.today()
+        previous.ended_at = clock.today()
 
     plan = NutritionPlan(
         profile_id=profile.id,
@@ -298,7 +299,7 @@ def persist_plan(
         calorie_adjustment_pct=targets.calorie_adjustment_pct,
         rationale=targets.rationale,
         is_active=True,
-        started_at=dt.date.today(),
+        started_at=clock.today(),
     )
     db.add(plan)
     db.commit()

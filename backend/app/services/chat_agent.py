@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SupplementDeclaration, UserProfile, WorkoutPlan
-from app.services import food_diary, knowledge_base, nutrition_targets, supplement_intake
+from app.services import clock, food_diary, knowledge_base, nutrition_targets, supplement_intake
 
 logger = logging.getLogger("chat_agent")
 
@@ -363,7 +363,7 @@ def _user_context(db: Session, profile: UserProfile) -> str:
     # scritto questo?", la risposta deve essere coerente con la nota.
     from app.services import agent_notes
 
-    note = agent_notes.build(db, profile, today=dt.date.today())
+    note = agent_notes.build(db, profile, today=clock.today())
     if note:
         righe.append(
             "- Note di Kilo mostrate ora nell'app: "
@@ -375,7 +375,7 @@ def _user_context(db: Session, profile: UserProfile) -> str:
 
 def _intake_note(db: Session, declaration: SupplementDeclaration) -> str:
     """Quanto l'utente ha segnato nel diario delle assunzioni, se lo usa."""
-    riepilogo = supplement_intake.summarize(db, declaration, today=dt.date.today())
+    riepilogo = supplement_intake.summarize(db, declaration, today=clock.today())
     if not riepilogo.days_taken:
         return ""
     return (

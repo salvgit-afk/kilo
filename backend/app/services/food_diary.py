@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Ingredient, IngredientSource, MealItem, MealLog, UserProfile
-from app.services import catalog_sync
+from app.services import catalog_sync, clock
 from app.services.nutrition_targets import NutritionTargets
 
 logger = logging.getLogger("food_diary")
@@ -418,7 +418,7 @@ def get_or_create_meal(
     meal_type: str = "lunch",
 ) -> MealLog:
     """Recupera il pasto del giorno, creandolo se non esiste."""
-    date = date or dt.date.today()
+    date = date or clock.today()
     meal = db.scalar(
         select(MealLog).where(
             MealLog.profile_id == profile.id,
@@ -521,7 +521,7 @@ def daily_totals(
     Include sia gli alimenti pesati sia i pasti liberi con macro inseriti a
     mano, così il totale resta corretto anche per chi non modella tutto.
     """
-    date = date or dt.date.today()
+    date = date or clock.today()
     pasti = db.scalars(
         select(MealLog).where(
             MealLog.profile_id == profile.id,

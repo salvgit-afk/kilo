@@ -34,6 +34,7 @@ from app.models import (
     WorkoutPlanExercise,
 )
 from app.services.workout_generator import safety_ceiling_sets, weekly_sets_range
+from app.services import clock
 
 logger = logging.getLogger("autoregulation")
 
@@ -148,7 +149,7 @@ def evaluate_feedback(
     # Quanto dura la scheda attuale: sotto le 4-6 settimane è presto per
     # trarre conclusioni sui progressi.
     if plan is not None and plan.started_at:
-        settimane = (dt.date.today() - plan.started_at).days // 7
+        settimane = (clock.today() - plan.started_at).days // 7
         if settimane < MIN_WEEKS_BEFORE_JUDGING:
             caveats.append(
                 f"Segui questa scheda da circa {settimane} settimane: le variazioni "

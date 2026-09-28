@@ -39,3 +39,6 @@ frontend/probe.mjs
 
 # Risultati delle valutazioni della chat (il riferimento è evals/baseline.json)
 backend/evals/results/
+
+# Copie fatte da scripts/reset_dati.py: dati personali, non vanno nel repository
+backup-reset-*.json

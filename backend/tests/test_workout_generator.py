@@ -430,11 +430,21 @@ def test_nessun_esercizio_disponibile_solleva_errore(db):
         (2, ["Giorno A", "Giorno B"]),
         (3, ["Giorno A", "Giorno B", "Giorno C"]),
         (4, ["Upper A", "Lower A", "Upper B", "Lower B"]),
+        (5, ["Upper", "Lower", "Push", "Pull", "Gambe"]),
         (6, ["Push A", "Pull A", "Gambe A", "Push B", "Pull B", "Gambe B"]),
     ],
 )
 def test_split_per_giorni_disponibili(giorni, etichette_attese):
     assert [g for g, _ in wg.build_split(giorni)] == etichette_attese
+
+
+def test_con_cinque_giorni_ogni_muscolo_due_volte():
+    """Il Push/Pull/Gambe puro a 5 giorni allenerebbe le gambe una volta sola."""
+    frequenza: dict[str, int] = {}
+    for _, muscoli in wg.build_split(5):
+        for m in muscoli:
+            frequenza[m] = frequenza.get(m, 0) + 1
+    assert min(frequenza.values()) == 2
 
 
 def test_full_body_non_include_i_gruppi_minori():

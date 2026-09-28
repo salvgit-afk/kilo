@@ -38,6 +38,7 @@ from app.models import (
     WorkoutPlanExercise,
     WorkoutSession,
 )
+from app.services import clock
 
 logger = logging.getLogger("progress_report")
 
@@ -256,7 +257,7 @@ def build_report(
     until: dt.date | None = None,
 ) -> ProgressReport:
     """Costruisce il report del periodo indicato (default: ultime 12 settimane)."""
-    until = until or dt.date.today()
+    until = until or clock.today()
     since = since or (until - dt.timedelta(weeks=12))
 
     sessioni = db.scalars(

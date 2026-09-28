@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import ApiUsage
+from app.services import clock
 
 
 class RateLimited(RuntimeError):
@@ -94,7 +95,7 @@ DAILY_LIMITS = {
 def consume_daily(db: Session, user_id: int, kind: str, *, today: dt.date | None = None) -> None:
     """Conta un uso della funzione `kind`; oltre il limite solleva `RateLimited`."""
     limite = DAILY_LIMITS[kind]
-    oggi = today or dt.date.today()
+    oggi = today or clock.today()
     riga = db.scalar(
         select(ApiUsage).where(ApiUsage.user_id == user_id, ApiUsage.day == oggi, ApiUsage.kind == kind)
     )
@@ -113,7 +114,7 @@ def consume_daily(db: Session, user_id: int, kind: str, *, today: dt.date | None
             )
     if riga.count >= limite:
         secondi_a_mezzanotte = int(
-            (dt.datetime.combine(oggi + dt.timedelta(days=1), dt.time()) - dt.datetime.now()).total_seconds()
+            (dt.datetime.combine(oggi + dt.timedelta(days=1), dt.time(), tzinfo=clock.FUSO) - clock.now()).total_seconds()
         )
         raise RateLimited(
             "Hai raggiunto il limite giornaliero per questa funzione: riprova domani.",

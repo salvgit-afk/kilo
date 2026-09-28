@@ -49,7 +49,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutSession,
 )
-from app.services import nutrition_targets, supplements
+from app.services import clock, nutrition_targets, supplements
 from app.services.progress_report import (
     WEIGHT_SMOOTHING_DAYS,
     WeightTrend,
@@ -149,7 +149,7 @@ def volume_by_muscle(
     di `training_volume.md` (mezza serie ai secondari) alzerebbe il conteggio
     rispetto ai range con cui la scheda è stata costruita.
     """
-    today = today or dt.date.today()
+    today = today or clock.today()
     lunedi = _week_starts(weeks, today)
     inizio = lunedi[0]
     indice = {giorno: n for n, giorno in enumerate(lunedi)}
@@ -245,7 +245,7 @@ def one_rm_trend(
     Restituisce `None` se il profilo non ha mai registrato una serie su
     questo esercizio: il grafico non esiste, non è vuoto.
     """
-    today = today or dt.date.today()
+    today = today or clock.today()
     inizio = today - dt.timedelta(weeks=weeks)
 
     righe = db.execute(
@@ -375,7 +375,7 @@ def consistency(
     Si contano i giorni distinti e non le sessioni, perché il confronto è con
     i giorni di allenamento della scheda.
     """
-    today = today or dt.date.today()
+    today = today or clock.today()
     lunedi = _week_starts(weeks, today)
     inizio = lunedi[0]
     indice = {giorno: n for n, giorno in enumerate(lunedi)}
@@ -485,7 +485,7 @@ def weight_trend(
     db: Session, profile: UserProfile, *, weeks: int = 12, today: dt.date | None = None
 ) -> WeightTrendStats:
     """Peso corporeo a media mobile e confronto con il ritmo atteso."""
-    today = today or dt.date.today()
+    today = today or clock.today()
     inizio = today - dt.timedelta(weeks=weeks)
 
     logs = db.scalars(
@@ -686,7 +686,7 @@ def nutrition_weeks(
     totale come in `GET /diary`, perché il target è l'apporto proteico della
     giornata e non il cibo solido.
     """
-    today = today or dt.date.today()
+    today = today or clock.today()
     lunedi = _week_starts(weeks, today)
     inizio = lunedi[0]
     indice = {giorno: n for n, giorno in enumerate(lunedi)}

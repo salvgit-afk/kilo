@@ -83,10 +83,13 @@ function messaggioErrore(e: unknown): string {
 export function FoodPhotoPanel({
   profileId,
   mealType,
+  date,
   onAdded,
 }: {
   profileId: number;
   mealType: string;
+  /** Il giorno mostrato nel diario: non sempre è oggi. */
+  date: string;
   /** Il pasto è finito nel diario: la pagina si ricarica e il pannello chiude. */
   onAdded: () => void;
 }) {
@@ -152,7 +155,7 @@ export function FoodPhotoPanel({
       await api.post(`/nutrition/diary/recipe?profile_id=${profileId}`, {
         items: bozza.items,
         meal_type: mealType,
-        date: null,
+        date,
         servings: 1,
         eaten_servings: 1,
       });
@@ -273,6 +276,7 @@ export function FoodPhotoPanel({
               lettura={lettura}
               profileId={profileId}
               mealType={mealType}
+              date={date}
               onAdded={onAdded}
               onRiprova={() => {
                 setLettura(null);
@@ -387,12 +391,14 @@ function FormEtichetta({
   lettura,
   profileId,
   mealType,
+  date,
   onAdded,
   onRiprova,
 }: {
   lettura: LabelPhoto;
   profileId: number;
   mealType: string;
+  date: string;
   onAdded: () => void;
   onRiprova: () => void;
 }) {
@@ -445,6 +451,7 @@ function FormEtichetta({
         ingredient_id: prodotto.ingredient_id,
         grams: porzione,
         meal_type: mealType,
+        date,
       });
       onAdded();
     } catch (e) {

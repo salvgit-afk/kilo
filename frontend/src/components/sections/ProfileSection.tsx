@@ -8,6 +8,7 @@
  * si sta spostando.
  */
 
+import { AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
   ACTIVITY_LABELS,
@@ -19,10 +20,11 @@ import {
   type Profile,
 } from "@/lib/api";
 import { Card, CardHeader, Notice } from "@/components/ui";
-import { Field, NumberField, OptionGroup } from "@/components/controls";
+import { Field, Modal, ModalBody, ModalFooter, ModalHeader, NumberField, OptionGroup } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
 import { reminderSettings } from "@/components/ReminderBanner";
 import { PushSettings } from "@/components/PushSettings";
+import { restTimer } from "@/lib/restTimer";
 
 export function ProfileSection({
   profile,
@@ -30,18 +32,22 @@ export function ProfileSection({
   isAdmin = false,
   onUpdated,
   onReset,
+  onDataReset,
 }: {
   profile: Profile;
   email?: string;
   isAdmin?: boolean;
   onUpdated: (p: Profile) => void;
   onReset: () => void;
+  /** I dati sono stati azzerati: si riparte dall'onboarding. */
+  onDataReset: () => void;
 }) {
   const [form, setForm] = useState(() => initialForm(profile));
   const [saving, setSaving] = useState(false);
   const [catalog, setCatalog] = useState<CatalogStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [reminders, setReminders] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     api.get<CatalogStatus>("/catalog/status").then(setCatalog);
@@ -288,11 +294,110 @@ export function ProfileSection({
                 I tuoi dati restano salvati nel database e li ritrovi al prossimo
                 accesso: esci solo dalla sessione su questo browser.
               </p>
+              <div className="border-t border-white/[0.06] pt-3">
+                <button
+                  onClick={() => setResetting(true)}
+                  className="w-full rounded-xl border border-rose-400/35 px-4 py-2.5 text-[13px] font-medium text-rose-300 transition hover:bg-rose-400/[0.1]"
+                >
+                  Azzera tutti i dati
+                </button>
+                <p className="mt-2 text-[11px] leading-relaxed text-white/25">
+                  Cancella profilo, schede, diario, integratori e progressi e ti fa
+                  ripartire da capo. L&apos;account resta.
+                </p>
+              </div>
             </div>
           </Card>
         </div>
       </div>
+      <AnimatePresence>
+        {resetting && (
+          <ResetDialog
+            profileId={profile.id}
+            onClose={() => setResetting(false)}
+            onDone={() => {
+              restTimer.clear();
+              onDataReset();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </>
+  );
+}
+
+const CANCELLATI = [
+  "profilo, obiettivi e questionario di sicurezza",
+  "schede, allenamenti e carichi",
+  "diario alimentare e ricette salvate",
+  "integratori e assunzioni",
+  "pesate e progressi",
+];
+
+/** Si scrive AZZERA: un tocco per sbaglio non deve cancellare mesi di dati. */
+function ResetDialog({ profileId, onClose, onDone }: { profileId: number; onClose: () => void; onDone: () => void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ok = text.trim().toUpperCase() === "AZZERA";
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/profile/${profileId}/reset`, { confirm: text.trim() });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito ad azzerare i dati.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={busy ? () => {} : onClose} className="max-w-md">
+      <ModalHeader eyebrow="Account" title="Azzera tutti i dati" onClose={onClose} />
+      <ModalBody>
+        <div className="rounded-2xl border border-rose-400/25 bg-rose-400/[0.06] p-3.5">
+          <p className="text-[13px] font-medium text-rose-100">Si cancellano per sempre:</p>
+          <ul className="mt-2 space-y-1.5">
+            {CANCELLATI.map((c) => (
+              <li key={c} className="flex gap-2 text-[12.5px] leading-snug text-white/65">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-rose-300" />
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-white/50">
+          Restano l&apos;account (email e password), i dispositivi con le notifiche attive e i
+          prodotti che hai inserito a mano. Subito dopo ricominci dall&apos;onboarding.
+        </p>
+        <Field title="Per confermare scrivi AZZERA">
+          <input
+            className="input font-mono uppercase tracking-wider"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && ok && !busy && confirm()}
+            autoComplete="off"
+            autoCapitalize="characters"
+            aria-label="Scrivi AZZERA per confermare"
+          />
+        </Field>
+        {error && <Notice>{error}</Notice>}
+      </ModalBody>
+      <ModalFooter>
+        <button className="btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>
+          Annulla
+        </button>
+        <button
+          onClick={confirm}
+          disabled={!ok || busy}
+          className="flex-[1.4] rounded-xl bg-rose-500 px-4 py-2.5 text-[13.5px] font-semibold text-white transition hover:bg-rose-400 disabled:bg-white/[0.06] disabled:text-white/30"
+        >
+          {busy ? "Azzero…" : "Azzera tutto"}
+        </button>
+      </ModalFooter>
+    </Modal>
   );
 }
 

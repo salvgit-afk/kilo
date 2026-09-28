@@ -44,7 +44,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutPlanExercise,
 )
-from app.services import exercise_library
+from app.services import clock, exercise_library
 
 logger = logging.getLogger("workout_generator")
 
@@ -250,6 +250,21 @@ def _upper_lower(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
 
 
 def _push_pull_legs(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
+    """Push/Pull/Gambe, ripetuto finché ci sono giorni.
+
+    Con 5 giorni il ciclo puro lascerebbe le gambe a una volta sola a
+    settimana (Push, Pull, Gambe, Push, Pull): si usa invece l'ibrido Upper,
+    Lower, Push, Pull, Gambe, che porta ogni muscolo a due sedute.
+    """
+    if days_per_week == 5:
+        lower = LEG_MUSCLES + CORE_MUSCLES
+        return [
+            ("Upper", PUSH_MUSCLES + PULL_MUSCLES),
+            ("Lower", lower),
+            ("Push", PUSH_MUSCLES),
+            ("Pull", PULL_MUSCLES),
+            ("Gambe", lower),
+        ]
     ciclo = (
         ("Push", PUSH_MUSCLES),
         ("Pull", PULL_MUSCLES),
@@ -328,6 +343,12 @@ SPLIT_NAMES = {
     SplitType.PUSH_PULL_LEGS: "Push/Pull/Gambe",
     SplitType.MUSCLE_GROUP: "Per gruppo muscolare",
 }
+
+
+def split_name(split_type: str, days_per_week: int) -> str:
+    if split_type == SplitType.PUSH_PULL_LEGS and days_per_week == 5:
+        return "Upper/Lower + Push/Pull/Gambe"
+    return SPLIT_NAMES[split_type]
 
 
 # --- Selezione degli esercizi ------------------------------------------------
@@ -635,7 +656,7 @@ def generate_plan(
         knowledge_tags.append("attivita_generale")
 
     return GeneratedPlan(
-        name=f"{GOAL_NAMES.get(profile.goal, 'Scheda')} · {SPLIT_NAMES[resolved_split]} — "
+        name=f"{GOAL_NAMES.get(profile.goal, 'Scheda')} · {split_name(resolved_split, profile.training_days_per_week)} — "
              f"{profile.training_days_per_week} giorni",
         split_type=resolved_split,
         goal=profile.goal,
@@ -888,7 +909,7 @@ def archive_plan(db: Session, profile: UserProfile, plan_id: int) -> WorkoutPlan
     if plan is None or plan.profile_id != profile.id or not plan.is_active:
         return None
     plan.is_active = False
-    plan.ended_at = dt.date.today()
+    plan.ended_at = clock.today()
     db.commit()
     return plan
 
@@ -918,7 +939,7 @@ def persist_plan(
         previous = db.get(WorkoutPlan, replace_plan_id)
         if previous is not None and previous.profile_id == profile.id and previous.is_active:
             previous.is_active = False
-            previous.ended_at = dt.date.today()
+            previous.ended_at = clock.today()
 
     plan = WorkoutPlan(
         profile_id=profile.id,
@@ -928,7 +949,7 @@ def persist_plan(
         split_type=generated.split_type,
         rationale=generated.rationale,
         is_active=True,
-        started_at=started_at or dt.date.today(),
+        started_at=started_at or clock.today(),
     )
     db.add(plan)
     db.flush()  # serve l'id per le righe collegate

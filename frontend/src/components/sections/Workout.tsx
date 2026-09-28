@@ -54,7 +54,16 @@ import {
 } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
-import { ParamsChips, PlanParamsDialog, SessionDialog, clock, useElapsed } from "@/components/TrainingLog";
+import {
+  CheckIcon,
+  ParamsChips,
+  PlanParamsDialog,
+  RestRing,
+  SessionDialog,
+  clock,
+  useElapsed,
+} from "@/components/TrainingLog";
+import { useRest } from "@/lib/restTimer";
 import { ScheduleDialog, WEEKDAY_NAMES, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
 
 export { formatEquipment } from "@/lib/api";
@@ -1243,10 +1252,17 @@ function FeedbackDialog({
   );
 }
 
-/** Il pulsante che prende il posto di "Inizia allenamento" mentre si è in corso. */
+/**
+ * Il pulsante che prende il posto di "Inizia allenamento" mentre si è in corso.
+ * Con il pannello ridotto porta anche il recupero: anello e secondi a sinistra,
+ * durata della sessione sempre a destra; a recupero finito diventa lime.
+ */
 function ActiveWorkoutPill({ session, onOpen }: { session: WorkoutSessionLog; onOpen: () => void }) {
   const secondi = useElapsed(session.started_at);
+  const { rest, remaining } = useRest(session.id);
   const giorno = session.day_label ?? "";
+  const nome = giorno.length <= 2 ? `Giorno ${giorno}` : giorno;
+  const finito = rest?.done ?? false;
   return (
     <motion.button
       initial={{ opacity: 0, scale: 0.96 }}
@@ -1254,20 +1270,49 @@ function ActiveWorkoutPill({ session, onOpen }: { session: WorkoutSessionLog; on
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-full border border-lime-400/50 bg-gradient-to-r from-lime-400/[0.18] to-lime-400/[0.06] py-2 pl-4 pr-2 text-left shadow-[0_0_28px_-10px_rgba(174,212,74,0.8)] transition hover:border-lime-400/80 sm:w-auto sm:min-w-[340px]"
+      className={`flex w-full items-center gap-3 rounded-full border py-2 pr-2 text-left transition-colors duration-300 sm:w-auto sm:min-w-[340px] ${
+        rest ? "pl-2" : "pl-4"
+      } ${
+        finito
+          ? "border-lime-300 bg-lime-400 text-ink-900 shadow-[0_0_34px_-6px_rgba(174,212,74,0.9)]"
+          : "border-lime-400/50 bg-gradient-to-r from-lime-400/[0.18] to-lime-400/[0.06] shadow-[0_0_28px_-10px_rgba(174,212,74,0.8)] hover:border-lime-400/80"
+      }`}
       aria-label="Riapri l'allenamento in corso"
     >
-      <span className="relative flex h-2.5 w-2.5 shrink-0">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-70" />
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lime-400" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13.5px] font-semibold text-lime-100">Allenamento in corso</span>
-        <span className="block truncate text-[11.5px] text-white/50">
-          {giorno.length <= 2 ? `Giorno ${giorno}` : giorno} · tocca per riaprirlo
+      {finito ? (
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink-900/15">
+          <CheckIcon />
         </span>
+      ) : rest ? (
+        <RestRing fraction={remaining / rest.total} size={40} stroke={3.5}>
+          <span className="font-mono text-[11px] font-semibold tabular-nums text-white">{clock(remaining)}</span>
+        </RestRing>
+      ) : (
+        <span className="relative flex h-2.5 w-2.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-70" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lime-400" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        {finito && rest ? (
+          <>
+            <span className="block truncate text-[13.5px] font-semibold">{rest.next.replace(/^Poi:? ?/, "Tocca a te: ")}</span>
+            <span className="block truncate text-[11.5px] text-ink-900/70">{rest.detail}</span>
+          </>
+        ) : (
+          <>
+            <span className="block truncate text-[13.5px] font-semibold text-lime-100">
+              {rest ? `Recupero · ${rest.next.replace(/^Poi:? (la )?/, "")}` : "Allenamento in corso"}
+            </span>
+            <span className="block truncate text-[11.5px] text-white/50">{nome} · tocca per riaprirlo</span>
+          </>
+        )}
       </span>
-      <span className="rounded-full bg-ink-900/70 px-3 py-1.5 font-mono text-[16px] font-semibold tabular-nums text-white">
+      <span
+        className={`shrink-0 rounded-full px-3 py-1.5 font-mono text-[16px] font-semibold tabular-nums ${
+          finito ? "bg-ink-900 text-white" : "bg-ink-900/70 text-white"
+        }`}
+      >
         {clock(secondi)}
       </span>
     </motion.button>

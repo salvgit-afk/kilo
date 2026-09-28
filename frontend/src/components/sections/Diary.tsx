@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MEAL_LABELS,
   api,
+  localDate,
   type Diary as DiaryData,
   type FoodResult,
   type GapSuggestions,
@@ -43,6 +44,7 @@ import { KiloNote } from "@/components/KiloNote";
 
 import { MEAL_ORDER, MealTimeline } from "@/components/diary/MealTimeline";
 import { DaySummary } from "@/components/diary/DaySummary";
+import { DayStrip } from "@/components/diary/DayStrip";
 
 export function Diary({
   profileId,
@@ -54,6 +56,10 @@ export function Diary({
   onIntentHandled?: () => void;
 }) {
   const [data, setData] = useState<DiaryData | null>(null);
+  // Il giorno mostrato: oggi, o uno passato scelto dalla striscia.
+  const [today, setToday] = useState(() => localDate());
+  const [day, setDay] = useState(today);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [gap, setGap] = useState<GapSuggestions | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<{ meal: string; query?: string } | null>(null);
@@ -68,20 +74,35 @@ export function Diary({
   }, [profileId]);
 
   const load = useCallback(async () => {
-    setData(await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}`));
+    setData(await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}&date=${day}`));
     setLoading(false);
+    setRefreshKey((k) => k + 1);
     loadGap();
     // Banner e pallino del menu: il pasto di oggi potrebbe essere appena segnato.
     notifyLogged();
-  }, [profileId, loadGap]);
+  }, [profileId, day, loadGap]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  // L'app resta aperta oltre la mezzanotte: "oggi" va aggiornato, e chi
+  // guardava oggi passa al giorno nuovo.
+  useEffect(() => {
+    const t = setInterval(() => {
+      const adesso = localDate();
+      if (adesso !== today) {
+        setDay((d) => (d === today ? adesso : d));
+        setToday(adesso);
+      }
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [today]);
+
   // Il coach ha proposto di cercare un alimento: si apre la ricerca già compilata.
   useEffect(() => {
     if (intent?.section === "diario" && intent.foodQuery) {
+      setDay(localDate());
       setAdding({ meal: mealForNow(), query: intent.foodQuery });
       onIntentHandled?.();
     }
@@ -95,22 +116,26 @@ export function Diary({
     <>
       <PageHeader
         eyebrow="Nutrizione"
-        title="Diario di oggi"
+        title="Diario"
         description="Cerchi l'alimento, scegli tu quale e indichi i grammi: qui non c'è niente di stimato."
       />
 
       <KiloNote section="diario" />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_350px]">
-        <MealTimeline
+        <div className="space-y-4">
+          <DayStrip profileId={profileId} day={day} today={today} refreshKey={refreshKey} onChange={setDay} />
+          <MealTimeline
           meals={data.meals}
           onAdd={(meal) => setAdding({ meal })}
           onAddRecipe={(meal) => setAddingRecipe(meal)}
           onChanged={load}
-        />
+          />
+        </div>
 
         <div className="space-y-4">
-          {gap && <GapCard gap={gap} profileId={profileId} onAdded={load} />}
+          {/* "Cosa mi manca oggi" vale solo per oggi. */}
+          {gap && day === today && <GapCard gap={gap} profileId={profileId} onAdded={load} />}
 
           <DaySummary data={data} />
 
@@ -126,6 +151,7 @@ export function Diary({
             profileId={profileId}
             mealType={addingRecipe}
             mealOrder={MEAL_ORDER}
+            date={day}
             onClose={() => setAddingRecipe(null)}
             onAdded={() => {
               setAddingRecipe(null);
@@ -137,6 +163,7 @@ export function Diary({
           <FoodSearchDialog
             profileId={profileId}
             mealType={adding.meal}
+            date={day}
             initialQuery={adding.query}
             onClose={() => setAdding(null)}
             onAdded={() => {
@@ -354,12 +381,15 @@ function GapCard({
 function FoodSearchDialog({
   profileId,
   mealType,
+  date,
   initialQuery,
   onClose,
   onAdded,
 }: {
   profileId: number;
   mealType: string;
+  /** Il giorno mostrato nel diario: non sempre è oggi. */
+  date: string;
   initialQuery?: string;
   onClose: () => void;
   onAdded: () => void;
@@ -466,6 +496,7 @@ function FoodSearchDialog({
         ingredient_id: selected.ingredient_id,
         grams,
         meal_type: meal,
+        date,
       });
       onAdded();
     } catch (e) {
@@ -559,6 +590,7 @@ function FoodSearchDialog({
           <FoodPhotoPanel
             profileId={profileId}
             mealType={meal}
+            date={date}
             onAdded={onAdded}
           />
         )}

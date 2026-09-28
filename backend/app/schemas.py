@@ -122,6 +122,12 @@ class WeightLogIn(BaseModel):
     note: str | None = None
 
 
+class ResetIn(BaseModel):
+    """Si scrive "AZZERA": un tocco per sbaglio non deve cancellare tutto."""
+
+    confirm: str
+
+
 class WeightLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -492,6 +498,18 @@ class MealOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+
+
+class DiaryDayOut(BaseModel):
+    date: dt.date
+    kcal: float
+
+
+class DiaryDaysOut(BaseModel):
+    """Le calorie di ogni giorno con qualcosa segnato: la striscia dello storico."""
+
+    target_kcal: float
+    days: list[DiaryDayOut]
 
 
 class DiaryOut(BaseModel):

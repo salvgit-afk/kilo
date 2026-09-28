@@ -57,6 +57,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.services import clock
 
 # --- Costanti (stringhe nel DB, per semplicità nelle migrazioni Alembic) ---
 
@@ -302,7 +303,7 @@ class UserProfile(Base):
 
     @property
     def age(self) -> int:
-        today = dt.date.today()
+        today = clock.today()
         years = today.year - self.birth_date.year
         if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
             years -= 1

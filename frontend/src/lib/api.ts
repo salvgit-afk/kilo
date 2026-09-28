@@ -318,6 +318,12 @@ export type Meal = {
   fat_g: number;
 };
 
+/** Le calorie dei giorni con qualcosa segnato: la striscia dello storico. */
+export type DiaryDays = {
+  target_kcal: number;
+  days: { date: string; kcal: number }[];
+};
+
 export type Diary = {
   date: string;
   meals: Meal[];
@@ -615,7 +621,7 @@ export const SPLIT_HINTS: Record<string, string> = {
   auto: "Decido io in base ai giorni che hai a disposizione",
   full_body: "Tutto il corpo a ogni sessione: ogni muscolo più volte a settimana",
   upper_lower: "Un giorno parte alta, un giorno parte bassa",
-  push_pull_legs: "Spinta, trazione e gambe in giorni separati",
+  push_pull_legs: "Spinta, trazione e gambe in giorni separati; con 5 giorni si aggiungono Upper e Lower",
   muscle_group: "Es. lunedì petto e bicipiti, mercoledì gambe e dorso, venerdì spalle e tricipiti",
 };
 

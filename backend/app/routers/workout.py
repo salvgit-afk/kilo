@@ -56,6 +56,7 @@ from app.schemas import (
 from app.services import (
     autoregulation,
     chat_agent,
+    clock,
     exercise_guidance,
     exercise_library,
     exercise_swap,
@@ -320,7 +321,7 @@ def log_session(
         workout_plan_id=piano.id if piano else None,
         # La data la manda il telefono: il server è in UTC e fra mezzanotte e
         # le due, in Italia, avrebbe ancora quella di ieri.
-        date=payload.date or dt.date.today(),
+        date=payload.date or clock.today(),
         day_label=payload.day_label,
         perceived_fatigue=payload.perceived_fatigue,
         note=payload.note,
@@ -432,7 +433,7 @@ def current_session(
     piano = _plan_for(db, profile.id, plan_id)
     query = select(WorkoutSession).where(
         WorkoutSession.profile_id == profile.id,
-        WorkoutSession.date == (today or dt.date.today()),
+        WorkoutSession.date == (today or clock.today()),
         WorkoutSession.day_label == day_label,
     )
     if piano is not None:
@@ -456,7 +457,7 @@ def active_session(
         select(WorkoutSession)
         .where(
             WorkoutSession.profile_id == profile.id,
-            WorkoutSession.date == (today or dt.date.today()),
+            WorkoutSession.date == (today or clock.today()),
             WorkoutSession.started_at.is_not(None),
             WorkoutSession.ended_at.is_(None),
         )
@@ -620,7 +621,7 @@ def exercise_history(
     if esercizio is None:
         raise HTTPException(status_code=404, detail="Esercizio non trovato")
     translation.ensure_translated(db, [esercizio])
-    dal = dt.date.today() - dt.timedelta(weeks=weeks) if weeks else None
+    dal = clock.today() - dt.timedelta(weeks=weeks) if weeks else None
     storia = training_log.exercise_history(db, profile.id, exercise_id, since=dal)
     return ExerciseHistoryOut(
         exercise_id=esercizio.id,
@@ -677,7 +678,7 @@ def submit_feedback(
     feedback = TrainingFeedback(
         profile_id=profile.id,
         workout_plan_id=piano.id if piano else None,
-        date=dt.date.today(),
+        date=clock.today(),
         progress_perception=payload.progress_perception,
         recovery_quality=payload.recovery_quality,
         doms_duration_hours=payload.doms_duration_hours,
