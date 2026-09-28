@@ -401,6 +401,28 @@ def test_sostituzione_con_muscolo_diverso_rifiutata(scenario):
         sw.swap_in_plan(db, profilo, riga, altro_muscolo)
 
 
+def test_cambio_di_gruppo_muscolare_se_chiesto(scenario):
+    """Cambiare proprio il muscolo si può, ma solo chiedendolo: le alternative
+    arrivano dal gruppo scelto e i parametri della scheda restano."""
+    db, profilo, plan = scenario
+    riga = db.scalars(
+        select(WorkoutPlanExercise).where(WorkoutPlanExercise.workout_plan_id == plan.id)
+    ).first()
+    altro = db.scalars(
+        select(Exercise.primary_muscle).where(
+            Exercise.primary_muscle != riga.exercise.primary_muscle, Exercise.primary_muscle.is_not(None)
+        )
+    ).first()
+    prima = (riga.target_sets, riga.target_reps_min, riga.target_reps_max, riga.target_rir)
+
+    alternative = sw.find_alternatives(db, profilo, riga.exercise, muscle=altro, limit=10)
+    assert alternative and all(a.exercise.primary_muscle == altro for a in alternative)
+
+    sw.swap_in_plan(db, profilo, riga, alternative[0].exercise, allow_muscle_change=True)
+    assert riga.exercise.primary_muscle == altro
+    assert (riga.target_sets, riga.target_reps_min, riga.target_reps_max, riga.target_rir) == prima
+
+
 def test_sostituzione_registra_la_preferenza_e_il_log(scenario):
     db, profilo, plan = scenario
     riga = db.scalars(

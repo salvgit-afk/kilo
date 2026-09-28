@@ -62,14 +62,17 @@ def find_alternatives(
     *,
     limit: int = 5,
     q: str | None = None,
+    muscle: str | None = None,
 ) -> list[Alternative]:
-    """Alternative per lo stesso gruppo muscolare primario.
+    """Alternative per lo stesso gruppo muscolare primario, o per `muscle`
+    quando l'utente vuole cambiare proprio il gruppo allenato.
 
     Ordinamento: prima quelle già gradite dall'utente, poi quelle che
     preservano la tipologia (e quindi il recupero), infine gli esercizi con
     immagine e descrizione, che in wger sono i più curati.
     """
-    if not exercise.primary_muscle:
+    gruppo = muscle or exercise.primary_muscle
+    if not gruppo:
         raise SwapError(
             f"L'esercizio «{exercise.name}» non ha un gruppo muscolare primario: "
             "impossibile trovare un'alternativa equivalente."
@@ -87,7 +90,7 @@ def find_alternatives(
     }
 
     query = select(Exercise).where(
-        Exercise.primary_muscle == exercise.primary_muscle,
+        Exercise.primary_muscle == gruppo,
         Exercise.id != exercise.id,
         exercise_library.catalog_condition(db),
     )
@@ -158,6 +161,7 @@ def swap_in_plan(
     replacement: Exercise,
     *,
     mark_old_as_disliked: bool = False,
+    allow_muscle_change: bool = False,
 ) -> WorkoutPlanExercise:
     """Sostituisce un esercizio nella scheda, mantenendone i parametri.
 
@@ -172,7 +176,8 @@ def swap_in_plan(
         REST_STRENGTH_SECONDS,
     )
 
-    if replacement.primary_muscle != plan_exercise.exercise.primary_muscle:
+    cambia_muscolo = replacement.primary_muscle != plan_exercise.exercise.primary_muscle
+    if cambia_muscolo and not allow_muscle_change:
         raise SwapError(
             f"«{replacement.name}» allena {replacement.primary_muscle}, mentre "
             f"«{plan_exercise.exercise.name}» allena "
@@ -202,8 +207,9 @@ def swap_in_plan(
             reference_id=plan_exercise.workout_plan_id,
             summary=(
                 f"«{vecchio.name}» sostituito con «{replacement.name}» "
-                f"({replacement.primary_muscle}). Serie, ripetizioni e RIR "
-                f"invariati; recupero {plan_exercise.rest_seconds}s."
+                f"({replacement.primary_muscle}"
+                + (f", prima {vecchio.primary_muscle}" if cambia_muscolo else "")
+                + f"). Serie, ripetizioni e RIR invariati; recupero {plan_exercise.rest_seconds}s."
             ),
             knowledge_source_tags="scelta_esercizi,recupero",
             used_llm=False,

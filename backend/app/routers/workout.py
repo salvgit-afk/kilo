@@ -250,6 +250,7 @@ def list_alternatives(
     plan_exercise_id: int,
     limit: int = 6,
     q: str | None = None,
+    muscle: str | None = None,
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> list[AlternativeOut]:
@@ -263,7 +264,7 @@ def list_alternatives(
 
     try:
         alternative = exercise_swap.find_alternatives(
-            db, profile, riga.exercise, limit=limit, q=q
+            db, profile, riga.exercise, limit=limit, q=q, muscle=muscle
         )
     except exercise_swap.SwapError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
@@ -296,6 +297,7 @@ def swap_exercise(
         exercise_swap.swap_in_plan(
             db, profile, riga, sostituto,
             mark_old_as_disliked=payload.mark_old_as_disliked,
+            allow_muscle_change=payload.allow_muscle_change,
         )
     except exercise_swap.SwapError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

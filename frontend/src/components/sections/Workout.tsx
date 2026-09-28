@@ -909,7 +909,7 @@ function ExerciseRow({
         <button
           onClick={() => onSwap(item)}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[12px] font-medium text-white/60 transition hover:border-lime-400/30 hover:bg-lime-400/[0.08] hover:text-lime-200"
-          title="Non ti piace? Scegli un'alternativa per lo stesso muscolo"
+          title="Non ti piace? Scegli un'alternativa, anche per un altro muscolo"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
             <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z" />
@@ -930,6 +930,13 @@ function ExerciseRow({
  * esercizio e il primo spunto di focus muscolare — abbastanza per capire di
  * cosa si tratta prima di sceglierlo.
  */
+// Gruppi fra cui scegliere quando si cambia proprio il muscolo: quelli che
+// la scheda allena, senza i gruppi minori.
+const GRUPPI_SOSTITUZIONE = [
+  "Chest", "Lats", "Shoulders", "Trapezius", "Biceps", "Triceps",
+  "Quads", "Hamstrings", "Glutes", "Calves", "Abs",
+];
+
 function AlternativesDialog({
   item,
   profileId,
@@ -947,16 +954,23 @@ function AlternativesDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [query, setQuery] = useState("");
+  const originale = item.exercise.primary_muscle ?? "";
+  // Il gruppo da cui pescare: di base lo stesso, ma si può cambiare proprio
+  // il muscolo allenato da questo esercizio.
+  const [muscle, setMuscle] = useState(originale);
+  const cambiaMuscolo = muscle !== originale;
 
   useEffect(() => {
     setAlts(null);
+    setError(null);
     const q = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
+    const m = cambiaMuscolo ? `&muscle=${encodeURIComponent(muscle)}` : "";
     // Durante la ricerca si aspetta che l'utente smetta di scrivere.
     const timer = setTimeout(
       () => {
         api
           .get<Alternative[]>(
-            `/workout/plan-exercises/${item.id}/alternatives?profile_id=${profileId}&limit=24${q}`
+            `/workout/plan-exercises/${item.id}/alternatives?profile_id=${profileId}&limit=24${q}${m}`
           )
           .then(setAlts)
           .catch((e) => {
@@ -967,7 +981,7 @@ function AlternativesDialog({
       query ? 300 : 0
     );
     return () => clearTimeout(timer);
-  }, [item.id, profileId, query]);
+  }, [item.id, profileId, query, muscle, cambiaMuscolo]);
 
   async function swap(exerciseId: number) {
     setBusy(exerciseId);
@@ -975,7 +989,8 @@ function AlternativesDialog({
     try {
       const updated = await api.post<WorkoutPlan>(
         `/workout/plan-exercises/${item.id}/swap?profile_id=${profileId}`,
-        { replacement_exercise_id: exerciseId, mark_old_as_disliked: true }
+        // Cambiando muscolo l'esercizio tolto non è sgradito: si vuole allenare altro.
+        { replacement_exercise_id: exerciseId, mark_old_as_disliked: !cambiaMuscolo, allow_muscle_change: cambiaMuscolo }
       );
       onSwapped(updated);
       onClose();
@@ -987,24 +1002,57 @@ function AlternativesDialog({
   }
 
   const attuale = item.exercise;
-  const muscolo = MUSCLE_LABELS[attuale.primary_muscle ?? ""] ?? attuale.primary_muscle;
+  const nomeMuscolo = (m: string) => MUSCLE_LABELS[m] ?? m;
+  const parametri = `${item.target_sets} × ${item.target_reps_min}-${item.target_reps_max} a RIR ${item.target_rir}`;
 
   return (
     <Modal onClose={onClose} className="max-w-3xl">
       <ModalHeader
-        eyebrow={`Cambia esercizio · ${muscolo}`}
+        eyebrow={`Cambia esercizio · ${nomeMuscolo(muscle)}`}
         title={`Al posto di «${exerciseName(attuale)}»`}
-        subtitle={`Stesso muscolo principale: restano ${item.target_sets} × ${item.target_reps_min}-${item.target_reps_max} a RIR ${item.target_rir}. Scegli quello in cui senti meglio il muscolo e che esegui volentieri.`}
+        subtitle={
+          cambiaMuscolo
+            ? `Cambi gruppo: da ${nomeMuscolo(originale).toLowerCase()} a ${nomeMuscolo(muscle).toLowerCase()}. Restano ${parametri}; le serie settimanali si spostano sul nuovo muscolo.`
+            : `Stesso muscolo principale: restano ${parametri}. Scegli quello in cui senti meglio il muscolo e che esegui volentieri.`
+        }
         onClose={onClose}
       />
 
-      <div className="shrink-0 border-b border-white/[0.06] px-4 py-3">
+      <div className="shrink-0 space-y-2.5 border-b border-white/[0.06] px-4 py-3">
         <input
           className="input py-2 text-[13px]"
           placeholder="Cerca fra le alternative — es. cavi, manubri, macchina, hammer"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]" role="radiogroup" aria-label="Gruppo muscolare">
+          {GRUPPI_SOSTITUZIONE.map((m) => {
+            const scelto = m === muscle;
+            return (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={scelto}
+                onClick={() => setMuscle(m)}
+                className={`relative shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${
+                  scelto ? "text-ink-900" : "border border-white/10 text-white/60 hover:border-white/25 hover:text-white"
+                }`}
+              >
+                {scelto && (
+                  <motion.span
+                    layoutId="swap-muscle"
+                    className="absolute inset-0 rounded-full bg-gradient-to-b from-lime-400 to-lime-500"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
+                <span className="relative">
+                  {nomeMuscolo(m)}
+                  {m === originale && !scelto && <span className="ml-1 text-white/35">· attuale</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
@@ -1097,8 +1145,9 @@ function AlternativesDialog({
       </div>
 
       <p className="shrink-0 border-t border-white/[0.06] px-5 py-3 text-[11.5px] leading-snug text-white/35">
-        L'esercizio sostituito non ti verrà più proposto nelle prossime schede; quello che
-        scegli diventa un preferito.
+        {cambiaMuscolo
+          ? "L'esercizio tolto resta disponibile per le prossime schede; quello che scegli diventa un preferito."
+          : "L'esercizio sostituito non ti verrà più proposto nelle prossime schede; quello che scegli diventa un preferito."}
       </p>
     </Modal>
   );

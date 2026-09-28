@@ -274,6 +274,9 @@ class ChatOut(BaseModel):
 class SwapIn(BaseModel):
     replacement_exercise_id: int
     mark_old_as_disliked: bool = False
+    # Cambiare anche il gruppo muscolare va chiesto esplicitamente: sposta il
+    # volume della scheda da un muscolo a un altro.
+    allow_muscle_change: bool = False
 
 
 class SessionSetIn(BaseModel):
