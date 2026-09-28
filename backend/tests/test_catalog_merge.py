@@ -164,11 +164,13 @@ def test_download_repdb_estrae_l_elenco(monkeypatch):
 
 
 def test_esercizi_manuali_completi_e_coerenti_con_il_catalogo(db):
-    assert lib.sync_manual(db).created == len(MANUAL_EXERCISES) == 4
+    assert lib.sync_manual(db).created == len(MANUAL_EXERCISES) == 8
     esercizi = {e.external_id: e for e in db.query(Exercise).filter_by(source=lib.SOURCE_MANUAL)}
     assert set(esercizi) == {
         "bayesian-cable-curl", "behind-back-cable-lateral-raise",
         "low-to-high-cable-fly", "pendulum-squat",
+        "single-arm-overhead-cable-triceps-extension", "cross-body-cable-triceps-extension",
+        "single-arm-high-cable-reverse-fly", "chest-supported-dumbbell-lateral-raise",
     }
     gruppi = wg.PUSH_MUSCLES + wg.PULL_MUSCLES + wg.LEG_MUSCLES + wg.CORE_MUSCLES
     for e in esercizi.values():
@@ -280,3 +282,39 @@ def test_ricerca_fra_le_alternative_per_nome_italiano_o_originale(db):
     trovati = sw.find_alternatives(db, _profilo(), base, q="hammer", limit=10)
     assert {a.exercise.external_id for a in trovati} == {"E2", "R1"}
     assert len(sw.find_alternatives(db, _profilo(), base, limit=10)) == 2
+
+
+def test_ricerca_in_italiano_trova_anche_gli_esercizi_non_tradotti(db):
+    base = _ex(db, lib.SOURCE_EVERKINETIC, "E1", "Lateral Dumbbell Raises", "Shoulders", equipment="dumbbell")
+    _ex(db, lib.SOURCE, "F1", "Cable Rear Delt Fly", "Shoulders", equipment="cable")
+    _ex(db, lib.SOURCE_REPDB, "R1", "Dumbbell Reverse Fly", "Shoulders", equipment="dumbbell")
+    _ex(db, lib.SOURCE_REPDB, "R2", "Cable Lateral Raise", "Shoulders", equipment="cable")
+
+    def cerca(q):
+        return {a.exercise.external_id for a in sw.find_alternatives(db, _profilo(), base, q=q, limit=10)}
+
+    assert cerca("cavi") == {"F1", "R2"}
+    assert cerca("croci ai cavi") == {"F1"}
+    assert cerca("croci inverse") == {"F1", "R1"}
+    assert cerca("alzate laterali al cavo") == {"R2"}
+    assert cerca("manubri") == {"R1"}
+
+
+def test_nomi_scelti_a_mano_valgono_solo_per_gli_esercizi_tradotti(db):
+    tradotto = _ex(db, lib.SOURCE_REPDB, "cable-fly", "Cable Fly", "Chest", equipment="cable", name_it="Croci ai cavi")
+    da_tradurre = _ex(db, lib.SOURCE_EVERKINETIC, "0048", "Cable Crossover", "Chest", equipment="cable")
+
+    assert lib.apply_name_overrides(db) == 1
+    assert tradotto.name_it == "Croci ai cavi dall'alto"
+    # Senza traduzione il nome arriva con quella, altrimenti l'esecuzione
+    # resterebbe in inglese per sempre.
+    assert da_tradurre.name_it is None
+    assert lib.name_override(da_tradurre) == "Croci ai cavi a metà altezza"
+
+
+def test_nomi_scelti_a_mano_ben_formati():
+    from app.services.manual_exercises import NAME_IT_OVERRIDES
+
+    for chiave, nome in NAME_IT_OVERRIDES.items():
+        assert chiave.split(":", 1)[0] in lib.CATALOG_SOURCES
+        assert len(nome.split()) <= 7 and translation.english_leftovers(nome) == []

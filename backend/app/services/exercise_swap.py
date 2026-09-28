@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -93,8 +93,7 @@ def find_alternatives(
     )
     if q and q.strip():
         # Nome italiano e originale: "cavo" e "cable" trovano lo stesso esercizio.
-        termine = f"%{q.strip()}%"
-        query = query.where(or_(Exercise.name_it.ilike(termine), Exercise.name.ilike(termine)))
+        query = query.where(exercise_library.search_condition(q))
     candidati = db.scalars(query.order_by(*exercise_library.catalog_order()))
 
     alternative = [

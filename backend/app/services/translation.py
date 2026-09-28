@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Exercise, LlmCache
+from app.services import exercise_library
 
 logger = logging.getLogger("translation")
 
@@ -295,7 +296,7 @@ def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
 
         for ex_id, dati in risultati.items():
             ex = per_id[ex_id]
-            ex.name_it = dati["nome"][:255]
+            ex.name_it = (exercise_library.name_override(ex) or dati["nome"])[:255]
             ex.instructions_it = dati["esecuzione"] or None
             ex.tips_it = dati["consigli"] or None
             ex.focus_it = dati["focus"] or None

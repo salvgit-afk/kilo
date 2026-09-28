@@ -32,7 +32,7 @@ import re
 from pathlib import Path
 
 import httpx
-from sqlalchemy import and_, case, exists, select
+from sqlalchemy import and_, case, exists, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.models import Exercise
@@ -680,12 +680,120 @@ def sync_catalog(db: Session, datasets: dict[str, list[dict]] | None = None):
 
     manuali = sync_manual(db)
     apply_duplicates(db)
+    apply_name_overrides(db)
     return SyncResult(
         fetched=fetched + manuali.fetched,
         created=created + manuali.created,
         updated=updated + manuali.updated,
         skipped_no_muscle=skipped,
     )
+
+
+def name_override(exercise: Exercise) -> str | None:
+    """Il nome italiano scelto a mano per un esercizio delle fonti, se c'è."""
+    from app.services.manual_exercises import NAME_IT_OVERRIDES
+
+    return NAME_IT_OVERRIDES.get(f"{exercise.source}:{exercise.external_id}")
+
+
+def apply_name_overrides(db: Session) -> int:
+    """Applica i nomi scelti a mano agli esercizi già tradotti.
+
+    Solo a quelli con una traduzione: un nome senza esecuzione in italiano
+    fermerebbe la traduzione del resto (`translate_exercises` salta chi ha già
+    il nome). Per gli altri il nome arriva con la traduzione.
+    """
+    from app.services.manual_exercises import NAME_IT_OVERRIDES
+
+    cambiati = 0
+    for chiave, nome in NAME_IT_OVERRIDES.items():
+        sorgente, _, external_id = chiave.partition(":")
+        ex = db.scalar(
+            select(Exercise).where(Exercise.source == sorgente, Exercise.external_id == external_id)
+        )
+        if ex is not None and ex.name_it and ex.name_it != nome:
+            ex.name_it = nome
+            cambiati += 1
+    db.commit()
+    return cambiati
+
+
+# Parole italiane della ricerca e i termini corrispondenti nei nomi inglesi
+# delle fonti: "cavi" deve trovare anche un esercizio non ancora tradotto
+# ("Cable Rear Delt Fly"). Si confronta l'inizio della parola, così vale per
+# singolare e plurale ("cavo", "cavi"; "manubrio", "manubri").
+_SEARCH_STEMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("cav", ("cable", "pulley")),
+    ("manubr", ("dumbbell",)),
+    ("bilancier", ("barbell",)),
+    ("panc", ("bench",)),
+    ("inclinat", ("incline",)),
+    ("declinat", ("decline",)),
+    ("macchin", ("machine",)),
+    ("multipower", ("smith",)),
+    ("cord", ("rope",)),
+    ("alzat", ("raise",)),
+    ("lateral", ("lateral", "side")),
+    ("frontal", ("front",)),
+    ("croc", ("fly", "flye", "crossover")),
+    ("invers", ("reverse", "rear")),
+    ("posterior", ("rear", "reverse")),
+    ("estension", ("extension",)),
+    ("distension", ("extension", "press")),
+    ("spint", ("press",)),
+    ("rematore", ("row",)),
+    ("affond", ("lunge",)),
+    ("stacc", ("deadlift", "dead lift")),
+    ("scrollat", ("shrug",)),
+    ("polpacc", ("calf",)),
+    ("piegament", ("push-up", "push up", "pushup")),
+    ("trazion", ("pull-up", "pull up", "chin")),
+    ("sedut", ("seated",)),
+    ("sdraiat", ("lying",)),
+    ("bracci", ("arm",)),
+    ("monolateral", ("one-arm", "one arm", "single")),
+    ("elastic", ("band",)),
+    ("tricipit", ("tricep",)),
+    ("bicipit", ("bicep", "curl")),
+    ("petto", ("chest",)),
+    ("spall", ("shoulder", "delt")),
+    ("sopra", ("overhead",)),
+    ("incrociat", ("cross",)),
+)
+_SEARCH_WORDS = {
+    "alto": ("high",), "alti": ("high",), "alta": ("high",), "alte": ("high",),
+    "basso": ("low",), "bassi": ("low",), "bassa": ("low",), "basse": ("low",),
+    "dietro": ("behind",), "piedi": ("standing",),
+}
+# Articoli e preposizioni: "croci ai cavi" non deve richiedere "ai" nel nome
+# inglese di un esercizio non ancora tradotto.
+_SEARCH_STOPWORDS = frozenset(
+    "a al ai allo alla alle agli con col coi di del dei della delle da dal dai dalla "
+    "in su sul sui sulla per e il lo la le gli i un una uno".split()
+)
+
+
+def search_condition(q: str):
+    """Filtro per la ricerca per nome, in italiano o nel nome originale.
+
+    Ogni parola deve comparire, in qualsiasi ordine: nel nome italiano, nel
+    nome originale o, tradotta, nel nome originale.
+    """
+    condizioni = []
+    for parola in re.findall(r"[a-zàèéìòù0-9'-]+", q.lower()):
+        if parola in _SEARCH_STOPWORDS or len(parola) < 2:
+            continue
+        termini = {parola, *_SEARCH_WORDS.get(parola, ())}
+        for radice, inglesi in _SEARCH_STEMS:
+            if parola.startswith(radice):
+                termini.update(inglesi)
+        condizioni.append(
+            or_(
+                Exercise.name_it.ilike(f"%{parola}%"),
+                *(Exercise.name.ilike(f"%{t}%") for t in sorted(termini)),
+            )
+        )
+    return and_(*condizioni) if condizioni else true()
 
 
 def has_library(db: Session, source: str = SOURCE) -> bool:

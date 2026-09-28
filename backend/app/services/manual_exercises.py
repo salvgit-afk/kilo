@@ -160,4 +160,162 @@ MANUAL_EXERCISES: list[dict] = [
             "Tieni la schiena ben aderente allo schienale",
         ],
     },
+    {
+        "external_id": "single-arm-overhead-cable-triceps-extension",
+        "name": "Single-Arm Overhead Cable Triceps Extension",
+        "primary_muscle": "Triceps",
+        "secondary_muscles": None,
+        "equipment": "cable",
+        "is_compound": False,
+        "instructions": [
+            "Set a single handle on a low pulley and stand facing away from the machine.",
+            "Grab the handle with one hand and bring it over your head, elbow bent and pointing up, with the cable running behind your back.",
+            "Take a small step forward and keep the torso upright, with the free hand on your hip or supporting the working elbow.",
+            "Keeping the upper arm still next to your head, straighten the elbow until the arm is fully extended above you.",
+            "Lower the handle slowly behind your head until you feel the triceps stretch, then repeat and switch arms.",
+        ],
+        "tips": [
+            "Keep the elbow pointing up: do not let it drift out to the side.",
+            "Do not arch the lower back to move the handle.",
+        ],
+        "name_it": "French press monolaterale al cavo",
+        "instructions_it": [
+            "Monta una maniglia singola sul cavo basso e mettiti in piedi dando le spalle alla macchina.",
+            "Afferra la maniglia con una mano e portala sopra la testa, con il gomito piegato rivolto verso l'alto e il cavo che passa dietro la schiena.",
+            "Fai un piccolo passo avanti e tieni il busto dritto, con la mano libera sul fianco o a sostenere il gomito che lavora.",
+            "Tenendo fermo il braccio vicino alla testa, distendi il gomito fino ad allungare completamente il braccio sopra di te.",
+            "Riporta lentamente la maniglia dietro la testa fino a sentire il tricipite allungarsi, poi ripeti e cambia braccio.",
+        ],
+        "tips_it": [
+            "Tieni il gomito rivolto verso l'alto: non lasciarlo scivolare di lato.",
+            "Non inarcare la zona lombare per muovere la maniglia.",
+        ],
+        "focus_it": [
+            "Senti il tricipite allungarsi quando la maniglia scende dietro la testa",
+            "Muovi solo l'avambraccio, il braccio resta fermo vicino alla testa",
+            "Distendi il gomito fino in fondo contraendo il tricipite",
+        ],
+    },
+    {
+        "external_id": "cross-body-cable-triceps-extension",
+        "name": "Cross-Body Cable Triceps Extension",
+        "primary_muscle": "Triceps",
+        "secondary_muscles": None,
+        "equipment": "cable",
+        "is_compound": False,
+        "instructions": [
+            "Set a single handle on a pulley at about head height and stand sideways to the machine.",
+            "Grab the handle with the hand farther from the machine, so the cable crosses in front of your body.",
+            "Start with the elbow bent and pointing forward at shoulder height, the hand close to the opposite shoulder.",
+            "Straighten the elbow, moving the hand out to the side and away from the machine, until the arm is fully extended.",
+            "Return slowly to the start keeping the elbow at the same height, then repeat and switch arms.",
+        ],
+        "tips": [
+            "Keep the elbow still: only the forearm moves.",
+            "Do not rotate the torso to help the movement.",
+        ],
+        "name_it": "Estensioni tricipiti incrociate al cavo",
+        "instructions_it": [
+            "Monta una maniglia singola su un cavo all'altezza della testa e mettiti di fianco alla macchina.",
+            "Afferra la maniglia con la mano più lontana dalla macchina, così che il cavo passi davanti al corpo.",
+            "Parti con il gomito piegato, rivolto in avanti all'altezza della spalla, e la mano vicina alla spalla opposta.",
+            "Distendi il gomito portando la mano di lato, lontano dalla macchina, fino ad allungare completamente il braccio.",
+            "Torna lentamente alla posizione di partenza tenendo il gomito alla stessa altezza, poi ripeti e cambia braccio.",
+        ],
+        "tips_it": [
+            "Tieni fermo il gomito: si muove solo l'avambraccio.",
+            "Non ruotare il busto per aiutarti.",
+        ],
+        "focus_it": [
+            "Senti lavorare il tricipite mentre la mano si allontana dalla spalla",
+            "Gomito fermo alla stessa altezza per tutta la ripetizione",
+            "Controlla il ritorno senza farti tirare dal cavo",
+        ],
+    },
+    {
+        "external_id": "single-arm-high-cable-reverse-fly",
+        "name": "Single-Arm High Cable Reverse Fly",
+        "primary_muscle": "Shoulders",
+        "secondary_muscles": "Trapezius",
+        "equipment": "cable",
+        "is_compound": False,
+        "instructions": [
+            "Set a single handle on a high pulley, at about head height or slightly above, and stand facing the machine.",
+            "Grab the handle with the opposite hand, so the arm starts crossed in front of your chest.",
+            "With a slight bend in the elbow, pull the arm out and back in a wide arc until it is in line with your shoulder.",
+            "Pause for a moment, then return slowly along the same arc until the arm crosses in front of you again.",
+            "Complete the reps, then repeat with the other arm.",
+        ],
+        "tips": [
+            "Move from the shoulder: do not turn the torso to finish the rep.",
+            "Keep the elbow angle fixed throughout.",
+        ],
+        "name_it": "Croce inversa monolaterale al cavo alto",
+        "instructions_it": [
+            "Monta una maniglia singola sul cavo alto, all'altezza della testa o poco sopra, e mettiti di fronte alla macchina.",
+            "Afferra la maniglia con la mano del lato opposto, così che il braccio parta incrociato davanti al petto.",
+            "Con il gomito leggermente piegato, porta il braccio in fuori e indietro con un ampio arco, fino ad allinearlo alla spalla.",
+            "Fermati un istante, poi torna lentamente lungo lo stesso arco finché il braccio incrocia di nuovo davanti a te.",
+            "Completa le ripetizioni e ripeti con l'altro braccio.",
+        ],
+        "tips_it": [
+            "Muovi il braccio dalla spalla: non ruotare il busto per finire la ripetizione.",
+            "Tieni fisso l'angolo del gomito per tutto il movimento.",
+        ],
+        "focus_it": [
+            "Senti lavorare la parte posteriore della spalla mentre apri il braccio",
+            "Apri il braccio senza ruotare il busto",
+            "Controlla il ritorno fino a incrociare davanti al petto",
+        ],
+    },
+    {
+        "external_id": "chest-supported-dumbbell-lateral-raise",
+        "name": "Chest-Supported Dumbbell Lateral Raise",
+        "primary_muscle": "Shoulders",
+        "secondary_muscles": "Trapezius",
+        "equipment": "dumbbell, incline bench",
+        "is_compound": False,
+        "instructions": [
+            "Set an incline bench at a low angle and lie face down with your chest on the backrest and your feet on the floor.",
+            "Hold a dumbbell in each hand, arms hanging down with a slight bend in the elbows.",
+            "Raise the dumbbells out to the sides, slightly forward of the body, until the arms are roughly parallel to the floor.",
+            "Pause briefly at the top, then lower slowly back to the start.",
+        ],
+        "tips": [
+            "Keep the chest on the pad: do not lift the torso to help.",
+            "Lead with the elbows and raise the arms to the sides, not backward.",
+        ],
+        "name_it": "Alzate laterali con petto appoggiato",
+        "instructions_it": [
+            "Regola una panca inclinata con poca pendenza e sdraiati a pancia in giù, con il petto sullo schienale e i piedi a terra.",
+            "Tieni un manubrio per mano, con le braccia verso il basso e i gomiti leggermente piegati.",
+            "Solleva i manubri lateralmente, un po' in avanti rispetto al corpo, fino a portare le braccia circa parallele al pavimento.",
+            "Fermati un istante in alto, poi riscendi lentamente fino alla posizione di partenza.",
+        ],
+        "tips_it": [
+            "Tieni il petto appoggiato: non sollevare il busto per aiutarti.",
+            "Guida con i gomiti e alza le braccia di lato, non all'indietro.",
+        ],
+        "focus_it": [
+            "Senti lavorare la parte laterale della spalla, non il trapezio",
+            "Petto sempre appoggiato, nessuno slancio dal busto",
+            "Scendi lentamente mantenendo la tensione sulla spalla",
+        ],
+    },
 ]
+
+# Nomi italiani scelti a mano per esercizi delle fonti, al posto della
+# traduzione automatica: dove il nome tradotto non dice l'altezza del cavo o
+# la posizione, varianti diverse sembrano lo stesso esercizio. Chiave
+# "sorgente:id"; valgono anche dopo una nuova traduzione.
+NAME_IT_OVERRIDES: dict[str, str] = {
+    "repdb:cable-fly": "Croci ai cavi dall'alto",
+    "everkinetic:0048": "Croci ai cavi a metà altezza",
+    "free_exercise_db:Cable_Rear_Delt_Fly": "Croci inverse ai cavi incrociati a X",
+    "everkinetic:0035": "Alzate posteriori ai cavi da seduto",
+    "everkinetic:0017": "Alzata posteriore monolaterale al cavo basso",
+    "repdb:cable-lateral-raise": "Alzate laterali al cavo davanti al corpo",
+    "free_exercise_db:One-Arm_Incline_Lateral_Raise": "Alzate laterali su panca inclinata",
+    "repdb:side-lying-lateral-raise": "Alzate laterali sdraiato su un fianco",
+    "free_exercise_db:Cable_Rope_Overhead_Triceps_Extension": "French press al cavo basso con corda",
+}

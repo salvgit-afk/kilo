@@ -8,7 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -740,10 +740,9 @@ def list_exercises(
     if muscle:
         query = query.where(Exercise.primary_muscle == muscle)
     if q:
-        # Si cerca sia nel nome italiano sia nell'originale: "panca" e
-        # "bench" devono trovare lo stesso esercizio.
-        termine = f"%{q.strip()}%"
-        query = query.where(or_(Exercise.name_it.ilike(termine), Exercise.name.ilike(termine)))
+        # Nome italiano e originale: "panca" e "bench" trovano lo stesso
+        # esercizio, anche se non è ancora tradotto.
+        query = query.where(exercise_library.search_condition(q))
     query = query.order_by(*exercise_library.catalog_order()).limit(max(1, min(limit, 100)))
     return list(db.scalars(query))
 

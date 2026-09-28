@@ -1,5 +1,5 @@
 {
- "_nota": "Doppioni fra i cataloghi esercizi, verificati a mano il 2026-09-15. Ogni gruppo e' lo stesso esercizio in fonti diverse, come sorgente:id; a runtime se ne tiene uno solo secondo la precedenza delle fonti (exercise_library.apply_duplicates). Contiene solo identificativi: i dati degli esercizi non sono ridistribuiti.",
+ "_nota": "Doppioni fra i cataloghi esercizi, verificati a mano il 2026-09-15 e il 2026-09-28 (nuove voci RepDB e doppioni sfuggiti). Ogni gruppo e' lo stesso esercizio in fonti diverse, come sorgente:id; a runtime se ne tiene uno solo secondo la precedenza delle fonti (exercise_library.apply_duplicates). Contiene solo identificativi: i dati degli esercizi non sono ridistribuiti.",
  "gruppi": [
   [
    "free_exercise_db:Ab_Crunch_Machine",
@@ -104,11 +104,16 @@
   ],
   [
    "everkinetic:0214",
-   "free_exercise_db:Alternate_Incline_Dumbbell_Curl"
+   "free_exercise_db:Alternate_Incline_Dumbbell_Curl",
+   "everkinetic:0228",
+   "free_exercise_db:Flexor_Incline_Dumbbell_Curls",
+   "free_exercise_db:Incline_Dumbbell_Curl",
+   "repdb:incline-db-curl"
   ],
   [
    "free_exercise_db:Barbell_Curl",
-   "repdb:barbell-curl"
+   "repdb:barbell-curl",
+   "everkinetic:0211"
   ],
   [
    "everkinetic:0224",
@@ -156,10 +161,6 @@
    "repdb:drag-curl"
   ],
   [
-   "everkinetic:0228",
-   "free_exercise_db:Flexor_Incline_Dumbbell_Curls"
-  ],
-  [
    "everkinetic:0216",
    "free_exercise_db:Cable_Hammer_Curls_-_Rope_Attachment",
    "repdb:cable-hammer-curl"
@@ -167,10 +168,6 @@
   [
    "everkinetic:0229",
    "free_exercise_db:High_Cable_Curls"
-  ],
-  [
-   "free_exercise_db:Incline_Dumbbell_Curl",
-   "repdb:incline-db-curl"
   ],
   [
    "free_exercise_db:Incline_Hammer_Curls",
@@ -275,11 +272,13 @@
   ],
   [
    "free_exercise_db:Calf_Raise_On_A_Dumbbell",
-   "repdb:dumbbell-calf-raise"
+   "repdb:dumbbell-calf-raise",
+   "free_exercise_db:Standing_Dumbbell_Calf_Raise"
   ],
   [
    "everkinetic:0275",
-   "repdb:donkey-calf-raise"
+   "repdb:donkey-calf-raise",
+   "free_exercise_db:Donkey_Calf_Raises"
   ],
   [
    "everkinetic:0278",
@@ -304,7 +303,8 @@
   ],
   [
    "everkinetic:0281",
-   "free_exercise_db:Standing_Barbell_Calf_Raise"
+   "free_exercise_db:Standing_Barbell_Calf_Raise",
+   "repdb:barbell-calf-raise"
   ],
   [
    "everkinetic:0282",
@@ -379,7 +379,8 @@
   ],
   [
    "everkinetic:0081",
-   "free_exercise_db:Smith_Machine_Incline_Bench_Press"
+   "free_exercise_db:Smith_Machine_Incline_Bench_Press",
+   "repdb:smith-machine-incline-bench-press"
   ],
   [
    "free_exercise_db:Cable_Chest_Press",
@@ -405,7 +406,8 @@
   ],
   [
    "free_exercise_db:Decline_Smith_Press",
-   "free_exercise_db:Smith_Machine_Decline_Press"
+   "free_exercise_db:Smith_Machine_Decline_Press",
+   "repdb:smith-machine-decline-bench-press"
   ],
   [
    "everkinetic:0046",
@@ -413,7 +415,8 @@
   ],
   [
    "free_exercise_db:Dumbbell_Flyes",
-   "repdb:db-fly"
+   "repdb:db-fly",
+   "everkinetic:0056"
   ],
   [
    "everkinetic:0057",
@@ -569,7 +572,8 @@
   ],
   [
    "free_exercise_db:T-Bar_Row_with_Handle",
-   "repdb:t-bar-row"
+   "repdb:t-bar-row",
+   "everkinetic:0029"
   ],
   [
    "everkinetic:0091",
@@ -577,7 +581,8 @@
   ],
   [
    "everkinetic:0122",
-   "free_exercise_db:Barbell_Squat"
+   "free_exercise_db:Barbell_Squat",
+   "free_exercise_db:Barbell_Full_Squat"
   ],
   [
    "everkinetic:0139",
@@ -597,19 +602,23 @@
   ],
   [
    "everkinetic:0142",
-   "free_exercise_db:Leg_Extensions"
+   "free_exercise_db:Leg_Extensions",
+   "repdb:leg-extension"
   ],
   [
    "everkinetic:0127",
-   "free_exercise_db:Leg_Press"
+   "free_exercise_db:Leg_Press",
+   "repdb:leg-press"
   ],
   [
    "everkinetic:0114",
-   "free_exercise_db:Barbell_Lunge"
+   "free_exercise_db:Barbell_Lunge",
+   "repdb:barbell-lunge"
   ],
   [
    "everkinetic:0115",
-   "free_exercise_db:Dumbbell_Lunges"
+   "free_exercise_db:Dumbbell_Lunges",
+   "repdb:db-lunge"
   ],
   [
    "everkinetic:0129",
@@ -625,7 +634,8 @@
   ],
   [
    "everkinetic:0143",
-   "free_exercise_db:Narrow_Stance_Leg_Press"
+   "free_exercise_db:Narrow_Stance_Leg_Press",
+   "repdb:close-stance-leg-press"
   ],
   [
    "everkinetic:0146",
@@ -650,7 +660,8 @@
   ],
   [
    "everkinetic:0130",
-   "free_exercise_db:Dumbbell_Squat"
+   "free_exercise_db:Dumbbell_Squat",
+   "repdb:db-squat"
   ],
   [
    "everkinetic:0136",
@@ -682,7 +693,8 @@
   ],
   [
    "free_exercise_db:Barbell_Rear_Delt_Row",
-   "repdb:barbell-rear-delt-row"
+   "repdb:barbell-rear-delt-row",
+   "everkinetic:0028"
   ],
   [
    "everkinetic:0032",
@@ -738,11 +750,13 @@
   ],
   [
    "everkinetic:0037",
-   "free_exercise_db:Dumbbell_Lying_One-Arm_Rear_Lateral_Raise"
+   "free_exercise_db:Dumbbell_Lying_One-Arm_Rear_Lateral_Raise",
+   "free_exercise_db:Lying_One-Arm_Lateral_Raise"
   ],
   [
    "everkinetic:0023",
-   "free_exercise_db:Dumbbell_Lying_Rear_Lateral_Raise"
+   "free_exercise_db:Dumbbell_Lying_Rear_Lateral_Raise",
+   "free_exercise_db:Lying_Rear_Delt_Raise"
   ],
   [
    "everkinetic:0038",
@@ -779,11 +793,13 @@
   ],
   [
    "everkinetic:0015",
-   "repdb:cable-upright-row"
+   "repdb:cable-upright-row",
+   "free_exercise_db:Upright_Cable_Row"
   ],
   [
    "everkinetic:0016",
-   "repdb:dumbbell-upright-row"
+   "repdb:dumbbell-upright-row",
+   "free_exercise_db:Standing_Dumbbell_Upright_Row"
   ],
   [
    "everkinetic:0039",
@@ -791,7 +807,8 @@
   ],
   [
    "everkinetic:0013",
-   "repdb:smith-machine-upright-row"
+   "repdb:smith-machine-upright-row",
+   "free_exercise_db:Smith_Machine_Upright_Row"
   ],
   [
    "free_exercise_db:Barbell_Shrug_Behind_The_Back",
@@ -804,7 +821,8 @@
   ],
   [
    "free_exercise_db:Dumbbell_Shrug",
-   "repdb:db-shrug"
+   "repdb:db-shrug",
+   "everkinetic:0005"
   ],
   [
    "everkinetic:0162",
@@ -860,7 +878,8 @@
   ],
   [
    "everkinetic:0194",
-   "free_exercise_db:Seated_Triceps_Press"
+   "free_exercise_db:Seated_Triceps_Press",
+   "repdb:seated-dumbbell-tricep-extension"
   ],
   [
    "everkinetic:0203",
@@ -927,7 +946,8 @@
   ],
   [
    "everkinetic:0198",
-   "free_exercise_db:Standing_Dumbbell_Triceps_Extension"
+   "free_exercise_db:Standing_Dumbbell_Triceps_Extension",
+   "repdb:overhead-tricep-extension"
   ],
   [
    "everkinetic:0170",
@@ -960,6 +980,203 @@
    "everkinetic:0207",
    "free_exercise_db:Triceps_Pushdown_-_V-Bar_Attachment",
    "repdb:v-bar-tricep-pushdown"
+  ],
+  [
+   "repdb:hanging-leg-raise",
+   "free_exercise_db:Hanging_Leg_Raise"
+  ],
+  [
+   "repdb:hanging-pike",
+   "free_exercise_db:Hanging_Pike"
+  ],
+  [
+   "everkinetic:0226",
+   "repdb:ez-bar-curl",
+   "free_exercise_db:EZ-Bar_Curl"
+  ],
+  [
+   "free_exercise_db:Spider_Curl",
+   "repdb:ez-bar-spider-curl"
+  ],
+  [
+   "everkinetic:0274",
+   "free_exercise_db:Calf_Raises_-_With_Bands"
+  ],
+  [
+   "repdb:smith-machine-calf-raise",
+   "free_exercise_db:Smith_Machine_Calf_Raise"
+  ],
+  [
+   "everkinetic:0054",
+   "repdb:dips",
+   "free_exercise_db:Dips_-_Chest_Version"
+  ],
+  [
+   "everkinetic:0060",
+   "free_exercise_db:Incline_Cable_Flye"
+  ],
+  [
+   "repdb:svend-press",
+   "free_exercise_db:Svend_Press"
+  ],
+  [
+   "everkinetic:0102",
+   "repdb:smith-machine-good-morning"
+  ],
+  [
+   "repdb:inverted-row",
+   "free_exercise_db:Inverted_Row"
+  ],
+  [
+   "repdb:rope-climb",
+   "free_exercise_db:Rope_Climb"
+  ],
+  [
+   "everkinetic:0124",
+   "repdb:smith-machine-squat",
+   "free_exercise_db:Smith_Machine_Squat"
+  ],
+  [
+   "repdb:band-pull-apart",
+   "free_exercise_db:Band_Pull_Apart"
+  ],
+  [
+   "everkinetic:0180",
+   "free_exercise_db:Lying_Close-Grip_Barbell_Triceps_Press_To_Chin"
+  ],
+  [
+   "repdb:close-grip-ez-bar-bench-press",
+   "free_exercise_db:Close-Grip_EZ-Bar_Press"
+  ],
+  [
+   "repdb:smith-machine-shoulder-press",
+   "repdb:seated-smith-machine-shoulder-press",
+   "free_exercise_db:Smith_Machine_Overhead_Shoulder_Press"
+  ],
+  [
+   "everkinetic:0035",
+   "free_exercise_db:Cable_Seated_Lateral_Raise"
+  ],
+  [
+   "everkinetic:0071",
+   "free_exercise_db:One-Arm_Flat_Bench_Dumbbell_Flye"
+  ],
+  [
+   "everkinetic:0241",
+   "free_exercise_db:Reverse_Plate_Curls"
+  ],
+  [
+   "everkinetic:0183",
+   "free_exercise_db:Lying_Triceps_Press"
+  ],
+  [
+   "everkinetic:0094",
+   "free_exercise_db:Upright_Row_-_With_Bands"
+  ],
+  [
+   "everkinetic:0163",
+   "free_exercise_db:Cable_Incline_Pushdown"
+  ],
+  [
+   "repdb:band-assisted-pull-ups",
+   "free_exercise_db:Band_Assisted_Pull-Up"
+  ],
+  [
+   "repdb:bodyweight-squat",
+   "free_exercise_db:Bodyweight_Squat"
+  ],
+  [
+   "repdb:chin-ups",
+   "free_exercise_db:Chin-Up"
+  ],
+  [
+   "repdb:dumbbell-floor-press",
+   "free_exercise_db:Dumbbell_Floor_Press"
+  ],
+  [
+   "repdb:dumbbell-split-squat",
+   "free_exercise_db:Split_Squat_with_Dumbbells"
+  ],
+  [
+   "repdb:floor-press",
+   "free_exercise_db:Floor_Press"
+  ],
+  [
+   "repdb:flutter-kicks",
+   "free_exercise_db:Flutter_Kicks"
+  ],
+  [
+   "repdb:goblet-squat",
+   "free_exercise_db:Goblet_Squat"
+  ],
+  [
+   "everkinetic:0101",
+   "repdb:good-morning",
+   "free_exercise_db:Good_Morning"
+  ],
+  [
+   "repdb:kettlebell-pistol-squat",
+   "free_exercise_db:Kettlebell_Pistol_Squat"
+  ],
+  [
+   "repdb:kettlebell-sumo-high-pull",
+   "free_exercise_db:Kettlebell_Sumo_High_Pull"
+  ],
+  [
+   "repdb:kettlebell-windmills",
+   "free_exercise_db:Kettlebell_Windmill"
+  ],
+  [
+   "repdb:muscle-ups",
+   "free_exercise_db:Muscle_Up"
+  ],
+  [
+   "repdb:one-arm-kettlebell-swing",
+   "free_exercise_db:One-Arm_Kettlebell_Swings"
+  ],
+  [
+   "repdb:ring-dips",
+   "free_exercise_db:Ring_Dips"
+  ],
+  [
+   "repdb:scapular-pull-ups",
+   "free_exercise_db:Scapular_Pull-Up"
+  ],
+  [
+   "repdb:sumo-deadlift",
+   "free_exercise_db:Sumo_Deadlift"
+  ],
+  [
+   "repdb:weighted-pull-up",
+   "free_exercise_db:Weighted_Pull_Ups"
+  ],
+  [
+   "everkinetic:0215",
+   "free_exercise_db:Barbell_Curls_Lying_Against_An_Incline"
+  ],
+  [
+   "everkinetic:0009",
+   "free_exercise_db:Cable_Shrugs"
+  ],
+  [
+   "everkinetic:0193",
+   "repdb:barbell-overhead-extension"
+  ],
+  [
+   "everkinetic:0017",
+   "free_exercise_db:Bent_Over_Low-Pulley_Side_Lateral"
+  ],
+  [
+   "everkinetic:0111",
+   "free_exercise_db:Leg_Lift"
+  ],
+  [
+   "repdb:cable-lateral-raise",
+   "free_exercise_db:Standing_Low-Pulley_Deltoid_Raise"
+  ],
+  [
+   "kilo:low-to-high-cable-fly",
+   "free_exercise_db:Low_Cable_Crossover"
   ]
  ]
 }
