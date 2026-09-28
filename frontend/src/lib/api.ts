@@ -68,7 +68,7 @@ export const api = {
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  del: (path: string) => request<void>(path, { method: "DELETE" }),
+  del: <T = void,>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 // --- Tipi condivisi con gli schemi Pydantic del backend ---------------------
@@ -251,6 +251,12 @@ export type WorkoutPlan = {
   is_active: boolean;
   started_at: string;
   exercises: PlanExercise[];
+};
+
+/** Volume della scheda com'è adesso, ricalcolato dal server a ogni modifica. */
+export type PlanVolume = {
+  weekly_sets_equivalent: Record<string, number>;
+  warnings: string[];
 };
 
 export type PlanGeneration = {

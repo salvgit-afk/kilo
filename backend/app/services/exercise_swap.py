@@ -126,6 +126,42 @@ def find_alternatives(
     return alternative[:limit]
 
 
+def find_candidates(
+    db: Session,
+    profile: UserProfile,
+    muscle: str,
+    *,
+    limit: int = 24,
+    q: str | None = None,
+    exclude_ids: set[int] | None = None,
+) -> list[Alternative]:
+    """Esercizi da aggiungere alla scheda per un gruppo muscolare.
+
+    Stessi filtri delle alternative (attrezzatura, sgraditi esclusi, graditi
+    in testa), senza un esercizio di partenza con cui confrontarsi.
+    """
+    allowed = _available_equipment_filter(profile)
+    preferenze = {
+        p.exercise_id: p.is_preferred
+        for p in db.scalars(select(ExercisePreference).where(ExercisePreference.profile_id == profile.id))
+    }
+    query = select(Exercise).where(
+        Exercise.primary_muscle == muscle, exercise_library.catalog_condition(db)
+    )
+    if q and q.strip():
+        query = query.where(exercise_library.search_condition(q))
+    esclusi = exclude_ids or set()
+    candidati = [
+        Alternative(exercise=ex, same_type=False, already_preferred=preferenze.get(ex.id, False))
+        for ex in db.scalars(query.order_by(*exercise_library.catalog_order()))
+        if ex.id not in esclusi
+        and preferenze.get(ex.id, True) is not False
+        and _is_usable(ex, allowed)
+    ]
+    candidati.sort(key=lambda a: not a.already_preferred)
+    return candidati[:limit]
+
+
 def set_preference(
     db: Session, profile: UserProfile, exercise: Exercise, *, preferred: bool, note: str | None = None
 ) -> ExercisePreference:

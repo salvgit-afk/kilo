@@ -32,22 +32,24 @@ from app.schemas import (
     ChatIn,
     ChatOut,
     ExerciseGuidanceOut,
+    ExerciseHistoryOut,
     ExerciseOut,
+    ExerciseSessionOut,
+    FeedbackIn,
+    PlanExerciseAddIn,
+    PlanExerciseUpdate,
+    PlanGenerationOut,
+    PlanScheduleIn,
+    PlanVolumeOut,
     PreferenceIn,
     PreferenceOut,
-    FeedbackIn,
-    PlanGenerationOut,
-    ExerciseHistoryOut,
-    ExerciseSessionOut,
-    PlanExerciseUpdate,
-    PlanScheduleIn,
     SessionIn,
     SessionOut,
     SessionRecordOut,
-    SessionSummaryOut,
     SessionSetIn,
     SessionSetOut,
     SessionSetUpdate,
+    SessionSummaryOut,
     SessionUpdate,
     SwapIn,
     VolumeRecommendationOut,
@@ -60,6 +62,7 @@ from app.services import (
     exercise_guidance,
     exercise_library,
     exercise_swap,
+    plan_editing,
     push_notifications,
     rate_limit,
     training_log,
@@ -400,6 +403,74 @@ def update_plan_exercise(
         setattr(riga, campo, valore)
     db.commit()
     return db.get(WorkoutPlan, riga.workout_plan_id)
+
+
+@router.get("/plans/{plan_id}/candidates", response_model=list[AlternativeOut])
+def list_candidates(
+    plan_id: int,
+    muscle: str,
+    q: str | None = None,
+    limit: int = 24,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> list[AlternativeOut]:
+    """Esercizi da aggiungere alla scheda per un gruppo muscolare."""
+    piano = _plan_for(db, profile.id, plan_id)
+    candidati = exercise_swap.find_candidates(
+        db, profile, muscle, limit=max(1, min(limit, 40)), q=q,
+        exclude_ids={e.exercise_id for e in piano.exercises},
+    )
+    translation.ensure_translated(db, [c.exercise for c in candidati])
+    return [
+        AlternativeOut(exercise=c.exercise, preserves_stimulus=False, already_preferred=c.already_preferred)
+        for c in candidati
+    ]
+
+
+@router.post("/plans/{plan_id}/exercises", response_model=WorkoutPlanOut, status_code=201)
+def add_plan_exercise(
+    plan_id: int,
+    payload: PlanExerciseAddIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutPlan:
+    """Aggiunge un esercizio a un giorno della scheda, senza tetto di esercizi."""
+    piano = _plan_for(db, profile.id, plan_id)
+    esercizio = db.get(Exercise, payload.exercise_id)
+    if esercizio is None:
+        raise HTTPException(status_code=404, detail="Esercizio non trovato")
+    try:
+        plan_editing.add_exercise(db, profile, piano, esercizio, payload.day_label)
+    except plan_editing.EditError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return piano
+
+
+@router.delete("/plan-exercises/{plan_exercise_id}", response_model=WorkoutPlanOut)
+def remove_plan_exercise(
+    plan_exercise_id: int,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutPlan:
+    """Toglie un esercizio dalla scheda; le serie già registrate restano."""
+    riga = _plan_row(db, profile, plan_exercise_id)
+    piano_id = riga.workout_plan_id
+    try:
+        plan_editing.remove_exercise(db, riga)
+    except plan_editing.EditError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    piano = db.get(WorkoutPlan, piano_id)
+    db.refresh(piano)
+    return piano
+
+
+@router.get("/plans/{plan_id}/volume", response_model=PlanVolumeOut)
+def read_plan_volume(
+    plan_id: int, db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> PlanVolumeOut:
+    """Serie settimanali per gruppo e avvisi, ricalcolati sulla scheda attuale."""
+    risultato = plan_editing.plan_volume(_plan_for(db, profile.id, plan_id), profile)
+    return PlanVolumeOut(weekly_sets_equivalent=risultato.weekly_sets_equivalent, warnings=risultato.warnings)
 
 
 # --- Sessioni e serie ----------------------------------------------------------------

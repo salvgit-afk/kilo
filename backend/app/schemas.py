@@ -209,6 +209,18 @@ class WorkoutPlanOut(BaseModel):
     exercises: list[PlanExerciseOut] = []
 
 
+class PlanExerciseAddIn(BaseModel):
+    exercise_id: int
+    day_label: str = Field(min_length=1, max_length=32)
+
+
+class PlanVolumeOut(BaseModel):
+    """Volume della scheda com'è adesso: dirette intere, indirette a metà."""
+
+    weekly_sets_equivalent: dict[str, float]
+    warnings: list[str]
+
+
 class PlanScheduleIn(BaseModel):
     weekdays: list[int] = Field(min_length=1, max_length=7)
 

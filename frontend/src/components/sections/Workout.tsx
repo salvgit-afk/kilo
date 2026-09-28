@@ -28,6 +28,7 @@ import {
   formatEquipment,
   type Alternative,
   type PlanExercise,
+  type PlanVolume,
   type PlanGeneration,
   type Profile,
   type VolumeRecommendation,
@@ -104,6 +105,10 @@ export function Workout({
   const [detailId, setDetailId] = useState<number | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
+  // Giorno a cui aggiungere un esercizio.
+  const [adding, setAdding] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [volume, setVolume] = useState<PlanVolume | null>(null);
   const [editingParams, setEditingParams] = useState<PlanExercise | null>(null);
   const [editingSchedule, setEditingSchedule] = useState(false);
   // Tendina aperta nella card della scheda: scelta della scheda o opzioni.
@@ -195,6 +200,24 @@ export function Workout({
     setDeleting(null);
   }
 
+  // Volume della scheda ricalcolato dal server a ogni modifica: la scheda
+  // cambia oggetto quando si aggiunge, toglie o cambia un esercizio.
+  const pianoMostrato = plans?.find((p) => p.id === selectedId) ?? null;
+  useEffect(() => {
+    if (!pianoMostrato) {
+      setVolume(null);
+      return;
+    }
+    let annullato = false;
+    api
+      .get<PlanVolume>(`/workout/plans/${pianoMostrato.id}/volume?profile_id=${profile.id}`)
+      .then((v) => !annullato && setVolume(v))
+      .catch(() => !annullato && setVolume(null));
+    return () => {
+      annullato = true;
+    };
+  }, [pianoMostrato, profile.id]);
+
   // L'allenamento in corso, se c'è. Prima di ogni return anticipato: gli hook
   // devono essere sempre gli stessi, in ogni render.
   useEffect(() => {
@@ -224,6 +247,15 @@ export function Workout({
 
   function replacePlan(aggiornata: WorkoutPlan) {
     setPlans((correnti) => (correnti ?? []).map((p) => (p.id === aggiornata.id ? aggiornata : p)));
+  }
+
+  async function removeExercise(item: PlanExercise) {
+    setRemoveError(null);
+    try {
+      replacePlan(await api.del<WorkoutPlan>(`/workout/plan-exercises/${item.id}?profile_id=${profile.id}`));
+    } catch (e) {
+      setRemoveError(e instanceof Error ? e.message : "Non sono riuscito a togliere l'esercizio.");
+    }
   }
 
   return (
@@ -456,14 +488,29 @@ export function Workout({
                     onOpenDetail={setDetailId}
                     onSwap={setSwapping}
                     onEdit={setEditingParams}
+                    onRemove={dayExercises.length > 1 ? removeExercise : undefined}
                   />
                 ))}
               </AnimatePresence>
+              {removeError && <Notice>{removeError}</Notice>}
+              {activeDay && (
+                <motion.button
+                  layout
+                  onClick={() => setAdding(activeDay)}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-3.5 text-[13.5px] font-medium text-white/55 transition hover:border-lime-400/40 hover:bg-lime-400/[0.05] hover:text-lime-200"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                    <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                  </svg>
+                  Aggiungi esercizio · {activeDay.length <= 2 ? `giorno ${activeDay}` : activeDay}
+                </motion.button>
+              )}
             </div>
           </div>
 
           <div className="space-y-4">
             {meta?.warnings.map((w, i) => <Notice key={i}>{w}</Notice>)}
+            {volume?.warnings.map((w, i) => <Notice key={`v${i}`}>{w}</Notice>)}
 
             {plan.rationale && (
               <Card delay={0.05}>
@@ -483,11 +530,11 @@ export function Workout({
               </Card>
             )}
 
-            {meta && (
+            {volume && Object.keys(volume.weekly_sets_equivalent).length > 0 && (
               <Card delay={0.1}>
                 <CardHeader title="Volume settimanale" subtitle="Serie per gruppo, le indirette contano mezza" />
                 <div className="space-y-2 px-5 py-4">
-                  {Object.entries(meta.weekly_sets_equivalent ?? meta.weekly_sets_per_muscle).map(([m, s]) => (
+                  {Object.entries(volume.weekly_sets_equivalent).map(([m, s]) => (
                     <div key={m} className="flex items-center gap-3">
                       <span className="w-32 shrink-0 truncate text-[12px] text-white/50">
                         {MUSCLE_LABELS[m] ?? m}
@@ -569,6 +616,16 @@ export function Workout({
             onClose={() => setSessionDay(null)}
             onPlanUpdated={replacePlan}
             onSessionChange={setActiveSession}
+          />
+        )}
+        {adding && plan && (
+          <AlternativesDialog
+            key={`add-${adding}`}
+            addTo={{ planId: plan.id, day: adding }}
+            profileId={profile.id}
+            onClose={() => setAdding(null)}
+            onSwapped={replacePlan}
+            onOpenDetail={setDetailId}
           />
         )}
         {swapping && (
@@ -853,15 +910,26 @@ function ExerciseRow({
   onOpenDetail,
   onSwap,
   onEdit,
+  onRemove,
 }: {
   item: PlanExercise;
   index: number;
   onOpenDetail: (id: number) => void;
   onSwap: (item: PlanExercise) => void;
   onEdit: (item: PlanExercise) => void;
+  /** Assente sull'unico esercizio del giorno: senza, il giorno sparirebbe. */
+  onRemove?: (item: PlanExercise) => Promise<void>;
 }) {
   const ex = item.exercise;
   const nome = exerciseName(ex);
+  // Doppio tocco: il primo chiede conferma, come nel diario.
+  const [confirm, setConfirm] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 3500);
+    return () => clearTimeout(t);
+  }, [confirm]);
 
   return (
     <motion.div
@@ -917,6 +985,32 @@ function ExerciseRow({
           </svg>
           <span className="hidden md:inline">Cambia</span>
         </button>
+        {onRemove && (
+          <button
+            onClick={async () => {
+              if (!confirm) return setConfirm(true);
+              setRemoving(true);
+              await onRemove(item);
+              setRemoving(false);
+              setConfirm(false);
+            }}
+            disabled={removing}
+            aria-label={confirm ? `Conferma: togli ${nome}` : `Togli ${nome} dalla scheda`}
+            className={`inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-[12px] font-semibold transition ${
+              confirm
+                ? "border-rose-400/60 bg-rose-500/85 text-white"
+                : "border-white/10 bg-white/[0.04] text-white/45 hover:border-rose-400/40 hover:text-rose-200"
+            }`}
+          >
+            {confirm ? (
+              removing ? "…" : "Togli"
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="px-3.5 pb-3">
@@ -926,11 +1020,6 @@ function ExerciseRow({
   );
 }
 
-/**
- * Cambio esercizio: le alternative come schede con l'animazione, il tipo di
- * esercizio e il primo spunto di focus muscolare — abbastanza per capire di
- * cosa si tratta prima di sceglierlo.
- */
 // Gruppi fra cui scegliere quando si cambia proprio il muscolo: quelli che
 // la scheda allena, senza i gruppi minori.
 const GRUPPI_SOSTITUZIONE = [
@@ -938,14 +1027,24 @@ const GRUPPI_SOSTITUZIONE = [
   "Quads", "Hamstrings", "Glutes", "Calves", "Abs",
 ];
 
+/**
+ * Cambio o aggiunta di un esercizio: le alternative come schede con
+ * l'animazione, il tipo di esercizio e il primo spunto di focus muscolare —
+ * abbastanza per capire di cosa si tratta prima di sceglierlo.
+ *
+ * Con `item` sostituisce quell'esercizio; con `addTo` ne aggiunge uno nuovo
+ * in fondo al giorno.
+ */
 function AlternativesDialog({
   item,
+  addTo,
   profileId,
   onClose,
   onSwapped,
   onOpenDetail,
 }: {
-  item: PlanExercise;
+  item?: PlanExercise;
+  addTo?: { planId: number; day: string };
   profileId: number;
   onClose: () => void;
   onSwapped: (plan: WorkoutPlan) => void;
@@ -955,11 +1054,11 @@ function AlternativesDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  const originale = item.exercise.primary_muscle ?? "";
+  const originale = item?.exercise.primary_muscle ?? "";
   // Il gruppo da cui pescare: di base lo stesso, ma si può cambiare proprio
   // il muscolo allenato da questo esercizio.
-  const [muscle, setMuscle] = useState(originale);
-  const cambiaMuscolo = muscle !== originale;
+  const [muscle, setMuscle] = useState(originale || GRUPPI_SOSTITUZIONE[0]);
+  const cambiaMuscolo = !!item && muscle !== originale;
 
   useEffect(() => {
     setAlts(null);
@@ -971,7 +1070,9 @@ function AlternativesDialog({
       () => {
         api
           .get<Alternative[]>(
-            `/workout/plan-exercises/${item.id}/alternatives?profile_id=${profileId}&limit=24${q}${m}`
+            addTo
+              ? `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=24&muscle=${encodeURIComponent(muscle)}${q}`
+              : `/workout/plan-exercises/${item!.id}/alternatives?profile_id=${profileId}&limit=24${q}${m}`
           )
           .then(setAlts)
           .catch((e) => {
@@ -982,14 +1083,24 @@ function AlternativesDialog({
       query ? 300 : 0
     );
     return () => clearTimeout(timer);
-  }, [item.id, profileId, query, muscle, cambiaMuscolo]);
+  }, [item, addTo, profileId, query, muscle, cambiaMuscolo]);
 
   async function swap(exerciseId: number) {
     setBusy(exerciseId);
     setError(null);
     try {
+      if (addTo) {
+        onSwapped(
+          await api.post<WorkoutPlan>(`/workout/plans/${addTo.planId}/exercises?profile_id=${profileId}`, {
+            exercise_id: exerciseId,
+            day_label: addTo.day,
+          })
+        );
+        onClose();
+        return;
+      }
       const updated = await api.post<WorkoutPlan>(
-        `/workout/plan-exercises/${item.id}/swap?profile_id=${profileId}`,
+        `/workout/plan-exercises/${item!.id}/swap?profile_id=${profileId}`,
         // Cambiando muscolo l'esercizio tolto non è sgradito: si vuole allenare altro.
         { replacement_exercise_id: exerciseId, mark_old_as_disliked: !cambiaMuscolo, allow_muscle_change: cambiaMuscolo }
       );
@@ -1002,17 +1113,20 @@ function AlternativesDialog({
     }
   }
 
-  const attuale = item.exercise;
+  const attuale = item?.exercise;
   const nomeMuscolo = (m: string) => MUSCLE_LABELS[m] ?? m;
-  const parametri = `${item.target_sets} × ${item.target_reps_min}-${item.target_reps_max} a RIR ${item.target_rir}`;
+  const parametri = item ? `${item.target_sets} × ${item.target_reps_min}-${item.target_reps_max} a RIR ${item.target_rir}` : "";
+  const giorno = addTo ? (addTo.day.length <= 2 ? `giorno ${addTo.day}` : addTo.day) : "";
 
   return (
     <Modal onClose={onClose} className="max-w-3xl">
       <ModalHeader
-        eyebrow={`Cambia esercizio · ${nomeMuscolo(muscle)}`}
-        title={`Al posto di «${exerciseName(attuale)}»`}
+        eyebrow={`${addTo ? "Aggiungi esercizio" : "Cambia esercizio"} · ${nomeMuscolo(muscle)}`}
+        title={attuale ? `Al posto di «${exerciseName(attuale)}»` : `Nuovo esercizio per ${giorno}`}
         subtitle={
-          cambiaMuscolo
+          addTo
+            ? "Entra in fondo al giorno con 3 serie e ripetizioni, RIR e recupero delle fonti per quel tipo di esercizio: poi li cambi come gli altri."
+            : cambiaMuscolo
             ? `Cambi gruppo: da ${nomeMuscolo(originale).toLowerCase()} a ${nomeMuscolo(muscle).toLowerCase()}. Restano ${parametri}; le serie settimanali si spostano sul nuovo muscolo.`
             : `Stesso muscolo principale: restano ${parametri}. Scegli quello in cui senti meglio il muscolo e che esegui volentieri.`
         }
@@ -1022,7 +1136,7 @@ function AlternativesDialog({
       <div className="shrink-0 space-y-2.5 border-b border-white/[0.06] px-4 py-3">
         <input
           className="input py-2 text-[13px]"
-          placeholder="Cerca fra le alternative — es. cavi, manubri, macchina, hammer"
+          placeholder={addTo ? "Cerca un esercizio — es. cavi, manubri, macchina, hammer" : "Cerca fra le alternative — es. cavi, manubri, macchina, hammer"}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -1048,7 +1162,7 @@ function AlternativesDialog({
                 )}
                 <span className="relative">
                   {nomeMuscolo(m)}
-                  {m === originale && !scelto && <span className="ml-1 text-white/35">· attuale</span>}
+                  {item && m === originale && !scelto && <span className="ml-1 text-white/35">· attuale</span>}
                 </span>
               </button>
             );
@@ -1134,7 +1248,7 @@ function AlternativesDialog({
                         disabled={busy !== null}
                         onClick={() => swap(ex.id)}
                       >
-                        {busy === ex.id ? "Cambio…" : "Scegli questo"}
+                        {busy === ex.id ? (addTo ? "Aggiungo…" : "Cambio…") : addTo ? "Aggiungi" : "Scegli questo"}
                       </button>
                     </div>
                   </div>
@@ -1146,7 +1260,9 @@ function AlternativesDialog({
       </div>
 
       <p className="shrink-0 border-t border-white/[0.06] px-5 py-3 text-[11.5px] leading-snug text-white/35">
-        {cambiaMuscolo
+        {addTo
+          ? "Quello che aggiungi diventa un preferito: le prossime schede lo propongono per primo."
+          : cambiaMuscolo
           ? "L'esercizio tolto resta disponibile per le prossime schede; quello che scegli diventa un preferito."
           : "L'esercizio sostituito non ti verrà più proposto nelle prossime schede; quello che scegli diventa un preferito."}
       </p>

@@ -589,6 +589,16 @@ def generate_plan(
         for muscle in muscles:
             frequency[muscle] = frequency.get(muscle, 0) + 1
 
+    # Upper/Lower con 3 giorni: la parte alta ha due sedute, le gambe una.
+    # Mettere tutto il volume delle gambe in quell'unica seduta produrrebbe
+    # 50 serie in un giorno; si programma come se fossero due sedute e lo si
+    # dichiara (`hypertrophy_prescription.md`: ~10 serie per muscolo a seduta).
+    gambe_a_meta = resolved_split == SplitType.UPPER_LOWER and profile.training_days_per_week == 3
+    if gambe_a_meta:
+        for muscle in LEG_MUSCLES + CORE_MUSCLES:
+            if frequency.get(muscle) == 1:
+                frequency[muscle] = 2
+
     preferences = _preference_map(db, profile.id)
     planned: list[PlannedExercise] = []
     muscles_without_exercises: set[str] = set()
@@ -666,29 +676,23 @@ def generate_plan(
 
     weekly_sets = direct_weekly_sets(planned)
 
-    lunghe = [
-        (giorno, serie)
-        for giorno in dict.fromkeys(p.day_label for p in planned)
-        if (serie := sum(p.sets for p in planned if p.day_label == giorno)) > LONG_SESSION_SETS
-    ]
-    if lunghe:
-        warnings.append(
-            "Sedute lunghe: "
-            + ", ".join(f"{g} ha {n} serie" for g, n in lunghe)
-            + ", oltre un'ora e un quarto. Se preferisci sedute più corte, con un giorno "
-            "in più lo stesso volume si distribuisce in meno serie per seduta."
-        )
-
     if not planned:
         raise GenerationError(
             "Nessun esercizio disponibile con l'attrezzatura indicata. "
             "Verifica di aver sincronizzato il catalogo esercizi."
         )
 
+    if gambe_a_meta:
+        warnings.append(
+            "Con 3 giorni Upper/Lower le gambe hanno una seduta sola: il loro volume è "
+            "la metà di quello della parte alta, per non superare le serie che una "
+            "seduta regge. Con il quarto giorno (una seconda seduta Lower) torna pieno."
+        )
+
     if muscles_without_exercises:
         warnings.append(
             "Nessun esercizio disponibile con la tua attrezzatura per: "
-            + ", ".join(sorted(muscles_without_exercises))
+            + ", ".join(sorted(muscle_name_it(m) for m in muscles_without_exercises))
         )
 
     if crowded_days:
@@ -702,7 +706,7 @@ def generate_plan(
 
     if overloaded_muscles:
         warnings.append(
-            f"Con questo split {', '.join(overloaded_muscles)} ricevono più di "
+            f"Con questo split {', '.join(muscle_name_it(m) for m in overloaded_muscles)} ricevono più di "
             f"{MAX_SETS_PER_MUSCLE_PER_SESSION} serie nella stessa seduta. Le "
             "raccomandazioni IUSCA suggeriscono di non superare circa "
             f"{MAX_SETS_PER_MUSCLE_PER_SESSION} serie per muscolo a seduta e di "
@@ -751,6 +755,13 @@ def generate_plan(
 INDIRECT_SET_WEIGHT = 0.5
 _NO_INDIRECT_FROM = {("Quads", "Hamstrings")}
 _TRACKED_MUSCLES = set(PUSH_MUSCLES + PULL_MUSCLES + LEG_MUSCLES + CORE_MUSCLES) | set(PSEUDO_MUSCLES)
+
+
+def muscle_name_it(muscle: str) -> str:
+    """Il gruppo muscolare come lo legge l'utente, negli avvisi."""
+    from app.services.translation import _MUSCOLI_IT
+
+    return "deltoidi posteriori" if muscle == "Rear delts" else _MUSCOLI_IT.get(muscle, muscle)
 
 
 def direct_weekly_sets(exercises: list[PlannedExercise]) -> dict[str, int]:
