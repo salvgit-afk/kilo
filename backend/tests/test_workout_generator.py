@@ -430,7 +430,7 @@ def test_nessun_esercizio_disponibile_solleva_errore(db):
         (2, ["Giorno A", "Giorno B"]),
         (3, ["Giorno A", "Giorno B", "Giorno C"]),
         (4, ["Upper A", "Lower A", "Upper B", "Lower B"]),
-        (5, ["Upper", "Lower", "Push", "Pull", "Gambe"]),
+        (5, ["Push A", "Pull A", "Gambe A", "Push B", "Pull B"]),
         (6, ["Push A", "Pull A", "Gambe A", "Push B", "Pull B", "Gambe B"]),
     ],
 )
@@ -438,10 +438,13 @@ def test_split_per_giorni_disponibili(giorni, etichette_attese):
     assert [g for g, _ in wg.build_split(giorni)] == etichette_attese
 
 
-def test_con_cinque_giorni_ogni_muscolo_due_volte():
-    """Il Push/Pull/Gambe puro a 5 giorni allenerebbe le gambe una volta sola."""
+def test_ibrido_a_cinque_giorni_ogni_muscolo_due_volte():
+    """Il Push/Pull/Gambe puro a 5 giorni allena le gambe una volta sola:
+    l'ibrido, da scegliere, porta ogni muscolo a due sedute."""
+    split = wg.build_split(5, "upper_lower_ppl")
+    assert [g for g, _ in split] == ["Upper", "Lower", "Push", "Pull", "Gambe"]
     frequenza: dict[str, int] = {}
-    for _, muscoli in wg.build_split(5):
+    for _, muscoli in split:
         for m in muscoli:
             frequenza[m] = frequenza.get(m, 0) + 1
     assert min(frequenza.values()) == 2
@@ -655,3 +658,10 @@ def test_persist_salva_tutti_i_parametri_degli_esercizi(catalogo):
     )
     assert len(righe) == len(generata.exercises)
     assert all(r.target_rir == 2 and r.rest_seconds in (90, 120) for r in righe)
+
+
+def test_ibrido_con_altri_giorni_diventa_upper_lower():
+    assert wg.build_split(4, "upper_lower_ppl") == wg.build_split(4, "upper_lower")
+    assert wg.split_name("upper_lower_ppl", 4) == "Upper/Lower"
+    assert wg.split_name("upper_lower_ppl", 5) == "Upper/Lower + Push/Pull/Gambe"
+    assert wg.split_name("push_pull_legs", 5) == "Push/Pull/Gambe"

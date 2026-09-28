@@ -250,21 +250,6 @@ def _upper_lower(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
 
 
 def _push_pull_legs(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
-    """Push/Pull/Gambe, ripetuto finché ci sono giorni.
-
-    Con 5 giorni il ciclo puro lascerebbe le gambe a una volta sola a
-    settimana (Push, Pull, Gambe, Push, Pull): si usa invece l'ibrido Upper,
-    Lower, Push, Pull, Gambe, che porta ogni muscolo a due sedute.
-    """
-    if days_per_week == 5:
-        lower = LEG_MUSCLES + CORE_MUSCLES
-        return [
-            ("Upper", PUSH_MUSCLES + PULL_MUSCLES),
-            ("Lower", lower),
-            ("Push", PUSH_MUSCLES),
-            ("Pull", PULL_MUSCLES),
-            ("Gambe", lower),
-        ]
     ciclo = (
         ("Push", PUSH_MUSCLES),
         ("Pull", PULL_MUSCLES),
@@ -275,6 +260,25 @@ def _push_pull_legs(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
         nome, muscoli = ciclo[i % 3]
         giorni.append((f"{nome} {'A' if i < 3 else 'B'}", muscoli))
     return giorni
+
+
+def _upper_lower_ppl(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
+    """Ibrido a 5 giorni: Upper, Lower, Push, Pull, Gambe.
+
+    Il Push/Pull/Gambe puro con 5 giorni allena le gambe una volta sola
+    (Push, Pull, Gambe, Push, Pull); qui ogni muscolo ha due sedute. È una
+    divisione da 5 giorni: con un numero diverso diventa un Upper/Lower.
+    """
+    if days_per_week != 5:
+        return _upper_lower(days_per_week)
+    lower = LEG_MUSCLES + CORE_MUSCLES
+    return [
+        ("Upper", PUSH_MUSCLES + PULL_MUSCLES),
+        ("Lower", lower),
+        ("Push", PUSH_MUSCLES),
+        ("Pull", PULL_MUSCLES),
+        ("Gambe", lower),
+    ]
 
 
 def _muscle_group_split(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
@@ -304,6 +308,7 @@ SPLIT_BUILDERS = {
     SplitType.UPPER_LOWER: _upper_lower,
     SplitType.PUSH_PULL_LEGS: _push_pull_legs,
     SplitType.MUSCLE_GROUP: _muscle_group_split,
+    SplitType.UPPER_LOWER_PPL: _upper_lower_ppl,
 }
 
 
@@ -342,12 +347,13 @@ SPLIT_NAMES = {
     SplitType.UPPER_LOWER: "Upper/Lower",
     SplitType.PUSH_PULL_LEGS: "Push/Pull/Gambe",
     SplitType.MUSCLE_GROUP: "Per gruppo muscolare",
+    SplitType.UPPER_LOWER_PPL: "Upper/Lower + Push/Pull/Gambe",
 }
 
 
 def split_name(split_type: str, days_per_week: int) -> str:
-    if split_type == SplitType.PUSH_PULL_LEGS and days_per_week == 5:
-        return "Upper/Lower + Push/Pull/Gambe"
+    if split_type == SplitType.UPPER_LOWER_PPL and days_per_week != 5:
+        return SPLIT_NAMES[SplitType.UPPER_LOWER]
     return SPLIT_NAMES[split_type]
 
 

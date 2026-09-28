@@ -406,7 +406,7 @@ REGOLE VINCOLANTI:
   registro, conferma con il pulsante qui sotto», mai «ho registrato» o «ho
   generato». Tipi ammessi, con il "valore":
   • apri_sezione: oggi | scheda | diario | ricette | progressi | integratori | profilo
-  • genera_scheda: full_body | upper_lower | push_pull_legs | muscle_group
+  • genera_scheda: full_body | upper_lower | push_pull_legs | muscle_group | upper_lower_ppl
   • registra_peso: il peso in kg, SOLO se l'utente ti ha appena detto quanto pesa oggi
   • cerca_alimento: il nome dell'alimento da cercare nel diario
   • cerca_ricetta: un ingrediente o un piatto
@@ -457,7 +457,7 @@ _SCHEMA = {
 }
 
 _SECTIONS = {"oggi", "scheda", "diario", "ricette", "progressi", "integratori", "profilo"}
-_SPLITS = {"full_body", "upper_lower", "push_pull_legs", "muscle_group"}
+_SPLITS = {"full_body", "upper_lower", "push_pull_legs", "muscle_group", "upper_lower_ppl"}
 _SUPPLEMENT_WORDS = (
     "integrator", "creatina", "caffeina", "polvere", "glutammin", "omega",
     "vitamina", "ashwagandha", "moringa", "bcaa", "hmb", "citrullin", "alanina",

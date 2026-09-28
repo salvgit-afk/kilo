@@ -615,14 +615,17 @@ export const SPLIT_LABELS: Record<string, string> = {
   upper_lower: "Upper / Lower",
   push_pull_legs: "Push / Pull / Gambe",
   muscle_group: "Per gruppo muscolare",
+  upper_lower_ppl: "Upper/Lower + PPL",
 };
 
 export const SPLIT_HINTS: Record<string, string> = {
   auto: "Decido io in base ai giorni che hai a disposizione",
   full_body: "Tutto il corpo a ogni sessione: ogni muscolo più volte a settimana",
   upper_lower: "Un giorno parte alta, un giorno parte bassa",
-  push_pull_legs: "Spinta, trazione e gambe in giorni separati; con 5 giorni si aggiungono Upper e Lower",
+  push_pull_legs: "Spinta, trazione e gambe in giorni separati",
   muscle_group: "Es. lunedì petto e bicipiti, mercoledì gambe e dorso, venerdì spalle e tricipiti",
+  upper_lower_ppl:
+    "Per 5 giorni: Upper, Lower, Push, Pull e Gambe, ogni muscolo due volte a settimana. Con altri giorni diventa un Upper/Lower",
 };
 
 export const MUSCLE_LABELS: Record<string, string> = {

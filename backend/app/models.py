@@ -109,6 +109,7 @@ class SplitType:
     UPPER_LOWER = "upper_lower"
     PUSH_PULL_LEGS = "push_pull_legs"
     MUSCLE_GROUP = "muscle_group"   # es. lunedì petto+bicipiti, mercoledì gambe+dorso
+    UPPER_LOWER_PPL = "upper_lower_ppl"  # 5 giorni: Upper, Lower, Push, Pull, Gambe
 
 
 class DietType:
