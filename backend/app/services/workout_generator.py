@@ -675,8 +675,8 @@ def generate_plan(
         warnings.append(
             "Sedute lunghe: "
             + ", ".join(f"{g} ha {n} serie" for g, n in lunghe)
-            + ", oltre un'ora e un quarto. Se preferisci sedute più corte, con 4 giorni "
-            "uno split Upper/Lower distribuisce lo stesso volume in meno serie per seduta."
+            + ", oltre un'ora e un quarto. Se preferisci sedute più corte, con un giorno "
+            "in più lo stesso volume si distribuisce in meno serie per seduta."
         )
 
     if not planned:
