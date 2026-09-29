@@ -228,6 +228,27 @@ export function ProfileSection({
                   Exercise data by RepDB (repdb.co)
                 </a>
               </p>
+              <p className="text-[11.5px] leading-relaxed text-white/30">
+                Alimenti generici dalle tabelle di composizione del{" "}
+                <a
+                  href="https://www.alimentinutrizione.it"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-white/20 underline-offset-2 hover:text-white/60"
+                >
+                  CREA Centro di ricerca Alimenti e Nutrizione
+                </a>
+                , da USDA FoodData Central e dalla tabella{" "}
+                <a
+                  href="https://ciqual.anses.fr"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-white/20 underline-offset-2 hover:text-white/60"
+                >
+                  Ciqual di Anses (2025)
+                </a>
+                , prodotti confezionati da Open Food Facts.
+              </p>
               {/* Riservato all'amministratore: scarica le fonti e avvia la
                   traduzione di tutto il catalogo. */}
               {isAdmin && (

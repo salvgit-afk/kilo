@@ -147,10 +147,11 @@ export function RecipeImport({
       {!draft && (
         <Card className="mb-4">
           <div className="p-4">
-            <p className="label">Incolla la ricetta</p>
+            <p className="label">Incolla la ricetta o il link</p>
             <p className="mb-2.5 text-[12.5px] leading-relaxed text-white/45">
-              Titolo, quantità e preparazione, così come sono scritti. Vanno bene gli appunti, un
-              messaggio, la lista ingredienti di un sito che ti piace. Le quantità già in grammi
+              Il link della pagina (GialloZafferano, Cucchiaio d&apos;Argento, La Cucina
+              Italiana, Misya e la maggior parte dei siti di ricette), oppure titolo, quantità e
+              preparazione così come sono scritti: appunti, un messaggio. Le quantità già in grammi
               restano esatte; quelle in cucchiai le converto io, e se mancano le stimo sulle
               porzioni standard italiane. Le stime sono segnate: le controlli prima di salvare.
             </p>

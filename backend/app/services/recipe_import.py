@@ -1,4 +1,4 @@
-"""Importazione di una ricetta da testo incollato.
+"""Importazione di una ricetta da testo incollato o da un link.
 
 Il problema che risolve: inserire una ricetta ingrediente per ingrediente è
 lento, e le ricette buone (blog di cucina fit, quaderni, appunti) sono già
@@ -14,14 +14,24 @@ per le ricette suggerite.
 Il modello restituisce per ogni ingrediente due nomi: quello italiano da
 mostrare e quello inglese generico con cui cercarlo su USDA, dove il catalogo
 è in inglese.
+
+Con un link la pagina si legge con `recipe-scrapers`, che conosce i siti di
+ricette italiani (GialloZafferano, Cucchiaio d'Argento, La Cucina Italiana,
+Misya...) e per gli altri usa i dati strutturati schema.org. Da lì esce un
+testo pulito — titolo, porzioni, ingredienti, preparazione — che segue la
+stessa strada del testo incollato: il modello riceve poche righe invece di
+una pagina piena di commenti e pubblicità.
 """
 
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 import re
+import socket
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -277,3 +287,105 @@ def build_from_parsed(db: Session, dati: dict, *, draft_key: str) -> ImportedRec
             f"catalogo ({elenco}): cercali a mano o toglili prima di salvare."
         )
     return ricetta
+
+
+# --- Da un link -------------------------------------------------------------------
+
+# Una pagina di ricetta pesa qualche centinaio di KB; oltre è altro.
+MAX_PAGE_BYTES = 3_000_000
+PAGE_TIMEOUT_S = 15.0
+_URL = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
+
+def looks_like_url(text: str) -> bool:
+    return bool(_URL.match((text or "").strip()))
+
+
+def _check_host(url: str) -> None:
+    """Solo http(s) verso indirizzi pubblici: il server non deve diventare un
+    modo per raggiungere la rete interna di chi lo ospita."""
+    parti = urlparse(url)
+    if parti.scheme not in ("http", "https") or not parti.hostname:
+        raise RecipeImportError("Il link deve iniziare con http:// o https://.")
+    try:
+        indirizzi = {info[4][0] for info in socket.getaddrinfo(parti.hostname, None)}
+    except socket.gaierror as e:
+        raise RecipeImportError("Non trovo questo sito: controlla il link.") from e
+    for indirizzo in indirizzi:
+        ip = ipaddress.ip_address(indirizzo.split("%")[0])
+        if not ip.is_global:
+            raise RecipeImportError("Questo link non porta a un sito pubblico.")
+
+
+def _fetch_page(url: str) -> str:
+    import httpx
+
+    corrente = url
+    with httpx.Client(timeout=PAGE_TIMEOUT_S, follow_redirects=False) as client:
+        # I reindirizzamenti si seguono a mano, controllando ogni destinazione.
+        for _ in range(5):
+            _check_host(corrente)
+            try:
+                with client.stream(
+                    "GET",
+                    corrente,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; Kilo/1.0; ricetta importata da un utente)"},
+                ) as r:
+                    if r.is_redirect:
+                        corrente = str(r.url.join(r.headers.get("location", "")))
+                        continue
+                    if r.status_code >= 400:
+                        raise RecipeImportError(
+                            "Il sito non ha restituito la pagina: prova a incollare il testo della ricetta."
+                        )
+                    corpo = b""
+                    for pezzo in r.iter_bytes():
+                        corpo += pezzo
+                        if len(corpo) > MAX_PAGE_BYTES:
+                            raise RecipeImportError("La pagina è troppo grande per essere una ricetta.")
+                    return corpo.decode(r.encoding or "utf-8", errors="replace")
+            except httpx.HTTPError as e:
+                raise RecipeImportError(
+                    "Non riesco ad aprire il link: prova a incollare il testo della ricetta."
+                ) from e
+    raise RecipeImportError("Il link rimanda troppe volte ad altre pagine.")
+
+
+def _campo(funzione):
+    """recipe-scrapers solleva un'eccezione per ogni campo che la pagina non ha."""
+    try:
+        return funzione()
+    except Exception:  # noqa: BLE001 - qualsiasi campo mancante vale "non c'è"
+        return None
+
+
+def scraped_text(html: str, url: str) -> str:
+    """Dalla pagina a un testo di ricetta: titolo, porzioni, ingredienti, passaggi."""
+    from recipe_scrapers import scrape_html
+
+    try:
+        pagina = scrape_html(html, org_url=url, supported_only=False)
+    except Exception as e:  # noqa: BLE001 - pagina senza ricetta riconoscibile
+        raise RecipeImportError(
+            "In questa pagina non trovo una ricetta: incolla il testo con gli ingredienti."
+        ) from e
+    ingredienti = [str(i).strip() for i in (_campo(pagina.ingredients) or []) if str(i).strip()]
+    if not ingredienti:
+        raise RecipeImportError(
+            "In questa pagina non trovo la lista degli ingredienti: incolla il testo della ricetta."
+        )
+    righe = [str(_campo(pagina.title) or "Ricetta").strip()]
+    # recipe-scrapers scrive le porzioni in inglese ("4 servings"): basta il numero.
+    numero = re.search(r"\d+", str(_campo(pagina.yields) or ""))
+    if numero:
+        righe.append(f"Porzioni: {numero.group()}")
+    righe += ["", "Ingredienti:"] + [f"- {i}" for i in ingredienti[:MAX_INGREDIENTS]]
+    passaggi = str(_campo(pagina.instructions) or "").strip()
+    if passaggi:
+        righe += ["", "Preparazione:", passaggi]
+    return "\n".join(righe)
+
+
+def import_from_url(db: Session, url: str) -> ImportedRecipe:
+    """Da un link a una bozza di ricetta, passando dal testo ripulito."""
+    return import_from_text(db, scraped_text(_fetch_page(url.strip()), url.strip()))

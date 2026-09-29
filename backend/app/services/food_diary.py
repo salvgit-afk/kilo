@@ -59,6 +59,8 @@ class FoodSearchResult:
         """Gli alimenti USDA sono generici e curati in laboratorio, tranne i
         prodotti di marca americani che USDA elenca con la marca in maiuscolo
         ("Kefir, lowfat, strawberry, LIFEWAY")."""
+        if self.ingredient.source in (IngredientSource.CIQUAL, IngredientSource.CREA):
+            return True
         return self.ingredient.source == IngredientSource.USDA and not usda_brand(
             self.ingredient.name
         )
@@ -121,6 +123,8 @@ def usda_brand(name: str) -> bool:
 
 # Quanti alimenti generici prima dei prodotti italiani.
 MAX_GENERIC_FIRST = 5
+# Quanti alimenti CREA prima di tutto il resto.
+MAX_CREA_FIRST = 4
 
 OFF_SEARCH_CACHE = "off_search"
 # I prodotti in vendita cambiano lentamente: una settimana tiene basso il
@@ -275,7 +279,7 @@ def search_foods(db: Session, query: str, *, limit: int = 15) -> list[FoodSearch
     if not query:
         return []
 
-    from app.services import translation
+    from app.services import ciqual, crea, translation
     from app.services.recipe_analyzer import score_match
 
     # USDA non capisce l'italiano: "petto di pollo" diventa "chicken breast"
@@ -288,17 +292,25 @@ def search_foods(db: Session, query: str, *, limit: int = 15) -> list[FoodSearch
         db, query, inglese, limit=max(limit, 20), with_fallback=italiani is None
     )
 
+    # CIQUAL (ANSES) accanto a USDA: stessi valori di laboratorio, ma con la
+    # cucina europea (formaggi, salumi, pane). È già nel database, quindi non
+    # costa chiamate.
+    europei = ciqual.search(db, inglese, limit=limit)
     generici = sorted(
-        (i for i in usda if not usda_brand(i.name) and pertinente(inglese, i.name)),
+        [i for i in usda if not usda_brand(i.name) and pertinente(inglese, i.name)] + europei,
         key=lambda i: -score_match(inglese, i.name),
     )
     americani = [i for i in usda if usda_brand(i.name) and pertinente(inglese, i.name)]
     # I generici più pertinenti in cima, poi i prodotti in vendita in Italia,
     # poi il resto dei generici: una lista di varianti USDA non deve spingere
     # i prodotti di casa fuori dallo schermo.
+    # CREA in cima: alimenti italiani con il nome italiano, cercati con le
+    # parole scritte dall'utente e non con la loro traduzione.
+    tabelle_crea = sorted(crea.search(db, query, limit=limit), key=lambda i: -score_match(query, i.name))
     ordinati = (
-        generici[:MAX_GENERIC_FIRST] + (italiani or []) + generici[MAX_GENERIC_FIRST:]
-        + riserva + americani
+        tabelle_crea[:MAX_CREA_FIRST]
+        + generici[:MAX_GENERIC_FIRST] + (italiani or []) + generici[MAX_GENERIC_FIRST:]
+        + tabelle_crea[MAX_CREA_FIRST:] + riserva + americani
     )
 
     risultati: list[FoodSearchResult] = []
@@ -405,6 +417,8 @@ def source_label(ingredient: Ingredient) -> str:
         return "prodotto USA (USDA)"
     return {
         IngredientSource.USDA: "generico (USDA)",
+        IngredientSource.CIQUAL: "generico (CIQUAL, Anses)",
+        IngredientSource.CREA: "generico (CREA)",
         IngredientSource.OFF: "prodotto di marca · Open Food Facts",
         IngredientSource.MANUAL: "inserito da te",
     }.get(ingredient.source, "prodotto di marca")

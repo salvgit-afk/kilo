@@ -474,6 +474,8 @@ class FoodSearchOut(BaseModel):
     protein_100g: float
     carbs_100g: float
     fat_100g: float
+    # Porzione tipica (CREA): la quantità proposta quando lo si sceglie.
+    portion_g: float | None = None
 
 
 class RecentFoodOut(FoodSearchOut):

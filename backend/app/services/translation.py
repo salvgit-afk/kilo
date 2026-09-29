@@ -508,16 +508,31 @@ ALIMENTI
 
 
 def cached_food_names(db: Session, ingredient_ids: list[int]) -> dict[int, str]:
-    """Nomi italiani già salvati, con una sola query."""
+    """Nomi italiani già salvati, con una sola query.
+
+    Gli alimenti del CREA hanno già il nome italiano: si usa quello, senza
+    passare dalla traduzione.
+    """
     if not ingredient_ids:
         return {}
+    from app.models import Ingredient, IngredientSource
+
     righe = db.scalars(
         select(LlmCache).where(
             LlmCache.kind == _FOOD_KIND,
             LlmCache.key.in_([str(i) for i in ingredient_ids]),
         )
     )
-    return {int(r.key): r.payload.get("nome") for r in righe if r.payload.get("nome")}
+    nomi = {int(r.key): r.payload.get("nome") for r in righe if r.payload.get("nome")}
+    mancanti = [i for i in ingredient_ids if i not in nomi]
+    if mancanti:
+        for ing_id, nome in db.execute(
+            select(Ingredient.id, Ingredient.name).where(
+                Ingredient.id.in_(mancanti), Ingredient.source == IngredientSource.CREA
+            )
+        ):
+            nomi[ing_id] = nome
+    return nomi
 
 
 def translate_food_names(db: Session, ingredients: list) -> dict[int, str]:

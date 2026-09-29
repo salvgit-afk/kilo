@@ -399,11 +399,17 @@ def _match_ingredient(db: Session, name: str) -> Ingredient | None:
         if ingrediente is not None:
             return ingrediente
 
+    from app.services import ciqual
+
+    # Ciqual è già nel database: nessuna chiamata, e per gli ingredienti
+    # europei (pecorino, prosciutto crudo) ha voci che USDA non ha.
+    europei = ciqual.search(db, name, limit=6)
     try:
         risultati = catalog_sync.search_and_cache_ingredients(db, name, limit=6)
     except Exception as e:  # rete assente o fonte non raggiungibile
         logger.warning("Ricerca ingrediente %r fallita: %s", name, e)
-        return None
+        risultati = []
+    risultati = risultati + europei
 
     migliore = _choose_ingredient(name, risultati)
     if migliore is not None:
@@ -422,7 +428,7 @@ def _choose_ingredient(name: str, risultati: list[Ingredient]) -> Ingredient | N
         # mentre quelli wger/Open Food Facts sono inseriti dagli utenti.
         # Senza questo criterio, fra tre voci "Onion" con lo stesso nome si
         # sceglierebbe a caso fra 56, 289 e 47 kcal/100 g.
-        if ing.source == IngredientSource.USDA:
+        if ing.source in (IngredientSource.USDA, IngredientSource.CIQUAL):
             punteggio += 3
         # A parità di punteggio si preferisce il nome più corto, cioè il meno
         # qualificato e quindi il più generico. Deliberatamente **non** si usa

@@ -101,7 +101,8 @@ presenta come Kilo.
 | Autenticazione | Password con **Argon2** (`pwdlib`), sessioni **JWT** |
 | LLM | **Google Gemini** (piano gratuito), solo spiegazioni e traduzioni |
 | Esercizi | [Everkinetic](https://github.com/everkinetic/data) (disegni, CC BY-SA 4.0), [RepDB](https://github.com/RepDB/exercise-dataset) (illustrazioni, free tier con attribuzione), [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (foto, pubblico dominio), più esercizi scritti a mano |
-| Alimenti | **USDA FoodData Central** (chiave gratuita), **Open Food Facts** (prodotti venduti in Italia), wger come riserva |
+| Alimenti | **[CREA Alimenti e Nutrizione](https://www.alimentinutrizione.it)** (alimenti italiani, nomi e porzioni in italiano), **USDA FoodData Central** (chiave gratuita), **[Ciqual](https://ciqual.anses.fr)** (Anses, alimenti generici europei, Licence Ouverte Etalab), **Open Food Facts** (prodotti venduti in Italia), wger come riserva |
+| Ricette da link | **[recipe-scrapers](https://github.com/hhursev/recipe-scrapers)** (MIT): GialloZafferano, Cucchiaio d'Argento, La Cucina Italiana, Misya e i siti con dati schema.org |
 | Ricette | **Ricette Kilo** (raccolta interna, `backend/app/data/kilo_recipes.py`), poi **TheMealDB** (senza chiave) |
 | Frontend | **Next.js 15**, React 18, TypeScript, Tailwind, Framer Motion, Recharts |
 
@@ -434,6 +435,24 @@ Il catalogo unisce tre fonti aperte e alcuni esercizi scritti a mano (circa
 - **Kilo** (`backend/app/services/manual_exercises.py`) — varianti che nessuna
   fonte contiene (Bayesian curl, alzate laterali al cavo dietro la schiena,
   croci ai cavi dal basso, pendulum squat), senza immagini.
+
+## Alimenti generici: CREA e Ciqual
+
+Gli alimenti italiani vengono dalle **Tabelle di composizione degli alimenti del
+CREA** (aggiornamento 2019), fonte: *CREA Centro di ricerca Alimenti e
+Nutrizione* ([alimentinutrizione.it](https://www.alimentinutrizione.it)). Il CREA
+permette di riprodurre e usare i dati citando la fonte. Il sito pubblica una
+pagina per alimento: `backend/scripts/build_crea.py` le legge una volta, piano,
+e scrive `backend/app/data/crea_2019.json`. Hanno il nome italiano (la ricerca
+li trova senza traduzione) e la porzione tipica, proposta nel diario.
+
+Accanto a USDA, gli alimenti generici vengono anche dalla tabella **Ciqual 2025**
+di Anses: *Anses. 2025. Table de composition nutritionnelle des aliments Ciqual*
+([ciqual.anses.fr](https://ciqual.anses.fr)), Licence Ouverte Etalab 2.0. Ha la
+cucina europea (formaggi stagionati, salumi, pane) con valori di laboratorio.
+I dati sono in `backend/app/data/ciqual_2025.json`, generato dall'Excel ufficiale
+con `backend/scripts/build_ciqual.py`. Le due tabelle vengono caricate da una
+migrazione.
 
 Lo stesso esercizio compare spesso in più fonti con nomi diversi: i doppioni,
 verificati a mano, sono in `backend/app/data/exercise_duplicates.json`. Se ne

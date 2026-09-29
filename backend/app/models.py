@@ -138,6 +138,8 @@ class IngredientSource:
     USDA = "usda"        # USDA FoodData Central (alimenti generici/grezzi)
     OFF = "off"          # Open Food Facts, letto dal codice a barre del prodotto
     MANUAL = "manual"    # inserito a mano dall'utente (dall'etichetta)
+    CIQUAL = "ciqual"    # tabella CIQUAL di ANSES (alimenti generici, cucina europea)
+    CREA = "crea"        # tabelle CREA Alimenti e Nutrizione (alimenti italiani, nomi in italiano)
 
 
 class RecipeSource:
@@ -717,6 +719,9 @@ class Ingredient(Base):
     sugars_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fiber_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     saturated_fat_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Porzione tipica in grammi, quando la fonte la indica (CREA): è la
+    # quantità proposta quando si aggiunge l'alimento al diario.
+    portion_g: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Codice a barre (EAN/UPC) del prodotto: una seconda scansione trova qui i
     # valori senza richiamare Open Food Facts.

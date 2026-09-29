@@ -311,6 +311,8 @@ export type FoodResult = {
   protein_100g: number;
   carbs_100g: number;
   fat_100g: number;
+  /** Porzione tipica (tabelle CREA): la quantità proposta quando lo si sceglie. */
+  portion_g?: number | null;
 };
 
 export type MealItem = {

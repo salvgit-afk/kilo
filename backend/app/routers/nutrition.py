@@ -182,6 +182,7 @@ def search_foods(
             protein_100g=r.protein_100g,
             carbs_100g=r.carbs_100g,
             fat_100g=r.fat_100g,
+            portion_g=r.ingredient.portion_g,
         )
         for r in risultati
     ]
@@ -193,11 +194,12 @@ def _food_out(ingrediente: Ingredient) -> dict:
         name=ingrediente.name,
         name_it=None,
         source_label=food_diary.source_label(ingrediente),
-        is_generic=ingrediente.source == IngredientSource.USDA,
+        is_generic=ingrediente.source in (IngredientSource.USDA, IngredientSource.CIQUAL, IngredientSource.CREA),
         kcal_100g=ingrediente.kcal_100g,
         protein_100g=ingrediente.protein_100g,
         carbs_100g=ingrediente.carbs_100g,
         fat_100g=ingrediente.fat_100g,
+        portion_g=ingrediente.portion_g,
     )
 
 
@@ -770,7 +772,7 @@ def import_recipe(
     user: User = Depends(current_user),
     profile: UserProfile = Depends(owned_profile),
 ) -> RecipeImportOut:
-    """Legge una ricetta incollata come testo e la restituisce strutturata.
+    """Legge una ricetta incollata come testo, o da un link, e la restituisce strutturata.
 
     Non salva niente: restituisce una bozza da rivedere. I valori
     nutrizionali non li produce il modello ma il catalogo alimenti, come per
@@ -782,7 +784,13 @@ def import_recipe(
         raise HTTPException(status_code=429, detail=str(e)) from e
 
     try:
-        bozza = recipe_import.import_from_text(db, payload.text)
+        testo = payload.text.strip()
+        # Un link da solo: si legge la pagina invece del testo.
+        bozza = (
+            recipe_import.import_from_url(db, testo)
+            if recipe_import.looks_like_url(testo)
+            else recipe_import.import_from_text(db, testo)
+        )
     except recipe_import.RecipeImportError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

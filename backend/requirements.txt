@@ -16,6 +16,8 @@ alembic==1.14.0
 # --- Utils ---
 python-dotenv==1.2.3
 httpx==0.28.1
+# Legge le ricette da un link (GialloZafferano, Cucchiaio d'Argento, schema.org).
+recipe-scrapers==15.12.0
 
 # --- Test ---
 pytest==9.1.1

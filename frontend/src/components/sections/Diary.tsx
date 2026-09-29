@@ -762,6 +762,8 @@ function FoodSearchDialog({
                 key={r.ingredient_id}
                 onClick={() => {
                   setSelected(r);
+                  // La porzione tipica (CREA), quando c'è, è il punto di partenza.
+                  if (r.portion_g) setGrams(r.portion_g);
                   setTimeout(() => gramsRef.current?.focus(), 60);
                 }}
                 className={`mb-1 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
@@ -806,7 +808,22 @@ function FoodSearchDialog({
             transition={{ duration: 0.18 }}
             className="shrink-0 space-y-3 border-t border-white/[0.06] bg-ink-900/50 px-4 py-3 sm:px-5"
           >
-            <p className="truncate text-[13.5px] font-medium text-white">{nameOf(selected)}</p>
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-white">{nameOf(selected)}</p>
+              {selected.portion_g ? (
+                <button
+                  onClick={() => setGrams(selected.portion_g ?? null)}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition ${
+                    grams === selected.portion_g
+                      ? "border-lime-400/50 bg-lime-400/15 text-lime-200"
+                      : "border-white/15 text-white/60 hover:text-white"
+                  }`}
+                  title="Porzione tipica secondo le tabelle CREA"
+                >
+                  porzione tipica {selected.portion_g} g
+                </button>
+              ) : null}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <NumberField
                 value={grams}
