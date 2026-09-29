@@ -67,6 +67,7 @@ export function ProgressRing({
   label,
   sublabel,
   tone = "lime",
+  planned = 0,
 }: {
   value: number;
   size?: number;
@@ -74,6 +75,8 @@ export function ProgressRing({
   label: string;
   sublabel?: string;
   tone?: "lime" | "iris" | "amber";
+  /** Quota prevista e non ancora confermata: un arco più tenue dopo il valore. */
+  planned?: number;
 }) {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -106,6 +109,20 @@ export function ProgressRing({
           stroke="rgba(255,255,255,0.07)"
           strokeWidth={stroke}
         />
+        {planned > 0 && clamped < 1 && (
+          <motion.circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="rgba(174,212,74,0.3)"
+            strokeWidth={stroke}
+            strokeDasharray={`${circumference * Math.min(planned, 1 - clamped)} ${circumference}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, strokeDashoffset: -circumference * clamped }}
+            transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+          />
+        )}
         <motion.circle
           cx={size / 2}
           cy={size / 2}

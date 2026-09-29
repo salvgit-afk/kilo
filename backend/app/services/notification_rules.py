@@ -325,7 +325,7 @@ def _diary(db: Session, profile: UserProfile, today: dt.date) -> list[Notificati
     if ultimo != today:
         return note
     totali = food_diary.daily_totals(db, profile, date=today)
-    proteine = totali.protein_g + (supplements.protein_from_supplements(db, profile) or 0)
+    proteine = totali.protein_g + supplements.protein_from_supplements(db, profile, today)
     target = nutrition_targets.compute_targets(profile)
     peso = profile.weight_kg or 0
     if peso and proteine / peso >= PROTEIN_HIGH_G_PER_KG:

@@ -683,8 +683,8 @@ def nutrition_weeks(
     Le medie si calcolano **solo sui giorni registrati**: includere i giorni
     vuoti come zero kcal farebbe sembrare in deficit chi semplicemente non ha
     aperto il diario. Le proteine degli integratori dichiarati si sommano al
-    totale come in `GET /diary`, perché il target è l'apporto proteico della
-    giornata e non il cibo solido.
+    totale come in `GET /diary` (nei giorni in cui sono segnate come prese),
+    perché il target è l'apporto proteico della giornata e non il cibo solido.
     """
     today = today or clock.today()
     lunedi = _week_starts(weeks, today)
@@ -708,10 +708,9 @@ def nutrition_weeks(
             weeks=[], kcal_target=kcal_target, protein_target_g=protein_target
         )
 
-    # Dose dichiarata oggi, applicata ai giorni registrati: è la stessa
-    # approssimazione del diario, che non tiene uno storico delle assunzioni
-    # di proteine in polvere.
-    proteine_integratori = supplements.protein_from_supplements(db, profile)
+    # Proteine in polvere dei giorni in cui sono state segnate come prese,
+    # come nel diario.
+    polvere = supplements.protein_by_day(db, profile, inizio, today)
 
     raccolta: list[list[tuple[float, float]]] = [[] for _ in lunedi]
     for data, (kcal, proteine) in giornaliero.items():
@@ -720,8 +719,8 @@ def nutrition_weeks(
             continue
         raccolta[posizione].append(
             (
-                kcal + proteine_integratori * nutrition_targets.KCAL_PER_G_PROTEIN,
-                proteine + proteine_integratori,
+                kcal + polvere.get(data, 0.0) * nutrition_targets.KCAL_PER_G_PROTEIN,
+                proteine + polvere.get(data, 0.0),
             )
         )
 

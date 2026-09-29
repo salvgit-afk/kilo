@@ -84,12 +84,15 @@ export function FoodPhotoPanel({
   profileId,
   mealType,
   date,
+  planned = false,
   onAdded,
 }: {
   profileId: number;
   mealType: string;
   /** Il giorno mostrato nel diario: non sempre è oggi. */
   date: string;
+  /** Da segnare come previsto, da confermare quando lo si mangia. */
+  planned?: boolean;
   /** Il pasto è finito nel diario: la pagina si ricarica e il pannello chiude. */
   onAdded: () => void;
 }) {
@@ -156,6 +159,7 @@ export function FoodPhotoPanel({
         items: bozza.items,
         meal_type: mealType,
         date,
+        planned,
         servings: 1,
         eaten_servings: 1,
       });
@@ -277,6 +281,7 @@ export function FoodPhotoPanel({
               profileId={profileId}
               mealType={mealType}
               date={date}
+              planned={planned}
               onAdded={onAdded}
               onRiprova={() => {
                 setLettura(null);
@@ -392,6 +397,7 @@ function FormEtichetta({
   profileId,
   mealType,
   date,
+  planned,
   onAdded,
   onRiprova,
 }: {
@@ -399,6 +405,7 @@ function FormEtichetta({
   profileId: number;
   mealType: string;
   date: string;
+  planned: boolean;
   onAdded: () => void;
   onRiprova: () => void;
 }) {
@@ -452,6 +459,7 @@ function FormEtichetta({
         grams: porzione,
         meal_type: mealType,
         date,
+        planned,
       });
       onAdded();
     } catch (e) {

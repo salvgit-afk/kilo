@@ -4,15 +4,18 @@
  * Storico del diario: sette giorni in una striscia.
  *
  * Ogni giorno ha un anello che si riempie verso il target di calorie (ambra
- * se l'ha superato, vuoto se non c'è niente di segnato). La finestra sono gli
- * ultimi sette giorni fino a oggi, non la settimana da lunedì: di lunedì si
- * vedrebbe solo oggi e sei giorni futuri spenti. Le frecce scorrono di sette
- * giorni; oltre oggi non si va, non c'è niente da segnare in anticipo.
+ * se l'ha superato, vuoto se non c'è niente di segnato). La finestra si
+ * centra su oggi: quattro giorni prima e due dopo, non la settimana da
+ * lunedì, dove di lunedì si vedrebbero sei giorni futuri e nessun passato.
+ * Le frecce scorrono di sette giorni, in avanti fino a una settimana da oggi:
+ * i giorni futuri servono a segnare i pasti previsti, hanno l'anello
+ * tratteggiato e un pallino quando c'è qualcosa di previsto.
  */
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { api, shiftDate, type DiaryDays } from "@/lib/api";
+import { lastPlannableDay } from "@/components/diary/Planned";
 
 const GIORNI = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
 
@@ -21,17 +24,19 @@ function parse(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** L'ultimo giorno della finestra che mostra `day`: oggi, se possibile. */
+/** L'ultimo giorno della finestra che mostra `day`, con due giorni dopo. */
 function windowEnd(day: string, today: string): string {
-  const fine = shiftDate(day, 3);
-  return fine > today ? today : fine;
+  const fine = shiftDate(day, 2);
+  const limite = lastPlannableDay(today);
+  return fine > limite ? limite : fine;
 }
 
-/** "Oggi", "Ieri" o il giorno della settimana; sotto, la data per esteso. */
+/** "Oggi", "Ieri", "Domani" o il giorno della settimana; sotto, la data per esteso. */
 export function dayTitle(day: string, today: string): { title: string; date: string } {
   const lungo = parse(day).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
   if (day === today) return { title: "Oggi", date: lungo };
   if (day === shiftDate(today, -1)) return { title: "Ieri", date: lungo };
+  if (day === shiftDate(today, 1)) return { title: "Domani", date: lungo };
   const [giorno, ...resto] = lungo.split(" ");
   return { title: giorno.charAt(0).toUpperCase() + giorno.slice(1), date: resto.join(" ") };
 }
@@ -50,7 +55,8 @@ export function DayStrip({
   refreshKey: number;
   onChange: (day: string) => void;
 }) {
-  const [end, setEnd] = useState(today);
+  const [end, setEnd] = useState(() => windowEnd(today, today));
+  const limite = lastPlannableDay(today);
   const [data, setData] = useState<DiaryDays | null>(null);
   const start = shiftDate(end, -6);
 
@@ -71,6 +77,7 @@ export function DayStrip({
   }, [profileId, start, end, refreshKey]);
 
   const kcal = Object.fromEntries((data?.days ?? []).map((d) => [d.date, d.kcal]));
+  const previste = Object.fromEntries((data?.days ?? []).map((d) => [d.date, d.planned_kcal]));
   const { title, date } = dayTitle(day, today);
 
   return (
@@ -97,12 +104,16 @@ export function DayStrip({
             const scelto = iso === day;
             const valore = kcal[iso];
             const quota = valore && data?.target_kcal ? valore / data.target_kcal : 0;
+            const futuro = iso > today;
+            const previsto = (previste[iso] ?? 0) > 0;
             return (
               <button
                 key={iso}
                 onClick={() => onChange(iso)}
                 aria-pressed={scelto}
-                aria-label={`${dayTitle(iso, today).title} ${dayTitle(iso, today).date}${valore ? `, ${Math.round(valore)} kcal` : ""}`}
+                aria-label={`${dayTitle(iso, today).title} ${dayTitle(iso, today).date}${valore ? `, ${Math.round(valore)} kcal` : ""}${
+                  previsto ? `, ${Math.round(previste[iso])} kcal previste` : ""
+                }`}
                 className={`relative flex flex-col items-center gap-1 rounded-xl py-1.5 transition ${
                   scelto ? "" : "hover:bg-white/[0.04]"
                 }`}
@@ -114,11 +125,19 @@ export function DayStrip({
                     transition={{ type: "spring", stiffness: 420, damping: 34 }}
                   />
                 )}
-                <span className={`relative text-[10px] uppercase ${scelto ? "text-lime-200" : iso === today ? "text-white/70" : "text-white/40"}`}>
+                <span
+                  className={`relative text-[10px] uppercase ${
+                    scelto ? "text-lime-200" : iso === today ? "text-white/70" : futuro ? "text-white/30" : "text-white/40"
+                  }`}
+                >
                   {nome}
                 </span>
-                <DayRing value={quota} over={quota > 1.05}>
-                  <span className={`font-mono text-[11px] font-semibold ${scelto ? "text-white" : "text-white/70"}`}>
+                <DayRing value={quota} over={quota > 1.05} future={futuro} planned={previsto}>
+                  <span
+                    className={`font-mono text-[11px] font-semibold ${
+                      scelto ? "text-white" : futuro ? "text-white/45" : "text-white/70"
+                    }`}
+                  >
                     {parse(iso).getDate()}
                   </span>
                 </DayRing>
@@ -128,16 +147,30 @@ export function DayStrip({
         </div>
         <Arrow
           dir="next"
-          onClick={() => setEnd(shiftDate(end, 7) > today ? today : shiftDate(end, 7))}
+          onClick={() => setEnd(shiftDate(end, 7) > limite ? limite : shiftDate(end, 7))}
           label="Giorni successivi"
-          disabled={end >= today}
+          disabled={end >= limite}
         />
       </div>
     </section>
   );
 }
 
-function DayRing({ value, over, children }: { value: number; over: boolean; children: React.ReactNode }) {
+function DayRing({
+  value,
+  over,
+  future = false,
+  planned = false,
+  children,
+}: {
+  value: number;
+  over: boolean;
+  /** Giorno futuro: anello tratteggiato, c'è solo da prevedere. */
+  future?: boolean;
+  /** Qualcosa di previsto e non confermato: il pallino. */
+  planned?: boolean;
+  children: React.ReactNode;
+}) {
   const size = 30;
   const stroke = 3;
   const r = (size - stroke) / 2;
@@ -145,8 +178,19 @@ function DayRing({ value, over, children }: { value: number; over: boolean; chil
   const colore = over ? "#fcd34d" : "#aed44a";
   return (
     <span className="relative grid place-items-center" style={{ width: size, height: size }}>
+      {planned && (
+        <span className="absolute -right-0.5 -top-0.5 z-10 h-2 w-2 rounded-full bg-lime-400/85 ring-2 ring-ink-900" />
+      )}
       <svg width={size} height={size} className="absolute inset-0 -rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={future ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)"}
+          strokeWidth={stroke}
+          strokeDasharray={future ? "3 3" : undefined}
+        />
         {value > 0 && (
           <motion.circle
             cx={size / 2}

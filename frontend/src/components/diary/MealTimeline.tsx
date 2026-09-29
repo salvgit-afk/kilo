@@ -11,6 +11,11 @@
  *
  * Il + di ogni pasto apre la stessa aggiunta di sempre: ricerca, codice a
  * barre, inserimento manuale e foto.
+ *
+ * Sotto gli alimenti mangiati stanno i previsti (`Planned.tsx`): bordo
+ * tratteggiato, «Mangiato» per confermarli uno a uno, anche con i grammi
+ * corretti, o tutti insieme. Nei giorni futuri si vedono ma non si
+ * confermano.
  */
 
 import { AnimatePresence, motion } from "framer-motion";
@@ -75,19 +80,35 @@ const TRASH = "M7 6V4h10v2h4v2h-2v12H5V8H3V6h4Zm2 4v8h2v-8H9Zm4 0v8h2v-8h-2Z";
 const BOOK = "M4 3h13a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3V3Zm2 2v13a1 1 0 0 0 1 1h11V6a1 1 0 0 0-1-1H6Zm3 3h7v2H9V8Zm0 4h7v2H9v-2Z";
 const CHEVRON = "M7 10l5 5 5-5H7Z";
 
+/** "il pranzo", "la cena": per "Segna tutto il pranzo". */
+const WITH_ARTICLE: Record<string, string> = {
+  breakfast: "la colazione",
+  snack: "lo spuntino",
+  lunch: "il pranzo",
+  dinner: "la cena",
+};
+
 export function MealTimeline({
   meals,
+  planned = [],
+  canConfirm = true,
   onAdd,
   onAddRecipe,
   onChanged,
 }: {
   meals: Meal[];
+  /** Pasti previsti del giorno, da confermare. */
+  planned?: Meal[];
+  /** Falso nei giorni futuri: i previsti si vedono ma non si confermano. */
+  canConfirm?: boolean;
   onAdd: (mealType: string) => void;
   onAddRecipe: (mealType: string) => void;
   onChanged: () => void | Promise<void>;
 }) {
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  // I pasti con qualcosa di previsto partono aperti: è lì che c'è da fare.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(planned.map((m) => m.meal_type)));
   const byType = Object.fromEntries(meals.map((m) => [m.meal_type, m]));
+  const plannedByType = Object.fromEntries(planned.map((m) => [m.meal_type, m]));
 
   function toggle(type: string) {
     setOpen((prev) => {
@@ -106,6 +127,8 @@ export function MealTimeline({
             key={type}
             type={type}
             meal={byType[type]}
+            planned={plannedByType[type]}
+            canConfirm={canConfirm}
             expanded={open.has(type)}
             onToggle={() => toggle(type)}
             onAdd={() => onAdd(type)}
@@ -121,6 +144,8 @@ export function MealTimeline({
 function MealStop({
   type,
   meal,
+  planned,
+  canConfirm,
   expanded,
   onToggle,
   onAdd,
@@ -129,6 +154,8 @@ function MealStop({
 }: {
   type: string;
   meal?: Meal;
+  planned?: Meal;
+  canConfirm: boolean;
   expanded: boolean;
   onToggle: () => void;
   onAdd: () => void;
@@ -138,6 +165,8 @@ function MealStop({
   const t = MEAL_THEME[type];
   const items = meal?.items ?? [];
   const pieno = items.length > 0;
+  const previsti = planned?.items ?? [];
+  const soloPrevisto = !pieno && previsti.length > 0;
 
   return (
     <li className="relative">
@@ -146,7 +175,9 @@ function MealStop({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-label={`${expanded ? "Chiudi" : "Apri"} ${MEAL_LABELS[type]}`}
-          className={`relative z-10 grid h-12 w-12 shrink-0 place-items-center rounded-full border transition active:scale-95 ${t.border} ${t.bg} ${t.text}`}
+          className={`relative z-10 grid h-12 w-12 shrink-0 place-items-center rounded-full border transition active:scale-95 ${
+            soloPrevisto ? "border-dashed" : ""
+          } ${t.border} ${t.bg} ${t.text}`}
         >
           <Icon d={t.icon} className="h-[22px] w-[22px]" />
         </button>
@@ -157,6 +188,12 @@ function MealStop({
             {pieno && (
               <span className={`font-mono text-[14px] font-semibold tabular-nums ${t.text}`}>
                 {Math.round(meal!.kcal)} kcal
+              </span>
+            )}
+            {previsti.length > 0 && (
+              <span className="whitespace-nowrap font-mono text-[12.5px] tabular-nums text-white/40">
+                {pieno ? "+" : ""}
+                {Math.round(planned!.kcal)} previste
               </span>
             )}
             <Icon
@@ -172,6 +209,12 @@ function MealStop({
                   {m.label} <b className="font-semibold text-white/75">{Math.round(meal![m.key])} g</b>
                 </span>
               ))}
+            </p>
+          ) : soloPrevisto ? (
+            <p className="mt-0.5 text-[12px] text-white/40">
+              {canConfirm
+                ? "Previsto: conferma cosa hai mangiato"
+                : `${previsti.length} ${previsti.length === 1 ? "alimento previsto" : "alimenti previsti"}`}
             </p>
           ) : (
             <p className="mt-0.5 text-[12px] text-white/35">Ancora niente</p>
@@ -198,14 +241,22 @@ function MealStop({
             className="overflow-hidden"
           >
             <div className="pb-2 pl-[60px] pt-2">
-              {pieno ? (
-                <MealItems items={items} onChanged={onChanged} />
-              ) : (
+              {pieno && <MealItems items={items} onChanged={onChanged} />}
+              {planned && previsti.length > 0 && (
+                <PlannedItems
+                  meal={planned}
+                  type={type}
+                  canConfirm={canConfirm}
+                  withEaten={pieno}
+                  onChanged={onChanged}
+                />
+              )}
+              {!pieno && !previsti.length && (
                 <button
                   onClick={onAdd}
                   className="w-full rounded-2xl border border-dashed border-white/12 py-3 text-[12.5px] text-white/45 transition hover:border-lime-400/35 hover:text-lime-200"
                 >
-                  + Aggiungi {type === "snack" ? "lo spuntino" : `la ${MEAL_LABELS[type].toLowerCase()}`}
+                  + Aggiungi {WITH_ARTICLE[type] ?? MEAL_LABELS[type].toLowerCase()}
                 </button>
               )}
               <button
@@ -356,6 +407,195 @@ function FoodRow({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// --- Previsti ---------------------------------------------------------------------------
+
+const CHECK = "M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7l-9.2 9.2Z";
+
+function PlannedItems({
+  meal,
+  type,
+  canConfirm,
+  withEaten,
+  onChanged,
+}: {
+  meal: Meal;
+  type: string;
+  canConfirm: boolean;
+  /** Ci sono anche alimenti già mangiati sopra: serve un'intestazione. */
+  withEaten: boolean;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirmAll() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/nutrition/diary/meals/${meal.id}/confirm`, {});
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Conferma non riuscita");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={withEaten ? "mt-3" : ""}>
+      {withEaten && (
+        <p className="mb-1.5 px-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-white/35">
+          Previsti {canConfirm ? "· da confermare" : ""}
+        </p>
+      )}
+      <div className="space-y-1.5">
+        {meal.items.map((item) => (
+          <PlannedRow
+            key={item.id}
+            item={item}
+            canConfirm={canConfirm}
+            selected={selected === item.id}
+            onSelect={() => setSelected(selected === item.id ? null : item.id)}
+            onDone={async () => {
+              setSelected(null);
+              await onChanged();
+            }}
+          />
+        ))}
+      </div>
+      {canConfirm && meal.items.length > 1 && (
+        <button
+          onClick={confirmAll}
+          disabled={busy}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-b from-lime-400 to-lime-500 py-3 text-[13.5px] font-semibold text-ink-900 transition active:scale-[0.99] disabled:opacity-60"
+        >
+          <Icon d={CHECK} className="h-4 w-4" />
+          {busy ? "Segno…" : `Segna tutto ${WITH_ARTICLE[type] ?? ""} · ${Math.round(meal.kcal)} kcal`}
+        </button>
+      )}
+      {error && <p className="mt-1.5 text-[12px] text-rose-200">{error}</p>}
+    </div>
+  );
+}
+
+function PlannedRow({
+  item,
+  canConfirm,
+  selected,
+  onSelect,
+  onDone,
+}: {
+  item: MealItem;
+  canConfirm: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const [grams, setGrams] = useState<number | null>(Math.round(item.quantity_g));
+  const [busy, setBusy] = useState<"confirm" | "save" | "remove" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(kind: "confirm" | "save" | "remove", fn: () => Promise<unknown>) {
+    setBusy(kind);
+    setError(null);
+    try {
+      await fn();
+      await onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Operazione non riuscita");
+      setBusy(null);
+    }
+  }
+
+  const confirm = (g?: number | null) =>
+    run("confirm", () =>
+      api.post(`/nutrition/diary/items/${item.id}/confirm${g && g !== item.quantity_g ? `?grams=${g}` : ""}`, {})
+    );
+
+  return (
+    <div
+      className={`rounded-2xl border border-dashed px-3 py-2.5 transition ${
+        selected ? "border-lime-400/60 bg-white/[0.05]" : "border-lime-400/30 bg-white/[0.015]"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <button onClick={onSelect} aria-pressed={selected} className="min-w-0 flex-1 text-left">
+          <p className="truncate text-[14px] text-white/70">{item.name}</p>
+          <p className="truncate text-[11.5px] text-white/35">
+            {Math.round(item.quantity_g)} g · {Math.round(item.kcal)} kcal · P{Math.round(item.protein_g)} C
+            {Math.round(item.carbs_g)} G{Math.round(item.fat_g)}
+          </p>
+        </button>
+        {canConfirm ? (
+          <button
+            onClick={() => confirm()}
+            disabled={busy !== null}
+            aria-label={`Mangiato: ${item.name}`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-lime-400/45 bg-lime-400/[0.12] px-2.5 py-2 text-[12px] font-semibold text-lime-200 transition hover:bg-lime-400/25 disabled:opacity-50"
+          >
+            {busy === "confirm" ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Icon d={CHECK} className="h-3.5 w-3.5" />
+            )}
+            Mangiato
+          </button>
+        ) : (
+          <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wider text-white/45">
+            previsto
+          </span>
+        )}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {selected && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2.5 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <NumberField value={grams} onChange={setGrams} min={1} max={5000} step={5} suffix="g" ariaLabel="Grammi" />
+              </div>
+              {canConfirm ? (
+                <button
+                  className="btn-primary shrink-0 px-3 py-2 text-[12.5px]"
+                  onClick={() => confirm(grams)}
+                  disabled={busy !== null || !grams}
+                >
+                  {busy === "confirm" ? "Segno…" : `Mangiato ${grams ?? ""} g`}
+                </button>
+              ) : (
+                <button
+                  className="btn-primary shrink-0 px-3 py-2 text-[12.5px]"
+                  onClick={() => run("save", () => api.patch(`/nutrition/diary/items/${item.id}?grams=${grams}`))}
+                  disabled={busy !== null || !grams || grams === Math.round(item.quantity_g)}
+                >
+                  {busy === "save" ? "Salvo…" : "Salva"}
+                </button>
+              )}
+              <button
+                onClick={() => run("remove", () => api.del(`/nutrition/diary/items/${item.id}`))}
+                disabled={busy !== null}
+                aria-label={`Togli ${item.name}`}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-rose-400/40 bg-rose-400/15 text-rose-100 transition hover:bg-rose-400/25 disabled:opacity-50"
+              >
+                <Icon d={TRASH} className="h-4 w-4" />
+              </button>
+            </div>
+            {error && <p className="mt-1.5 text-[12px] text-rose-200">{error}</p>}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!selected && error && <p className="mt-1.5 text-[12px] text-rose-200">{error}</p>}
     </div>
   );
 }

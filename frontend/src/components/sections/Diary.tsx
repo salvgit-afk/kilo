@@ -23,6 +23,7 @@ import {
   type FoodResult,
   type GapSuggestions,
   type RecentFood,
+  type SavedFood,
 } from "@/lib/api";
 import { mealForNow, type Intent } from "@/lib/coach";
 import { Card, Empty, Notice, Spinner } from "@/components/ui";
@@ -46,6 +47,7 @@ import { KiloNote } from "@/components/KiloNote";
 import { MEAL_ORDER, MealTimeline } from "@/components/diary/MealTimeline";
 import { DaySummary } from "@/components/diary/DaySummary";
 import { DayStrip } from "@/components/diary/DayStrip";
+import { ClockIcon, PlannedToggle } from "@/components/diary/Planned";
 
 export function Diary({
   profileId,
@@ -57,7 +59,7 @@ export function Diary({
   onIntentHandled?: () => void;
 }) {
   const [data, setData] = useState<DiaryData | null>(null);
-  // Il giorno mostrato: oggi, o uno passato scelto dalla striscia.
+  // Il giorno mostrato: oggi, uno passato o uno futuro (i previsti) scelto dalla striscia.
   const [today, setToday] = useState(() => localDate());
   const [day, setDay] = useState(today);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -126,11 +128,23 @@ export function Diary({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_350px]">
         <div className="space-y-4">
           <DayStrip profileId={profileId} day={day} today={today} refreshKey={refreshKey} onChange={setDay} />
+          {day > today && (
+            <div className="flex gap-2.5 rounded-2xl border border-dashed border-lime-400/30 bg-lime-400/[0.05] px-3.5 py-3 text-[12.5px] leading-relaxed text-white/70">
+              <ClockIcon className="mt-0.5 h-4 w-4" />
+              <p>
+                <b className="font-semibold text-white">Giorno in anticipo.</b> Quello che aggiungi resta{" "}
+                <i>previsto</i>: non conta nei totali finché, il giorno stesso, non tocchi «Mangiato».
+              </p>
+            </div>
+          )}
           <MealTimeline
-          meals={data.meals}
-          onAdd={(meal) => setAdding({ meal })}
-          onAddRecipe={(meal) => setAddingRecipe(meal)}
-          onChanged={load}
+            key={`${day}-${data.planned_meals.map((m) => m.meal_type).join()}`}
+            meals={data.meals}
+            planned={data.planned_meals}
+            canConfirm={day <= today}
+            onAdd={(meal) => setAdding({ meal })}
+            onAddRecipe={(meal) => setAddingRecipe(meal)}
+            onChanged={load}
           />
         </div>
 
@@ -138,7 +152,7 @@ export function Diary({
           {/* "Cosa mi manca oggi" vale solo per oggi. */}
           {gap && day === today && <GapCard gap={gap} profileId={profileId} onAdded={load} />}
 
-          <DaySummary data={data} />
+          <DaySummary data={data} profileId={profileId} day={day} today={today} onChanged={load} />
 
           {targets.warnings.map((w, i) => (
             <Notice key={i}>{w}</Notice>
@@ -153,6 +167,7 @@ export function Diary({
             mealType={addingRecipe}
             mealOrder={MEAL_ORDER}
             date={day}
+            today={today}
             onClose={() => setAddingRecipe(null)}
             onAdded={() => {
               setAddingRecipe(null);
@@ -165,6 +180,7 @@ export function Diary({
             profileId={profileId}
             mealType={adding.meal}
             date={day}
+            today={today}
             initialQuery={adding.query}
             onClose={() => setAdding(null)}
             onAdded={() => {
@@ -393,6 +409,7 @@ function FoodSearchDialog({
   profileId,
   mealType,
   date,
+  today,
   initialQuery,
   onClose,
   onAdded,
@@ -401,6 +418,7 @@ function FoodSearchDialog({
   mealType: string;
   /** Il giorno mostrato nel diario: non sempre è oggi. */
   date: string;
+  today: string;
   initialQuery?: string;
   onClose: () => void;
   onAdded: () => void;
@@ -427,6 +445,21 @@ function FoodSearchDialog({
   const [recent, setRecent] = useState<RecentFood[] | null>(null);
   const [allRecent, setAllRecent] = useState(false);
   const [quickAdding, setQuickAdding] = useState<number | null>(null);
+  // I miei prodotti: gli scansionati restano sempre, non scorrono via.
+  const [saved, setSaved] = useState<SavedFood[] | null>(null);
+  const [list, setList] = useState<"recent" | "saved">("recent");
+  // Previsto: nei giorni futuri sempre (lo decide il server), oggi a scelta.
+  const [plannedToday, setPlannedToday] = useState(false);
+  const planned = date > today || (date === today && plannedToday);
+
+  const loadSaved = useCallback(
+    () =>
+      api
+        .get<SavedFood[]>(`/nutrition/diary/saved?profile_id=${profileId}`)
+        .then(setSaved)
+        .catch(() => setSaved([])),
+    [profileId]
+  );
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -434,9 +467,28 @@ function FoodSearchDialog({
       .get<RecentFood[]>(`/nutrition/diary/recent?profile_id=${profileId}&limit=20`)
       .then(setRecent)
       .catch(() => setRecent([]));
-  }, [profileId]);
+    loadSaved();
+  }, [profileId, loadSaved]);
 
-  async function quickAdd(r: RecentFood) {
+  // Stella: aggiunge o toglie da "I miei prodotti", senza chiudere niente.
+  async function toggleSaved(food: FoodResult, isSaved: boolean, grams?: number | null) {
+    const id = food.ingredient_id;
+    setRecent((prev) => prev?.map((r) => (r.ingredient_id === id ? { ...r, saved: !isSaved } : r)) ?? null);
+    try {
+      if (isSaved) {
+        await api.del(`/nutrition/diary/saved/${id}?profile_id=${profileId}`);
+      } else {
+        await api.put(`/nutrition/diary/saved/${id}?profile_id=${profileId}${grams ? `&grams=${grams}` : ""}`);
+      }
+      await loadSaved();
+    } catch (e) {
+      setRecent((prev) => prev?.map((r) => (r.ingredient_id === id ? { ...r, saved: isSaved } : r)) ?? null);
+      setError(e instanceof Error ? e.message : "Non sono riuscito a salvarlo");
+    }
+  }
+
+  async function quickAdd(r: { ingredient_id: number; grams: number | null }) {
+    if (!r.grams) return;
     setQuickAdding(r.ingredient_id);
     setError(null);
     try {
@@ -445,6 +497,7 @@ function FoodSearchDialog({
         grams: r.grams,
         meal_type: meal,
         date,
+        planned,
       });
       onAdded();
     } catch (e) {
@@ -534,6 +587,7 @@ function FoodSearchDialog({
         grams,
         meal_type: meal,
         date,
+        planned,
       });
       onAdded();
     } catch (e) {
@@ -609,6 +663,7 @@ function FoodSearchDialog({
           onChange={setMeal}
           options={MEAL_ORDER.map((m) => ({ value: m, label: MEAL_LABELS[m] }))}
         />
+        <PlannedToggle date={date} today={today} value={plannedToday} onChange={setPlannedToday} />
       </div>
 
       {/* Risultati: l'unica parte che scorre */}
@@ -628,6 +683,7 @@ function FoodSearchDialog({
             profileId={profileId}
             mealType={meal}
             date={date}
+            planned={planned}
             onAdded={onAdded}
           />
         )}
@@ -646,59 +702,107 @@ function FoodSearchDialog({
           />
         )}
 
-        {mode === "search" && query.trim().length < 2 && !selected && recent && recent.length > 0 && (
-          <div className="p-2 pb-3">
-            <p className="mb-1.5 px-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
-              Segnati di recente
-            </p>
-            <div className="space-y-1">
-              {(allRecent ? recent : recent.slice(0, 6)).map((r) => (
-                <div
-                  key={r.ingredient_id}
-                  className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.025] py-1.5 pl-3.5 pr-1.5"
-                >
+        {mode === "search" &&
+          query.trim().length < 2 &&
+          !selected &&
+          ((recent && recent.length > 0) || (saved && saved.length > 0)) && (
+            <div className="p-2 pb-3">
+              <div className="mb-2 inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+                {(
+                  [
+                    ["recent", "Recenti"],
+                    ["saved", `I miei prodotti${saved && saved.length ? ` · ${saved.length}` : ""}`],
+                  ] as const
+                ).map(([id, text]) => (
                   <button
-                    onClick={() => {
-                      setSelected(r);
-                      setGrams(r.grams);
-                      setTimeout(() => gramsRef.current?.focus(), 60);
-                    }}
-                    className="min-w-0 flex-1 py-1 text-left"
-                    title="Scegli i grammi prima di aggiungerlo"
+                    key={id}
+                    onClick={() => setList(id)}
+                    aria-pressed={list === id}
+                    className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+                      list === id ? "bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900" : "text-white/55 hover:text-white"
+                    }`}
                   >
-                    <p className="truncate text-[13px] text-white/85">{r.name_it ?? r.name}</p>
-                    <p className="truncate text-[11.5px] text-white/40">
-                      {Math.round(r.grams)} g · {Math.round(r.kcal)} kcal · {quando(r.last_date)}
-                      {MEAL_LABELS[r.meal_type] ? ` a ${MEAL_LABELS[r.meal_type].toLowerCase()}` : ""}
-                    </p>
+                    {text}
                   </button>
-                  <button
-                    onClick={() => quickAdd(r)}
-                    disabled={quickAdding !== null}
-                    aria-label={`Aggiungi di nuovo ${Math.round(r.grams)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-lime-400/40 bg-lime-400/[0.12] text-lime-200 transition hover:bg-lime-400/25 disabled:opacity-50"
-                  >
-                    {quickAdding === r.ingredient_id ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    ) : (
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6}>
-                        <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                      </svg>
+                ))}
+              </div>
+
+              {list === "recent" ? (
+                recent && recent.length > 0 ? (
+                  <>
+                    <div className="space-y-1">
+                      {(allRecent ? recent : recent.slice(0, 6)).map((r) => (
+                        <QuickRow
+                          key={r.ingredient_id}
+                          name={r.name_it ?? r.name}
+                          detail={`${Math.round(r.grams)} g · ${Math.round(r.kcal)} kcal · ${quando(r.last_date)}${
+                            MEAL_LABELS[r.meal_type] ? ` a ${MEAL_LABELS[r.meal_type].toLowerCase()}` : ""
+                          }`}
+                          saved={r.saved}
+                          onStar={() => toggleSaved(r, r.saved, r.grams)}
+                          onPick={() => {
+                            setSelected(r);
+                            setGrams(r.grams);
+                            setTimeout(() => gramsRef.current?.focus(), 60);
+                          }}
+                          onAdd={() => quickAdd(r)}
+                          adding={quickAdding === r.ingredient_id}
+                          disabled={quickAdding !== null}
+                          addLabel={`Aggiungi di nuovo ${Math.round(r.grams)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
+                        />
+                      ))}
+                    </div>
+                    {recent.length > 6 && (
+                      <button
+                        onClick={() => setAllRecent(!allRecent)}
+                        className="mt-1.5 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:text-white/80"
+                      >
+                        {allRecent ? "Mostra meno" : `Mostra tutti (${recent.length})`}
+                      </button>
                     )}
-                  </button>
-                </div>
-              ))}
+                  </>
+                ) : (
+                  <p className="px-1.5 py-2 text-[12.5px] text-white/40">Ancora niente di segnato.</p>
+                )
+              ) : saved && saved.length > 0 ? (
+                <>
+                  <p className="mb-2 px-1 text-[11.5px] leading-snug text-white/40">
+                    Ogni prodotto scansionato resta qui, dal più usato. Con la stella lo togli, o salvi anche un
+                    alimento dai recenti.
+                  </p>
+                  <div className="space-y-1">
+                    {saved.map((r) => (
+                      <QuickRow
+                        key={r.ingredient_id}
+                        name={r.name_it ?? r.name}
+                        detail={[
+                          r.grams ? `${Math.round(r.grams)} g · ${Math.round((r.kcal_100g * r.grams) / 100)} kcal` : `${Math.round(r.kcal_100g)} kcal/100 g`,
+                          r.uses ? `usato ${r.uses} ${r.uses === 1 ? "volta" : "volte"}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        saved
+                        onStar={() => toggleSaved(r, true)}
+                        onPick={() => {
+                          setSelected(r);
+                          setGrams(r.grams ?? r.portion_g ?? 100);
+                          setTimeout(() => gramsRef.current?.focus(), 60);
+                        }}
+                        onAdd={r.grams ? () => quickAdd(r) : undefined}
+                        adding={quickAdding === r.ingredient_id}
+                        disabled={quickAdding !== null}
+                        addLabel={`Aggiungi ${Math.round(r.grams ?? 0)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="px-1.5 py-2 text-[12.5px] leading-snug text-white/40">
+                  Qui restano per sempre i prodotti che scansioni, anche quando escono dai recenti.
+                </p>
+              )}
             </div>
-            {recent.length > 6 && (
-              <button
-                onClick={() => setAllRecent(!allRecent)}
-                className="mt-1.5 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:text-white/80"
-              >
-                {allRecent ? "Mostra meno" : `Mostra tutti (${recent.length})`}
-              </button>
-            )}
-          </div>
-        )}
+          )}
 
         {mode === "search" && query.trim().length < 2 && !selected && (
           <button
@@ -859,11 +963,77 @@ function FoodSearchDialog({
             />
 
             <button className="btn-primary w-full justify-center" disabled={saving || !grams} onClick={add}>
-              {saving ? "Aggiungo…" : `Aggiungi a ${MEAL_LABELS[meal]}`}
+              {saving ? "Aggiungo…" : planned ? `Prevedi per ${MEAL_LABELS[meal]}` : `Aggiungi a ${MEAL_LABELS[meal]}`}
             </button>
           </motion.div>
         )}
       </AnimatePresence>
     </Modal>
+  );
+}
+
+/** Una riga di "Recenti" o "I miei prodotti": stella, nome, + per aggiungere al volo. */
+function QuickRow({
+  name,
+  detail,
+  saved,
+  onStar,
+  onPick,
+  onAdd,
+  adding,
+  disabled,
+  addLabel,
+}: {
+  name: string;
+  detail: string;
+  saved: boolean;
+  onStar: () => void;
+  onPick: () => void;
+  onAdd?: () => void;
+  adding: boolean;
+  disabled: boolean;
+  addLabel: string;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-white/[0.025] py-1.5 pl-1 pr-1.5">
+      <button
+        onClick={onStar}
+        aria-pressed={saved}
+        aria-label={saved ? `Togli ${name} da I miei prodotti` : `Salva ${name} fra I miei prodotti`}
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition ${
+          saved ? "text-lime-300" : "text-white/25 hover:text-white/60"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" aria-hidden>
+          <path
+            d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z"
+            fill={saved ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <button onClick={onPick} className="min-w-0 flex-1 py-1 text-left" title="Scegli i grammi prima di aggiungerlo">
+        <p className="truncate text-[13px] text-white/85">{name}</p>
+        <p className="truncate text-[11.5px] text-white/40">{detail}</p>
+      </button>
+      {onAdd && (
+        <button
+          onClick={onAdd}
+          disabled={disabled}
+          aria-label={addLabel}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-lime-400/40 bg-lime-400/[0.12] text-lime-200 transition hover:bg-lime-400/25 disabled:opacity-50"
+        >
+          {adding ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6}>
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
+      )}
+    </div>
   );
 }

@@ -139,7 +139,7 @@ def suggest(
             select(Ingredient, func.count(MealItem.id).label("volte"))
             .join(MealItem, MealItem.ingredient_id == Ingredient.id)
             .join(MealLog, MealLog.id == MealItem.meal_log_id)
-            .where(MealLog.profile_id == profile.id)
+            .where(MealLog.profile_id == profile.id, MealLog.is_planned.is_(False))
             .group_by(Ingredient.id)
             .order_by(func.count(MealItem.id).desc())
             .limit(30)

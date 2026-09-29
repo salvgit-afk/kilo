@@ -27,6 +27,7 @@ from app.models import (
     MealLog,
     SessionSet,
     SupplementDeclaration,
+    SupplementIntake,
     SupplementKind,
     WeightLog,
     WorkoutPlan,
@@ -379,12 +380,15 @@ def test_nutrition_medie_settimanali_con_le_proteine_dell_integratore(ambiente):
     scorsa = LUNEDI - dt.timedelta(weeks=1)
     _pasto(db, pid, scorsa, kcal=2000, proteine=100)
     _pasto(db, pid, scorsa + dt.timedelta(days=1), kcal=2400, proteine=120)
-    db.add(
-        SupplementDeclaration(
-            profile_id=pid, kind=SupplementKind.PROTEIN_POWDER, doses_per_day=2,
-            protein_g_per_dose=25, is_active=True,
-        )
+    polvere = SupplementDeclaration(
+        profile_id=pid, kind=SupplementKind.PROTEIN_POWDER, doses_per_day=2,
+        protein_g_per_dose=25, is_active=True,
     )
+    db.add(polvere)
+    db.flush()
+    # Presa solo il primo giorno, due dosi: il secondo giorno non conta,
+    # anche se la dose dichiarata è di due al giorno.
+    db.add(SupplementIntake(supplement_id=polvere.id, date=scorsa, doses=2))
     db.commit()
 
     r = client.get(f"/progress/nutrition?profile_id={pid}&weeks=2", headers=h)
@@ -394,9 +398,9 @@ def test_nutrition_medie_settimanali_con_le_proteine_dell_integratore(ambiente):
 
     registrata = corpo["weeks"][0]
     assert registrata["days_logged"] == 2
-    # Le 50 g dell'integratore si sommano al totale, con le loro 200 kcal.
-    assert registrata["protein_avg_g"] == 160  # (100 + 120) / 2 + 50
-    assert registrata["kcal_avg"] == 2400      # (2000 + 2400) / 2 + 50 * 4
+    # Le 50 g del primo giorno si sommano al totale, con le loro 200 kcal.
+    assert registrata["protein_avg_g"] == 135  # (100 + 50 + 120) / 2
+    assert registrata["kcal_avg"] == 2300      # (2000 + 200 + 2400) / 2
     assert corpo["kcal_target"] and corpo["protein_target_g"]
     # Settimana in corso senza niente nel diario: resta nell'elenco con zero
     # giorni, così il grafico non salta una colonna.

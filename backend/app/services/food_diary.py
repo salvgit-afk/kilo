@@ -430,21 +430,28 @@ def get_or_create_meal(
     *,
     date: dt.date | None = None,
     meal_type: str = "lunch",
+    planned: bool = False,
 ) -> MealLog:
-    """Recupera il pasto del giorno, creandolo se non esiste."""
+    """Recupera il pasto del giorno, creandolo se non esiste.
+
+    Lo stesso pasto può esistere due volte, una prevista e una vera: il
+    pranzo di oggi mangiato e quello previsto restano separati finché
+    l'utente non conferma.
+    """
     date = date or clock.today()
     meal = db.scalar(
         select(MealLog).where(
             MealLog.profile_id == profile.id,
             MealLog.date == date,
             MealLog.meal_type == meal_type,
+            MealLog.is_planned.is_(planned),
         )
     )
     if meal is not None:
         return meal
 
     meal = MealLog(
-        profile_id=profile.id, date=date, meal_type=meal_type, servings=1.0
+        profile_id=profile.id, date=date, meal_type=meal_type, servings=1.0, is_planned=planned
     )
     db.add(meal)
     db.commit()
@@ -510,8 +517,70 @@ def update_quantity(db: Session, item: MealItem, grams: float) -> MealItem:
 
 
 def remove_food(db: Session, item: MealItem) -> None:
+    pasto = item.meal_log
     db.delete(item)
+    db.flush()
+    # Un pasto previsto svuotato non serve più: lasciarlo farebbe comparire
+    # il pallino dei previsti su un giorno che non ne ha.
+    if pasto.is_planned and not pasto.items:
+        db.delete(pasto)
     db.commit()
+
+
+# Quanti giorni avanti si può pianificare.
+MAX_PLAN_DAYS_AHEAD = 7
+
+
+class PlanningError(ValueError):
+    """Data fuori dai giorni pianificabili, o conferma di un giorno futuro."""
+
+
+def is_planned_entry(date: dt.date | None, planned: bool) -> bool:
+    """Se una voce va salvata come prevista.
+
+    Nel futuro è sempre prevista: non si segna come mangiato quello che si
+    mangerà. Oggi e nei giorni passati lo decide l'utente.
+    """
+    oggi = clock.today()
+    giorno = date or oggi
+    if giorno > oggi + dt.timedelta(days=MAX_PLAN_DAYS_AHEAD):
+        raise PlanningError(f"Si può pianificare al massimo {MAX_PLAN_DAYS_AHEAD} giorni avanti.")
+    return planned or giorno > oggi
+
+
+def confirm_item(db: Session, item: MealItem, *, grams: float | None = None) -> MealItem:
+    """Conferma un alimento previsto: passa al pasto vero dello stesso giorno.
+
+    Con `grams` si corregge la quantità prima di confermare (metà panino).
+    Confermare vale anche per i giorni passati, non per quelli futuri.
+    """
+    previsto = item.meal_log
+    if not previsto.is_planned:
+        return item
+    if previsto.date > clock.today():
+        raise PlanningError("Si conferma il giorno stesso o dopo, non in anticipo.")
+    profilo = db.get(UserProfile, previsto.profile_id)
+    vero = get_or_create_meal(
+        db, profilo, date=previsto.date, meal_type=previsto.meal_type, planned=False
+    )
+    if grams is not None and grams != item.quantity_g:
+        update_quantity(db, item, grams)
+    # Con la relazione, e non con l'id, l'alimento esce subito anche dalla
+    # lista del pasto previsto: così si vede se è rimasto vuoto.
+    item.meal_log = vero
+    if not previsto.items:
+        db.delete(previsto)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def confirm_meal(db: Session, meal: MealLog) -> list[MealItem]:
+    """Conferma tutti gli alimenti di un pasto previsto."""
+    voci = list(meal.items)
+    if not voci:
+        return []
+    return [confirm_item(db, voce) for voce in voci]
 
 
 def meal_totals(meal: MealLog) -> DailyTotals:

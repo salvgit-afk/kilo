@@ -299,6 +299,15 @@ export type RecentFood = FoodResult & {
   meal_type: string;
   last_date: string;
   kcal: number;
+  /** Già fra "I miei prodotti". */
+  saved: boolean;
+};
+
+/** Un alimento di "I miei prodotti": resta sempre, dal più usato. */
+export type SavedFood = FoodResult & {
+  grams: number | null;
+  uses: number;
+  last_used_at: string | null;
 };
 
 export type FoodResult = {
@@ -339,16 +348,33 @@ export type Meal = {
 /** Le calorie dei giorni con qualcosa segnato: la striscia dello storico. */
 export type DiaryDays = {
   target_kcal: number;
-  days: { date: string; kcal: number }[];
+  /** `planned_kcal`: calorie previste e non ancora confermate. */
+  days: { date: string; kcal: number; planned_kcal: number }[];
+};
+
+/** Proteina in polvere dichiarata, con le dosi segnate nel giorno. */
+export type ProteinPowder = {
+  supplement_id: number;
+  kind: string;
+  product_name: string | null;
+  protein_g_per_dose: number;
+  doses: number;
 };
 
 export type Diary = {
   date: string;
   meals: Meal[];
+  /** Comprende le proteine in polvere segnate nel giorno. */
   totals: Record<string, number>;
   targets: NutritionTargets;
   remaining: Record<string, number>;
   progress: Record<string, number>;
+  /** Quante delle proteine del totale vengono dalla polvere. */
+  powder_protein_g: number;
+  protein_powders: ProteinPowder[];
+  /** Pasti previsti: non entrano in nessun totale finché non si confermano. */
+  planned_meals: Meal[];
+  planned_totals: Record<string, number>;
 };
 
 /** Un ingrediente della ricetta già collegato al catalogo alimenti. */

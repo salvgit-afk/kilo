@@ -20,6 +20,7 @@ Modello dati dell'agente allenamento + nutrizione:
   - RecipeIngredient   : riga di una ricetta.
   - NutritionPlan      : target calorico/macro attivo.
   - MealLog            : pasto pianificato o consumato.
+  - SavedFood          : prodotti che l'utente ritrova sempre in "I miei prodotti".
 
   Integratori e tracciabilità
   - SupplementDeclaration : integratore dichiarato dall'utente + valutazione.
@@ -904,6 +905,9 @@ class MealLog(Base):
     carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Pasto previsto: segnato in anticipo (domani fuori casa, la cena già
+    # decisa) e non ancora mangiato. Non conta in nessun totale finché
+    # l'utente non lo conferma; allora gli alimenti passano al pasto vero.
     is_planned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -960,6 +964,40 @@ class MealItem(Base):
 
     meal_log: Mapped[MealLog] = relationship(back_populates="items")
     ingredient: Mapped[Ingredient | None] = relationship()
+
+
+class SavedFood(Base):
+    """Prodotto che l'utente ritrova sempre fra "I miei prodotti".
+
+    I "recenti" scorrono: un prodotto scansionato un mese fa esce dalla lista
+    appena se ne segnano altri. Qui invece resta. Ci entrano da soli i
+    prodotti con codice a barre e quelli inseriti a mano (chi li ha
+    scansionati li vuole ritrovare senza la confezione in mano), gli altri
+    con la stella.
+
+    `starred` falso vuol dire tolto dall'utente: la riga resta, così una
+    nuova scansione non lo rimette in lista contro la sua scelta, e l'uso
+    continua a essere contato se ce lo rimette.
+    """
+
+    __tablename__ = "saved_foods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
+    )
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredients.id", ondelete="CASCADE"))
+    starred: Mapped[bool] = mapped_column(Boolean, default=True)
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+    last_grams: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    ingredient: Mapped[Ingredient] = relationship()
+
+    __table_args__ = (UniqueConstraint("profile_id", "ingredient_id", name="uq_saved_food"),)
 
 
 # --- Integratori ------------------------------------------------------------

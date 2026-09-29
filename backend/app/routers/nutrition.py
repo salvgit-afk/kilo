@@ -24,6 +24,7 @@ from app.models import (
     MealItem,
     MealLog,
     SavedRecipe,
+    SupplementIntake,
     User,
     UserProfile,
 )
@@ -44,12 +45,14 @@ from app.schemas import (
     MealItemOut,
     MealOut,
     NutritionTargetsOut,
+    ProteinPowderOut,
     RecentFoodOut,
     RecipeImportIn,
     RecipeImportOut,
     RecipeItemOut,
     RecipeSuggestionOut,
     RecipeToDiaryIn,
+    SavedFoodOut,
     SavedRecipeIn,
     SavedRecipeOut,
 )
@@ -63,6 +66,7 @@ from app.services import (
     off_client,
     rate_limit,
     recipe_import,
+    saved_foods,
     supplements,
     translation,
 )
@@ -289,12 +293,7 @@ def fill_gap(
     restando nelle calorie rimaste. Proposte: l'utente conferma."""
     profile, targets = _compute_targets(profile)
     totali = food_diary.daily_totals(db, profile)
-    # Le proteine degli integratori valgono per i giorni in cui si è segnato
-    # qualcosa (e per oggi): un giorno vuoto dello storico resta a zero.
-    proteine_integratori = supplements.protein_from_supplements(db, profile)
-    if proteine_integratori and (pasti or giorno == clock.today()):
-        totali.protein_g += proteine_integratori
-        totali.kcal += proteine_integratori * nutrition_targets.KCAL_PER_G_PROTEIN
+    _add_powder(totali, supplements.protein_from_supplements(db, profile, clock.today()))
 
     rimanenti = totali.remaining_against(targets)
     esito = gap_filler.suggest(
@@ -340,8 +339,13 @@ def add_food(
         raise HTTPException(status_code=404, detail="Alimento non trovato")
 
     pasto = food_diary.get_or_create_meal(
-        db, profile, date=payload.date, meal_type=payload.meal_type
+        db,
+        profile,
+        date=payload.date,
+        meal_type=payload.meal_type,
+        planned=_planned(payload.date, payload.planned),
     )
+    saved_foods.record_use(db, profile, ingrediente, payload.grams)
     voce = food_diary.add_food(db, pasto, ingrediente, grams=payload.grams)
     # La voce del diario conserva il nome: se la traduzione esiste già, si
     # salva quella, così il diario si legge in italiano.
@@ -390,7 +394,11 @@ def add_recipe_to_diary(
         )
 
     pasto = food_diary.get_or_create_meal(
-        db, profile, date=payload.date, meal_type=payload.meal_type
+        db,
+        profile,
+        date=payload.date,
+        meal_type=payload.meal_type,
+        planned=_planned(payload.date, payload.planned),
     )
     voci = [
         food_diary.add_food(db, pasto, ingrediente, grams=grammi)
@@ -409,6 +417,19 @@ def add_recipe_to_diary(
     if cambiati:
         db.commit()
     return voci
+
+
+def _planned(date: dt.date | None, planned: bool) -> bool:
+    try:
+        return food_diary.is_planned_entry(date, planned)
+    except food_diary.PlanningError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+def _add_powder(totali: food_diary.DailyTotals, proteine: float) -> None:
+    """Somma al totale le proteine in polvere segnate nel giorno."""
+    totali.protein_g += proteine
+    totali.kcal += proteine * nutrition_targets.KCAL_PER_G_PROTEIN
 
 
 def _owned_item(db: Session, item_id: int, user: User) -> MealItem:
@@ -439,6 +460,49 @@ def remove_food(
     food_diary.remove_food(db, item)
 
 
+@router.post("/diary/items/{item_id}/confirm", response_model=MealItemOut)
+def confirm_food(
+    item_id: int,
+    grams: float | None = Query(default=None, gt=0, le=5000),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> MealItem:
+    """Conferma un alimento previsto: mangiato, eventualmente in altra quantità."""
+    item = _owned_item(db, item_id, user)
+    try:
+        return food_diary.confirm_item(db, item, grams=grams)
+    except food_diary.PlanningError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/diary/meals/{meal_id}/confirm", response_model=list[MealItemOut])
+def confirm_meal(
+    meal_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+) -> list[MealItem]:
+    """Conferma tutto un pasto previsto ("Segna tutto il pranzo")."""
+    pasto = db.get(MealLog, meal_id)
+    if pasto is None:
+        raise HTTPException(status_code=404, detail="Pasto non trovato")
+    ensure_owner(db, pasto.profile_id, user, "Pasto non trovato")
+    try:
+        return food_diary.confirm_meal(db, pasto)
+    except food_diary.PlanningError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+def _meal_out(pasto: MealLog) -> MealOut:
+    return MealOut(
+        id=pasto.id,
+        meal_type=pasto.meal_type,
+        items=[MealItemOut.model_validate(i) for i in pasto.items],
+        **{
+            k: v
+            for k, v in vars(food_diary.meal_totals(pasto)).items()
+            if k in ("kcal", "protein_g", "carbs_g", "fat_g")
+        },
+    )
+
+
 @router.get("/diary", response_model=DiaryOut)
 def read_diary(
     date: dt.date | None = None,
@@ -447,49 +511,65 @@ def read_diary(
 ) -> DiaryOut:
     """Giornata completa con il confronto rispetto ai target.
 
-    Le proteine dagli integratori dichiarati vengono **sommate** al totale,
+    Le proteine in polvere segnate nel giorno vengono **sommate** al totale,
     perché il target è l'apporto proteico giornaliero e non l'integratore in
-    sé.
+    sé. I pasti previsti arrivano a parte e non contano.
     """
     profile, targets = _compute_targets(profile)
     giorno = date or clock.today()
 
-    pasti = db.scalars(
-        select(MealLog).where(
-            MealLog.profile_id == profile.id,
-            MealLog.date == giorno,
-            MealLog.is_planned.is_(False),
-        )
+    tutti = db.scalars(
+        select(MealLog)
+        .where(MealLog.profile_id == profile.id, MealLog.date == giorno)
+        .order_by(MealLog.id)
     ).all()
+    pasti = [p for p in tutti if not p.is_planned]
+    previsti = [p for p in tutti if p.is_planned and p.items]
 
     totali = food_diary.daily_totals(db, profile, date=giorno)
+    polvere = supplements.protein_from_supplements(db, profile, giorno)
+    _add_powder(totali, polvere)
 
-    # Le proteine degli integratori valgono per i giorni in cui si è segnato
-    # qualcosa (e per oggi): un giorno vuoto dello storico resta a zero.
-    proteine_integratori = supplements.protein_from_supplements(db, profile)
-    if proteine_integratori and (pasti or giorno == clock.today()):
-        totali.protein_g += proteine_integratori
-        totali.kcal += proteine_integratori * nutrition_targets.KCAL_PER_G_PROTEIN
+    polveri = supplements.protein_powders(db, profile)
+    dosi = {
+        i.supplement_id: i.doses
+        for i in db.scalars(
+            select(SupplementIntake).where(
+                SupplementIntake.date == giorno,
+                SupplementIntake.supplement_id.in_([d.id for d in polveri]),
+            )
+        )
+    }
+    totali_previsti = food_diary.DailyTotals()
+    for p in previsti:
+        parziale = food_diary.meal_totals(p)
+        for campo in ("kcal", "protein_g", "carbs_g", "fat_g"):
+            setattr(totali_previsti, campo, getattr(totali_previsti, campo) + getattr(parziale, campo))
 
     return DiaryOut(
         date=giorno,
-        meals=[
-            MealOut(
-                id=p.id,
-                meal_type=p.meal_type,
-                items=[MealItemOut.model_validate(i) for i in p.items],
-                **{
-                    k: v
-                    for k, v in vars(food_diary.meal_totals(p)).items()
-                    if k in ("kcal", "protein_g", "carbs_g", "fat_g")
-                },
-            )
-            for p in pasti
-        ],
+        meals=[_meal_out(p) for p in pasti],
         totals=vars(totali),
         targets=_targets_out(targets),
         remaining=totali.remaining_against(targets),
         progress=totali.progress_against(targets),
+        powder_protein_g=round(polvere, 1),
+        protein_powders=[
+            ProteinPowderOut(
+                supplement_id=d.id,
+                kind=d.kind,
+                product_name=d.product_name,
+                protein_g_per_dose=d.protein_g_per_dose,
+                doses=dosi.get(d.id, 0),
+            )
+            for d in polveri
+        ],
+        planned_meals=[_meal_out(p) for p in previsti],
+        planned_totals={
+            k: round(v, 1)
+            for k, v in vars(totali_previsti).items()
+            if k in ("kcal", "protein_g", "carbs_g", "fat_g")
+        },
     )
 
 
@@ -516,6 +596,7 @@ def recent_foods(
         .order_by(MealLog.date.desc(), MealItem.id.desc())
         .limit(400)
     ).all()
+    salvati = {r.ingredient_id for r in saved_foods.list_saved(db, profile)}
     visti: set[int] = set()
     risultato: list[RecentFoodOut] = []
     for voce, pasto, giorno in righe:
@@ -529,6 +610,7 @@ def recent_foods(
                 meal_type=pasto,
                 last_date=giorno,
                 kcal=round(voce.kcal, 1),
+                saved=voce.ingredient_id in salvati,
             )
         )
         if len(risultato) >= limit:
@@ -544,28 +626,89 @@ def diary_days(
     profile: UserProfile = Depends(owned_profile),
 ) -> DiaryDaysOut:
     """Calorie per giorno fra `start` ed `end` compresi, solo dei giorni con
-    qualcosa segnato. Stesso conto di `/diary`, integratori proteici compresi."""
+    qualcosa segnato o previsto. Stesso conto di `/diary`, proteine in polvere
+    segnate comprese; le previste a parte."""
     if end < start or (end - start).days > 62:
         raise HTTPException(status_code=422, detail="Intervallo di date non valido (al massimo due mesi).")
     profile, targets = _compute_targets(profile)
-    giorni = db.scalars(
-        select(MealLog.date)
-        .where(
+    pasti = db.scalars(
+        select(MealLog).where(
             MealLog.profile_id == profile.id,
             MealLog.date >= start,
             MealLog.date <= end,
-            MealLog.is_planned.is_(False),
         )
-        .distinct()
     ).all()
-    extra = supplements.protein_from_supplements(db, profile) * nutrition_targets.KCAL_PER_G_PROTEIN
+    veri = {p.date for p in pasti if not p.is_planned}
+    previste: dict[dt.date, float] = {}
+    for p in pasti:
+        if p.is_planned and p.items:
+            previste[p.date] = previste.get(p.date, 0.0) + food_diary.meal_totals(p).kcal
+    polvere = supplements.protein_by_day(db, profile, start, end)
     return DiaryDaysOut(
         target_kcal=targets.target_kcal,
         days=[
-            DiaryDayOut(date=g, kcal=round(food_diary.daily_totals(db, profile, date=g).kcal + extra, 1))
-            for g in sorted(set(giorni))
+            DiaryDayOut(
+                date=g,
+                kcal=round(
+                    (food_diary.daily_totals(db, profile, date=g).kcal if g in veri else 0.0)
+                    + polvere.get(g, 0.0) * nutrition_targets.KCAL_PER_G_PROTEIN,
+                    1,
+                ),
+                planned_kcal=round(previste.get(g, 0.0), 1),
+            )
+            for g in sorted(veri | set(previste))
         ],
     )
+
+
+# --- I miei prodotti -------------------------------------------------------------------
+
+
+@router.get("/diary/saved", response_model=list[SavedFoodOut])
+def list_saved_foods(
+    db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> list[SavedFoodOut]:
+    """I prodotti che restano sempre a portata di mano, dal più usato."""
+    righe = saved_foods.list_saved(db, profile)
+    nomi = translation.cached_food_names(db, [r.ingredient_id for r in righe])
+    return [
+        SavedFoodOut(
+            **{**_food_out(r.ingredient), "name_it": nomi.get(r.ingredient_id)},
+            grams=r.last_grams,
+            uses=r.uses or 0,
+            last_used_at=r.last_used_at,
+        )
+        for r in righe
+    ]
+
+
+@router.put("/diary/saved/{ingredient_id}", status_code=204, response_model=None)
+def save_food(
+    ingredient_id: int,
+    grams: float | None = Query(default=None, gt=0, le=5000),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> None:
+    """Mette un alimento fra "I miei prodotti" (la stella)."""
+    ingrediente = db.get(Ingredient, ingredient_id)
+    if ingrediente is None or (
+        ingrediente.created_by_user_id is not None and ingrediente.created_by_user_id != profile.user_id
+    ):
+        raise HTTPException(status_code=404, detail="Alimento non trovato")
+    saved_foods.set_starred(db, profile, ingrediente, True, grams=grams)
+
+
+@router.delete("/diary/saved/{ingredient_id}", status_code=204, response_model=None)
+def unsave_food(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> None:
+    """Toglie un alimento da "I miei prodotti". Una nuova scansione non lo rimette."""
+    ingrediente = db.get(Ingredient, ingredient_id)
+    if ingrediente is None:
+        raise HTTPException(status_code=404, detail="Alimento non trovato")
+    saved_foods.set_starred(db, profile, ingrediente, False)
 
 
 def _immagine(file: UploadFile) -> tuple[bytes, str]:

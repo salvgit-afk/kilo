@@ -24,6 +24,7 @@ Ogni valutazione cita il file della knowledge base da cui proviene.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from dataclasses import dataclass, field
 
@@ -33,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     EvidenceTier,
     SupplementDeclaration,
+    SupplementIntake,
     SupplementKind,
     UserProfile,
 )
@@ -688,20 +690,52 @@ def assess_all(
     return valutazioni
 
 
-def protein_from_supplements(db: Session, profile: UserProfile) -> float:
-    """Proteine giornaliere provenienti dagli integratori dichiarati.
+def protein_powders(db: Session, profile: UserProfile) -> list[SupplementDeclaration]:
+    """Le proteine in polvere dichiarate e attive, con le proteine per dose."""
+    return list(
+        db.scalars(
+            select(SupplementDeclaration)
+            .where(
+                SupplementDeclaration.profile_id == profile.id,
+                SupplementDeclaration.is_active.is_(True),
+                SupplementDeclaration.kind == SupplementKind.PROTEIN_POWDER,
+                SupplementDeclaration.protein_g_per_dose.is_not(None),
+            )
+            .order_by(SupplementDeclaration.id)
+        )
+    )
+
+
+def protein_by_day(
+    db: Session, profile: UserProfile, start: dt.date, end: dt.date
+) -> dict[dt.date, float]:
+    """Proteine da integratori per giorno, dalle assunzioni **segnate**.
+
+    Non dalla dose dichiarata: chi prende le proteine solo nei giorni di
+    allenamento, o quando il cibo non basta, le vedrebbe contate anche nei
+    giorni in cui non le ha prese. Conta anche un integratore disattivato
+    dopo: quello che è stato preso resta preso.
+    """
+    righe = db.execute(
+        select(SupplementIntake.date, SupplementIntake.doses, SupplementDeclaration.protein_g_per_dose)
+        .join(SupplementDeclaration, SupplementDeclaration.id == SupplementIntake.supplement_id)
+        .where(
+            SupplementDeclaration.profile_id == profile.id,
+            SupplementDeclaration.kind == SupplementKind.PROTEIN_POWDER,
+            SupplementIntake.date >= start,
+            SupplementIntake.date <= end,
+        )
+    ).all()
+    giorni: dict[dt.date, float] = {}
+    for giorno, dosi, per_dose in righe:
+        giorni[giorno] = giorni.get(giorno, 0.0) + (per_dose or 0.0) * (dosi or 0)
+    return {g: p for g, p in giorni.items() if p > 0}
+
+
+def protein_from_supplements(db: Session, profile: UserProfile, date: dt.date) -> float:
+    """Proteine da integratori segnate in un giorno.
 
     Serve a **sommarle** al totale, non a trattarle come extra: il target è
     il totale proteico giornaliero, non l'integratore in sé.
     """
-    dichiarati = db.scalars(
-        select(SupplementDeclaration).where(
-            SupplementDeclaration.profile_id == profile.id,
-            SupplementDeclaration.is_active.is_(True),
-            SupplementDeclaration.kind == SupplementKind.PROTEIN_POWDER,
-        )
-    ).all()
-
-    return sum(
-        (d.protein_g_per_dose or 0.0) * (d.doses_per_day or 1.0) for d in dichiarati
-    )
+    return protein_by_day(db, profile, date, date).get(date, 0.0)

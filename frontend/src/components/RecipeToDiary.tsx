@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { MEAL_LABELS, api, type SavedRecipe } from "@/lib/api";
 import { MacroGrid, Modal, ModalHeader, OptionGroup } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
+import { PlannedToggle } from "@/components/diary/Planned";
 
 const PORZIONI = [0.5, 1, 1.5, 2];
 
@@ -29,6 +30,7 @@ export function RecipeToDiaryDialog({
   mealType,
   mealOrder,
   date,
+  today,
   onClose,
   onAdded,
 }: {
@@ -37,6 +39,8 @@ export function RecipeToDiaryDialog({
   mealOrder: string[];
   /** Il giorno mostrato nel diario: non sempre è oggi. */
   date?: string;
+  /** Oggi, per sapere se il giorno è futuro (sempre previsto) o si sceglie. */
+  today?: string;
   onClose: () => void;
   onAdded: () => void;
 }) {
@@ -46,6 +50,7 @@ export function RecipeToDiaryDialog({
   const [eaten, setEaten] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planned, setPlanned] = useState(false);
 
   useEffect(() => {
     api
@@ -69,6 +74,7 @@ export function RecipeToDiaryDialog({
         items,
         meal_type: meal,
         date: date ?? null,
+        planned,
         servings: porzioni,
         eaten_servings: eaten,
       });
@@ -100,6 +106,9 @@ export function RecipeToDiaryDialog({
           onChange={setMeal}
           options={mealOrder.map((m) => ({ value: m, label: MEAL_LABELS[m] }))}
         />
+        {date && today && (
+          <PlannedToggle date={date} today={today} value={planned} onChange={setPlanned} className="mt-2.5" />
+        )}
       </div>
 
       <div className="min-h-[140px] flex-1 overflow-y-auto overscroll-contain p-2">

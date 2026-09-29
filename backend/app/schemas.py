@@ -500,6 +500,16 @@ class RecentFoodOut(FoodSearchOut):
     meal_type: str
     last_date: dt.date
     kcal: float
+    # Già fra "I miei prodotti": la stella è piena.
+    saved: bool = False
+
+
+class SavedFoodOut(FoodSearchOut):
+    """Un alimento di "I miei prodotti", con l'ultima quantità e gli usi."""
+
+    grams: float | None
+    uses: int
+    last_used_at: dt.datetime | None
 
 
 class BarcodeFoodOut(FoodSearchOut):
@@ -525,6 +535,9 @@ class MealItemIn(BaseModel):
     grams: float = Field(gt=0, le=5000)
     meal_type: str = "lunch"
     date: dt.date | None = None
+    # Previsto, da confermare quando lo si mangia. Nei giorni futuri lo è
+    # sempre, anche se qui arriva falso.
+    planned: bool = False
 
 
 class MealItemOut(BaseModel):
@@ -553,6 +566,8 @@ class MealOut(BaseModel):
 class DiaryDayOut(BaseModel):
     date: dt.date
     kcal: float
+    # Calorie previste e non ancora confermate: il pallino sui giorni futuri.
+    planned_kcal: float = 0.0
 
 
 class DiaryDaysOut(BaseModel):
@@ -562,8 +577,23 @@ class DiaryDaysOut(BaseModel):
     days: list[DiaryDayOut]
 
 
+class ProteinPowderOut(BaseModel):
+    """Una proteina in polvere dichiarata, con le dosi segnate nel giorno."""
+
+    supplement_id: int
+    kind: str
+    product_name: str | None
+    protein_g_per_dose: float
+    doses: int
+
+
 class DiaryOut(BaseModel):
-    """Giornata completa, con il confronto rispetto ai target."""
+    """Giornata completa, con il confronto rispetto ai target.
+
+    `totals` comprende le proteine in polvere segnate nel giorno;
+    `powder_protein_g` dice quante sono, per dividerle dal cibo nella barra.
+    I pasti previsti stanno a parte e non entrano in nessun totale.
+    """
 
     date: dt.date
     meals: list[MealOut]
@@ -571,6 +601,10 @@ class DiaryOut(BaseModel):
     targets: NutritionTargetsOut
     remaining: dict[str, float]
     progress: dict[str, float]
+    powder_protein_g: float = 0.0
+    protein_powders: list[ProteinPowderOut] = []
+    planned_meals: list[MealOut] = []
+    planned_totals: dict[str, float] = {}
 
 
 class RecipeItemOut(BaseModel):
@@ -676,6 +710,7 @@ class RecipeToDiaryIn(BaseModel):
     items: list[RecipeItemOut] = Field(min_length=1, max_length=60)
     meal_type: str = "lunch"
     date: dt.date | None = None
+    planned: bool = False
     # Le quantita degli ingredienti sono per la ricetta intera: si dividono
     # per le porzioni e si moltiplicano per quelle davvero mangiate.
     servings: int = Field(default=1, ge=1, le=20)

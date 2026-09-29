@@ -22,6 +22,7 @@ from app.models import (
     Goal,
     Sex,
     SupplementDeclaration,
+    SupplementIntake,
     SupplementKind,
     UserProfile,
 )
@@ -65,7 +66,7 @@ def test_nessun_integratore_dichiarato_nessun_consiglio(db, profilo):
 
 
 def test_nessun_contributo_proteico_senza_dichiarazioni(db, profilo):
-    assert sup.protein_from_supplements(db, profilo) == 0.0
+    assert sup.protein_from_supplements(db, profilo, dt.date(2026, 9, 29)) == 0.0
 
 
 # --- L'evidenza non viene appiattita -----------------------------------------
@@ -277,11 +278,29 @@ def test_caffeina_nella_norma_senza_avvisi(db, profilo):
 def test_proteine_in_polvere_sommate_al_totale(db, profilo):
     """Il target è il totale proteico giornaliero: l'integratore non è un
     "extra" che si aggiunge fuori conteggio."""
-    _dichiara(
+    d = _dichiara(
         db, profilo, kind=SupplementKind.PROTEIN_POWDER,
         protein_g_per_dose=24, doses_per_day=2,
     )
-    assert sup.protein_from_supplements(db, profilo) == pytest.approx(48)
+    giorno = dt.date(2026, 9, 29)
+    db.add(SupplementIntake(supplement_id=d.id, date=giorno, doses=2))
+    db.commit()
+    assert sup.protein_from_supplements(db, profilo, giorno) == pytest.approx(48)
+
+
+def test_proteine_in_polvere_solo_nei_giorni_segnati(db, profilo):
+    """Chi le prende solo nei giorni di allenamento non le vede contate negli
+    altri: conta l'assunzione segnata, non la dose dichiarata."""
+    d = _dichiara(
+        db, profilo, kind=SupplementKind.PROTEIN_POWDER,
+        protein_g_per_dose=25, doses_per_day=1,
+    )
+    lunedi = dt.date(2026, 9, 28)
+    db.add(SupplementIntake(supplement_id=d.id, date=lunedi, doses=1))
+    db.commit()
+    assert sup.protein_from_supplements(db, profilo, lunedi) == pytest.approx(25)
+    assert sup.protein_from_supplements(db, profilo, lunedi + dt.timedelta(days=1)) == 0.0
+    assert sup.protein_by_day(db, profilo, lunedi, lunedi + dt.timedelta(days=6)) == {lunedi: 25}
 
 
 def test_totale_proteico_eccessivo_segnalato(db, profilo):
