@@ -36,6 +36,7 @@ from app.schemas import (
     ExerciseOut,
     ExerciseSessionOut,
     FeedbackIn,
+    ManualSetsIn,
     PlanExerciseAddIn,
     PlanExerciseUpdate,
     PlanGenerationOut,
@@ -697,6 +698,33 @@ def _history_out(voce: training_log.SessionEntry) -> ExerciseSessionOut:
         best_e1rm=voce.best_e1rm,
         volume_kg=voce.volume_kg,
     )
+
+
+@router.post("/exercises/{exercise_id}/manual-sets", response_model=ExerciseHistoryOut, status_code=201)
+def add_manual_sets(
+    exercise_id: int,
+    payload: ManualSetsIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> ExerciseHistoryOut:
+    """Carichi segnati fuori dall'allenamento. Restituisce lo storico aggiornato."""
+    esercizio = db.get(Exercise, exercise_id)
+    if esercizio is None:
+        raise HTTPException(status_code=404, detail="Esercizio non trovato")
+    # Il telefono manda la sua data: un giorno di margine per i fusi orari.
+    if payload.date > clock.today() + dt.timedelta(days=1):
+        raise HTTPException(status_code=422, detail="Non si possono segnare carichi per un giorno futuro.")
+    piano = _plan_for(db, profile.id, payload.workout_plan_id) if payload.workout_plan_id else None
+    training_log.add_manual_sets(
+        db,
+        profile.id,
+        esercizio,
+        date=payload.date,
+        sets=[(s.weight_kg, s.reps, s.rir) for s in payload.sets],
+        plan_id=piano.id if piano else None,
+        day_label=payload.day_label,
+    )
+    return exercise_history(exercise_id=exercise_id, weeks=None, db=db, profile=profile)
 
 
 @router.get("/exercises/{exercise_id}/history", response_model=ExerciseHistoryOut)

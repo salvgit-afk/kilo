@@ -184,3 +184,62 @@ def summarize_session(db: Session, session: WorkoutSession) -> SessionSummary:
         volume_kg=round(sum(s.weight_kg * s.reps for s in session.sets), 1),
         records=record,
     )
+
+
+# Una sessione creata solo per i carichi segnati a posteriori: la nota lo dice.
+MANUAL_NOTE = "carichi inseriti fuori dall'allenamento"
+
+
+def add_manual_sets(
+    db: Session,
+    profile_id: int,
+    exercise: Exercise,
+    *,
+    date: dt.date,
+    sets: list[tuple[float, int, int | None]],
+    plan_id: int | None = None,
+    day_label: str | None = None,
+) -> WorkoutSession:
+    """Serie segnate fuori dall'allenamento: dimenticate, o fatte senza l'app.
+
+    Vanno nella sessione di quel giorno (per quel giorno della scheda) se c'è
+    già, in coda alle serie dello stesso esercizio; altrimenti in una sessione
+    nuova, senza orari, con una nota che lo dice. Una sessione con serie conta
+    come allenamento fatto, e deve: chi segna i carichi di un giorno quel
+    giorno si è allenato.
+    """
+    query = select(WorkoutSession).where(
+        WorkoutSession.profile_id == profile_id, WorkoutSession.date == date
+    )
+    if day_label is not None:
+        query = query.where(WorkoutSession.day_label == day_label)
+    sessione = db.scalar(query.order_by(WorkoutSession.id.desc()).limit(1))
+    if sessione is None:
+        sessione = WorkoutSession(
+            profile_id=profile_id,
+            workout_plan_id=plan_id,
+            date=date,
+            day_label=day_label,
+            note=MANUAL_NOTE,
+        )
+        db.add(sessione)
+        db.flush()
+
+    ultima = db.scalar(
+        select(func.max(SessionSet.set_number)).where(
+            SessionSet.workout_session_id == sessione.id, SessionSet.exercise_id == exercise.id
+        )
+    ) or 0
+    for numero, (kg, ripetizioni, rir) in enumerate(sets, start=ultima + 1):
+        db.add(
+            SessionSet(
+                workout_session_id=sessione.id,
+                exercise_id=exercise.id,
+                set_number=numero,
+                weight_kg=kg,
+                reps=ripetizioni,
+                rir=rir,
+            )
+        )
+    db.commit()
+    return sessione

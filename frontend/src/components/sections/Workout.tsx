@@ -909,15 +909,20 @@ function thumbnails(ex: PlanExercise["exercise"]) {
   return ex.demo_images?.length ? ex.demo_images : ex.image_url ? [ex.image_url] : [];
 }
 
-// Tocco prolungato prima di poter trascinare: abbastanza lungo da non
+// Tocco prolungato per entrare nel riordino: abbastanza lungo da non
 // scattare mentre si scorre la pagina, abbastanza breve da non sembrare rotto.
-const LONG_PRESS_MS = 380;
+const LONG_PRESS_MS = 350;
 // Un dito che si sposta di più prima del tempo sta scorrendo, non trascinando.
 const LONG_PRESS_SLOP_PX = 10;
 
 /**
- * Gli esercizi di un giorno, riordinabili: tocco prolungato su una scheda e
- * poi la si trascina. L'ordine si salva al rilascio.
+ * Gli esercizi di un giorno, riordinabili.
+ *
+ * Per spostarli si entra nel riordino (tocco prolungato su una scheda o
+ * "Riordina"): le schede diventano righe basse, così tutto il giorno sta in
+ * uno schermo e uno spostamento di tre posti è un gesto corto, non mezza
+ * pagina. Ogni riga ha una maniglia che trascina subito, senza attesa.
+ * L'ordine si salva a ogni rilascio.
  */
 function DayExerciseList({
   planId,
@@ -944,7 +949,17 @@ function DayExerciseList({
   const [errore, setErrore] = useState<string | null>(null);
   const [carichi, setCarichi] = useState<Record<number, ExerciseSession>>({});
   const [storico, setStorico] = useState<number | null>(null);
+  const [riordino, setRiordino] = useState(false);
+  const inizio = useRef<HTMLDivElement>(null);
   const perId = Object.fromEntries(exercises.map((e) => [e.id, e]));
+
+  // Entrando nel riordino la lista sale in cima allo schermo: le righe basse
+  // stanno tutte a vista e nessuna finisce sotto la barra di navigazione.
+  useEffect(() => {
+    if (!riordino || !inizio.current) return;
+    const top = inizio.current.getBoundingClientRect().top + window.scrollY - 72;
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [riordino]);
   const chiave = exercises.map((e) => e.id).join(",");
   const esercizi = exercises.map((e) => e.exercise.id).join(",");
 
@@ -983,42 +998,178 @@ function DayExerciseList({
     }
   }
 
+  function entraNelRiordino() {
+    setRiordino(true);
+    vibra(12);
+  }
+
   return (
     <>
-      <Reorder.Group axis="y" values={ordine} onReorder={setOrdine} className="space-y-2.5">
-        {ordine.map((id, i) =>
-          perId[id] ? (
-            <ExerciseRow
-              key={id}
-              item={perId[id]}
-              index={i}
-              last={carichi[perId[id].exercise.id]}
-              onOpenDetail={onOpenDetail}
-              onSwap={onSwap}
-              onEdit={onEdit}
-              onRemove={ordine.length > 1 ? onRemove : undefined}
-              onOpenLoads={() => setStorico(perId[id].exercise.id)}
-              onDragEnd={salvaOrdine}
-            />
-          ) : null
-        )}
-      </Reorder.Group>
-      {errore && <Notice>{errore}</Notice>}
+      <div ref={inizio} />
       {ordine.length > 1 && (
-        <p className="px-1 text-center text-[11px] text-white/30">Tieni premuto un esercizio per spostarlo</p>
+        <div className="flex items-center justify-between gap-3 px-1">
+          <p className="text-[11.5px] text-white/35">
+            {riordino ? "Trascina dalla maniglia ≡" : "Tieni premuto un esercizio per spostarlo"}
+          </p>
+          <button
+            onClick={() => (riordino ? setRiordino(false) : entraNelRiordino())}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition ${
+              riordino
+                ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"
+            }`}
+          >
+            {riordino ? (
+              "Fatto"
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                  <path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Riordina
+              </>
+            )}
+          </button>
+        </div>
       )}
+
+      {riordino ? (
+        <Reorder.Group
+          axis="y"
+          values={ordine}
+          onReorder={(nuovo) => {
+            // Un colpetto a ogni scambio di posto, dove il telefono lo permette.
+            if (nuovo.join(",") !== ordine.join(",")) vibra(6);
+            setOrdine(nuovo);
+          }}
+          className="space-y-1.5"
+        >
+          {ordine.map((id, i) =>
+            perId[id] ? (
+              <CompactRow key={id} item={perId[id]} index={i} onDragEnd={salvaOrdine} />
+            ) : null
+          )}
+        </Reorder.Group>
+      ) : (
+        <div className="space-y-2.5">
+          {ordine.map((id, i) =>
+            perId[id] ? (
+              <ExerciseRow
+                key={id}
+                item={perId[id]}
+                index={i}
+                last={carichi[perId[id].exercise.id]}
+                onOpenDetail={onOpenDetail}
+                onSwap={onSwap}
+                onEdit={onEdit}
+                onRemove={ordine.length > 1 ? onRemove : undefined}
+                onOpenLoads={() => setStorico(perId[id].exercise.id)}
+                onLongPress={ordine.length > 1 ? entraNelRiordino : undefined}
+              />
+            ) : null
+          )}
+        </div>
+      )}
+      {errore && <Notice>{errore}</Notice>}
       <AnimatePresence>
         {storico !== null && (
           <LoadHistoryDialog
             key={`carichi-${storico}`}
             profileId={profileId}
             exerciseId={storico}
+            planId={planId}
+            dayLabel={day}
             onClose={() => setStorico(null)}
             onChanged={caricaCarichi}
           />
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+function vibra(ms: number) {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* vibrazione non supportata (iPhone) */
+  }
+}
+
+/** La riga del riordino: bassa, con la maniglia che trascina subito. */
+function CompactRow({ item, index, onDragEnd }: { item: PlanExercise; index: number; onDragEnd: () => void }) {
+  const controls = useDragControls();
+  const [trascino, setTrascino] = useState(false);
+  const ex = item.exercise;
+
+  // Mentre si trascina la pagina non deve scorrere sotto il dito (iOS).
+  useEffect(() => {
+    if (!trascino) return;
+    const blocca = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", blocca, { passive: false });
+    return () => document.removeEventListener("touchmove", blocca);
+  }, [trascino]);
+
+  return (
+    <Reorder.Item
+      value={item.id}
+      dragListener={false}
+      dragControls={controls}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{
+        opacity: 1,
+        scale: trascino ? 1.035 : 1,
+        boxShadow: trascino
+          ? "0 18px 40px -12px rgba(0,0,0,0.85), 0 0 26px -10px rgba(174,212,74,0.85)"
+          : "0 0 0 0 rgba(0,0,0,0)",
+      }}
+      // Gli altri si spostano con una molla morbida, non a scatti.
+      transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.8 }}
+      dragElastic={0.08}
+      dragTransition={{ bounceStiffness: 520, bounceDamping: 36 }}
+      onDragStart={() => setTrascino(true)}
+      onDragEnd={() => {
+        setTrascino(false);
+        onDragEnd();
+      }}
+      className={`relative flex select-none items-center gap-3 rounded-2xl border py-1.5 pl-1.5 pr-3 [-webkit-touch-callout:none] ${
+        trascino ? "z-10 border-lime-400/60 bg-ink-800" : "border-white/[0.08] bg-ink-800/80"
+      }`}
+    >
+      <span
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setTrascino(true);
+          vibra(10);
+          controls.start(e);
+        }}
+        onPointerUp={() => setTrascino(false)}
+        aria-label={`Trascina ${exerciseName(ex)}`}
+        role="button"
+        className={`grid h-10 w-10 shrink-0 cursor-grab touch-none place-items-center rounded-xl transition-colors active:cursor-grabbing ${
+          trascino ? "bg-lime-400/15 text-lime-200" : "text-white/40 hover:text-white/70"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+          <circle cx="9" cy="6" r="1.6" />
+          <circle cx="15" cy="6" r="1.6" />
+          <circle cx="9" cy="12" r="1.6" />
+          <circle cx="15" cy="12" r="1.6" />
+          <circle cx="9" cy="18" r="1.6" />
+          <circle cx="15" cy="18" r="1.6" />
+        </svg>
+      </span>
+      <span className="grid h-6 min-w-6 shrink-0 place-items-center rounded-md bg-white/[0.06] px-1 font-mono text-[11px] text-white/60">
+        {index + 1}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-semibold text-white">{exerciseName(ex)}</span>
+        <span className="block truncate text-[11.5px] text-white/40">
+          {MUSCLE_LABELS[ex.primary_muscle ?? ""] ?? ex.primary_muscle} · {item.target_sets} × {item.target_reps_min}-
+          {item.target_reps_max}
+        </span>
+      </span>
+    </Reorder.Item>
   );
 }
 
@@ -1031,7 +1182,7 @@ function ExerciseRow({
   onEdit,
   onRemove,
   onOpenLoads,
-  onDragEnd,
+  onLongPress,
 }: {
   item: PlanExercise;
   index: number;
@@ -1043,29 +1194,22 @@ function ExerciseRow({
   /** Assente sull'unico esercizio del giorno: senza, il giorno sparirebbe. */
   onRemove?: (item: PlanExercise) => Promise<void>;
   onOpenLoads: () => void;
-  onDragEnd: () => void;
+  /** Tocco prolungato: si entra nel riordino. Assente se l'esercizio è uno solo. */
+  onLongPress?: () => void;
 }) {
   const ex = item.exercise;
   const nome = exerciseName(ex);
-  const controls = useDragControls();
-  const [trascino, setTrascino] = useState(false);
+  const [premuto, setPremuto] = useState(false);
   const [carichiAperti, setCarichiAperti] = useState(false);
   const pressione = useRef<{ timer: number; x: number; y: number } | null>(null);
-  // Dopo un trascinamento il rilascio non deve valere come tocco su un pulsante.
-  const appenaTrascinato = useRef(false);
+  // Il rilascio dopo il tocco prolungato non deve valere come tocco su un pulsante.
+  const appenaPremuto = useRef(false);
 
   function annullaPressione() {
     if (pressione.current) window.clearTimeout(pressione.current.timer);
     pressione.current = null;
+    setPremuto(false);
   }
-
-  // Mentre si trascina la pagina non deve scorrere sotto il dito (iOS).
-  useEffect(() => {
-    if (!trascino) return;
-    const blocca = (e: TouchEvent) => e.preventDefault();
-    document.addEventListener("touchmove", blocca, { passive: false });
-    return () => document.removeEventListener("touchmove", blocca);
-  }, [trascino]);
   // Doppio tocco: il primo chiede conferma, come nel diario.
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1076,29 +1220,25 @@ function ExerciseRow({
   }, [confirm]);
 
   return (
-    <Reorder.Item
-      value={item.id}
-      dragListener={false}
-      dragControls={controls}
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0, scale: trascino ? 1.02 : 1 }}
-      transition={{ delay: trascino ? 0 : index * 0.035 }}
+      // Mentre si tiene premuto la scheda si abbassa appena: si capisce che
+      // sta per succedere qualcosa, prima che succeda.
+      animate={{ opacity: 1, y: 0, scale: premuto ? 0.98 : 1 }}
+      transition={{ delay: premuto ? 0 : index * 0.035, scale: { duration: LONG_PRESS_MS / 1000 } }}
       onPointerDown={(e: ReactPointerEvent) => {
-        const evento = e.nativeEvent;
+        if (!onLongPress) return;
         annullaPressione();
+        setPremuto(true);
         pressione.current = {
           x: e.clientX,
           y: e.clientY,
           timer: window.setTimeout(() => {
             pressione.current = null;
-            appenaTrascinato.current = true;
-            setTrascino(true);
-            try {
-              navigator.vibrate?.(15);
-            } catch {
-              /* vibrazione non supportata */
-            }
-            controls.start(evento);
+            appenaPremuto.current = true;
+            setPremuto(false);
+            onLongPress();
+            window.setTimeout(() => (appenaPremuto.current = false), 400);
           }, LONG_PRESS_MS),
         };
       }}
@@ -1108,22 +1248,16 @@ function ExerciseRow({
       }}
       onPointerUp={annullaPressione}
       onPointerCancel={annullaPressione}
-      onDragEnd={() => {
-        setTrascino(false);
-        onDragEnd();
-        window.setTimeout(() => (appenaTrascinato.current = false), 60);
-      }}
+      onPointerLeave={annullaPressione}
       onClickCapture={(e: ReactMouseEvent) => {
-        if (appenaTrascinato.current) {
+        if (appenaPremuto.current) {
           e.preventDefault();
           e.stopPropagation();
-          appenaTrascinato.current = false;
+          appenaPremuto.current = false;
         }
       }}
       onContextMenu={(e: ReactMouseEvent) => e.preventDefault()}
-      className={`glass sheen glass-hover relative touch-manipulation select-none overflow-hidden [-webkit-touch-callout:none] ${
-        trascino ? "z-10 !bg-ink-800 border-lime-400/50 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8),0_0_24px_-10px_rgba(174,212,74,0.8)]" : ""
-      }`}
+      className="glass sheen glass-hover relative touch-manipulation select-none overflow-hidden [-webkit-touch-callout:none]"
     >
       <div className="flex items-center gap-3.5 px-3.5 py-3">
         <button
@@ -1231,7 +1365,7 @@ function ExerciseRow({
               </svg>
             </>
           ) : (
-            <span className="text-white/35">Nessun carico ancora: li segni avviando l&apos;allenamento</span>
+            <span className="text-white/35">Nessun carico ancora: tocca per segnarli, o avvia l&apos;allenamento</span>
           )}
         </button>
         <AnimatePresence initial={false}>
@@ -1269,7 +1403,7 @@ function ExerciseRow({
           )}
         </AnimatePresence>
       </div>
-    </Reorder.Item>
+    </motion.div>
   );
 }
 

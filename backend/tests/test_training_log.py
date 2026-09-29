@@ -348,3 +348,42 @@ def test_allenamento_di_un_altro_non_si_chiude(ambiente):
     s = client.post(f"/workout/sessions?profile_id={pid_v}", headers=vittima, json={"day_label": "A", "start": True}).json()
     assert client.post(f"/workout/sessions/{s['id']}/finish", headers=attaccante).status_code == 404
     assert client.post(f"/workout/sessions/{s['id']}/start", headers=attaccante).status_code == 404
+
+
+# --- Carichi segnati fuori dall'allenamento ---------------------------------------------
+
+
+def test_carichi_segnati_fuori_dall_allenamento(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _, panca, _ = _scheda(db, pid)
+    ieri = str(dt.date.today() - dt.timedelta(days=1))
+    corpo = {"date": ieri, "workout_plan_id": piano.id, "day_label": "A",
+             "sets": [{"weight_kg": 60, "reps": 8, "rir": 2}, {"weight_kg": 62.5, "reps": 6}]}
+
+    r = client.post(f"/workout/exercises/{panca.id}/manual-sets?profile_id={pid}", headers=h, json=corpo)
+    assert r.status_code == 201, r.text
+    sessioni = r.json()["sessions"]
+    assert len(sessioni) == 1 and sessioni[0]["date"] == ieri
+    assert [(s["weight_kg"], s["reps"], s["set_number"]) for s in sessioni[0]["sets"]] == [(60, 8, 1), (62.5, 6, 2)]
+    sessione = db.get(WorkoutSession, sessioni[0]["session_id"])
+    assert sessione.started_at is None and "fuori" in (sessione.note or "")
+
+    # Stesso giorno: le serie si aggiungono in coda, nella stessa sessione.
+    r = client.post(f"/workout/exercises/{panca.id}/manual-sets?profile_id={pid}", headers=h,
+                    json={**corpo, "sets": [{"weight_kg": 65, "reps": 5}]})
+    assert [s["set_number"] for s in r.json()["sessions"][0]["sets"]] == [1, 2, 3]
+    assert len(r.json()["sessions"]) == 1
+
+
+def test_carichi_a_mano_non_per_il_futuro_ne_su_schede_altrui(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    h_altro, pid_altro = _account(client, "b@example.com")
+    piano, _, panca, _ = _scheda(db, pid)
+    fra_tre = str(dt.date.today() + dt.timedelta(days=3))
+    serie = [{"weight_kg": 60, "reps": 8}]
+    assert client.post(f"/workout/exercises/{panca.id}/manual-sets?profile_id={pid}", headers=h,
+                       json={"date": fra_tre, "sets": serie}).status_code == 422
+    assert client.post(f"/workout/exercises/{panca.id}/manual-sets?profile_id={pid_altro}", headers=h_altro,
+                       json={"date": str(dt.date.today()), "workout_plan_id": piano.id, "sets": serie}).status_code == 404

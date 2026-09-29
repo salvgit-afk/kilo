@@ -1111,18 +1111,37 @@ function Summary({ summary }: { summary: SessionSummary }) {
 // --- Storico ----------------------------------------------------------------------------
 
 /** Storico di un esercizio: ogni sessione con le sue serie, correggibili. */
+type ManualRow = { key: string; kg: number | null; reps: number | null; rir: number | null };
+
+function manualRow(kgValue: number | null = null, reps: number | null = null): ManualRow {
+  return { key: Math.random().toString(36).slice(2), kg: kgValue, reps, rir: null };
+}
+
 export function LoadHistoryDialog({
   profileId,
   exerciseId,
+  planId,
+  dayLabel,
   onClose,
   onChanged,
 }: {
   profileId: number;
   exerciseId: number;
+  /** Scheda e giorno da cui si arriva: le serie segnate a mano vanno lì. */
+  planId?: number;
+  dayLabel?: string;
   onClose: () => void;
   onChanged?: () => void;
 }) {
   const [data, setData] = useState<ExerciseHistory | null>(null);
+  // Carichi segnati fuori dall'allenamento.
+  const [adding, setAdding] = useState(false);
+  const [date, setDate] = useState(() => localDate());
+  const [rows, setRows] = useState<ManualRow[]>([]);
+  const [savingManual, setSavingManual] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const oggi = localDate();
+  const ieri = localDate(new Date(Date.now() - 86_400_000));
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SessionSet | null>(null);
   const [draft, setDraft] = useState<{ kg: number | null; reps: number | null }>({ kg: null, reps: null });
@@ -1154,6 +1173,43 @@ export function LoadHistoryDialog({
     onChanged?.();
   }
 
+  function openManual() {
+    // Si parte dalle serie dell'ultima volta: di solito si cambia poco.
+    const ultima = data?.sessions[0]?.sets ?? [];
+    setRows(ultima.length ? ultima.map((s) => manualRow(s.weight_kg, s.reps)) : [manualRow()]);
+    setDate(oggi);
+    setManualError(null);
+    setAdding(true);
+  }
+
+  function patchManual(key: string, change: Partial<ManualRow>) {
+    setRows((r) => r.map((x) => (x.key === key ? { ...x, ...change } : x)));
+  }
+
+  const manualOk = rows.length > 0 && rows.every((r) => r.kg !== null && !!r.reps) && !!date && date <= oggi;
+
+  async function saveManual() {
+    if (!manualOk) return;
+    setSavingManual(true);
+    setManualError(null);
+    try {
+      setData(
+        await api.post<ExerciseHistory>(`/workout/exercises/${exerciseId}/manual-sets?profile_id=${profileId}`, {
+          date,
+          workout_plan_id: planId ?? null,
+          day_label: dayLabel ?? null,
+          sets: rows.map((r) => ({ weight_kg: r.kg, reps: r.reps, rir: r.rir })),
+        })
+      );
+      setAdding(false);
+      onChanged?.();
+    } catch (e) {
+      setManualError(e instanceof Error ? e.message : "Non sono riuscito a salvare le serie.");
+    } finally {
+      setSavingManual(false);
+    }
+  }
+
   return (
     <Modal onClose={onClose} className="max-w-lg" z="z-[90]">
       <ModalHeader
@@ -1164,9 +1220,138 @@ export function LoadHistoryDialog({
       />
       <div className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-3 sm:p-4">
         {error && <Notice>{error}</Notice>}
+        {data && !adding && (
+          <button
+            onClick={openManual}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-lime-400/40 bg-lime-400/[0.1] py-2.5 text-[13px] font-semibold text-lime-200 transition hover:bg-lime-400/[0.16]"
+          >
+            <span className="grid h-5 w-5 place-items-center rounded-full bg-lime-400 text-ink-900">
+              <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={3.2}>
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+            </span>
+            Segna carichi fuori dall&apos;allenamento
+          </button>
+        )}
+        <AnimatePresence initial={false}>
+          {adding && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="space-y-3 rounded-xl border border-lime-400/30 bg-lime-400/[0.05] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="mr-auto text-[13px] font-semibold text-white">Nuove serie</p>
+                  {[
+                    [oggi, "Oggi"],
+                    [ieri, "Ieri"],
+                  ].map(([valore, etichetta]) => (
+                    <button
+                      key={valore}
+                      onClick={() => setDate(valore)}
+                      className={`rounded-full border px-3 py-1 text-[12px] font-medium transition ${
+                        date === valore
+                          ? "border-lime-400/60 bg-lime-400 text-ink-900"
+                          : "border-white/15 text-white/60 hover:text-white"
+                      }`}
+                    >
+                      {etichetta}
+                    </button>
+                  ))}
+                  <input
+                    type="date"
+                    value={date}
+                    max={oggi}
+                    onChange={(e) => setDate(e.target.value)}
+                    aria-label="Giorno dell'allenamento"
+                    className="input h-8 w-[140px] px-2 py-0 text-[12.5px]"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  {rows.map((r, i) => (
+                    <div key={r.key} className="grid grid-cols-[22px_1fr_1fr_54px_32px] items-center gap-1.5">
+                      <span className="text-center font-mono text-[12px] text-white/45">{i + 1}</span>
+                      <NumberField
+                        value={r.kg}
+                        onChange={(v) => patchManual(r.key, { kg: v })}
+                        step={2.5}
+                        decimals={2}
+                        min={0}
+                        max={1000}
+                        suffix="kg"
+                        size="sm"
+                        steppers="sm"
+                        placeholder="kg"
+                        ariaLabel={`Carico serie ${i + 1}`}
+                      />
+                      <NumberField
+                        value={r.reps}
+                        onChange={(v) => patchManual(r.key, { reps: v })}
+                        min={1}
+                        max={100}
+                        suffix="rip"
+                        size="sm"
+                        steppers="sm"
+                        placeholder="rip"
+                        ariaLabel={`Ripetizioni serie ${i + 1}`}
+                      />
+                      <select
+                        value={r.rir ?? ""}
+                        onChange={(e) => patchManual(r.key, { rir: e.target.value === "" ? null : Number(e.target.value) })}
+                        aria-label={`RIR serie ${i + 1}`}
+                        className="h-9 rounded-lg border border-white/10 bg-black/30 px-1 text-center font-mono text-[12.5px] text-white outline-none focus:border-lime-400/50"
+                      >
+                        <option value="">RIR</option>
+                        {[0, 1, 2, 3, 4, 5].map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}
+                        disabled={rows.length === 1}
+                        aria-label={`Togli la serie ${i + 1}`}
+                        className="grid h-9 place-items-center rounded-lg text-white/40 transition hover:text-rose-200 disabled:opacity-20"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    const ultima = rows[rows.length - 1];
+                    setRows((x) => [...x, manualRow(ultima?.kg ?? null, ultima?.reps ?? null)]);
+                  }}
+                  disabled={rows.length >= 12}
+                  className="w-full rounded-lg py-1.5 text-[12.5px] font-medium text-white/50 transition hover:text-white/85"
+                >
+                  + Aggiungi serie
+                </button>
+                {manualError && <Notice>{manualError}</Notice>}
+                <div className="flex gap-2">
+                  <button className="btn-ghost flex-1 justify-center py-2 text-[12.5px]" onClick={() => setAdding(false)}>
+                    Annulla
+                  </button>
+                  <button
+                    className="btn-primary flex-[1.6] justify-center py-2 text-[12.5px]"
+                    disabled={!manualOk || savingManual}
+                    onClick={saveManual}
+                  >
+                    {savingManual ? "Salvo…" : `Salva ${rows.length === 1 ? "la serie" : `${rows.length} serie`}`}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {!data && !error && <Spinner label="Carico lo storico…" />}
         {data && data.sessions.length === 0 && (
-          <Empty title="Ancora nessuna serie" hint="Le serie segnate durante l'allenamento compaiono qui, sessione per sessione." />
+          <Empty title="Ancora nessuna serie" hint="Le serie segnate durante l'allenamento, o qui sopra, compaiono qui sessione per sessione." />
         )}
         {data?.sessions.map((s) => (
           <div key={s.session_id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">

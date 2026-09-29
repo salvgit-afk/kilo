@@ -399,6 +399,21 @@ class ExerciseSessionOut(BaseModel):
     volume_kg: float
 
 
+class ManualSetIn(BaseModel):
+    weight_kg: float = Field(ge=0, le=1000)
+    reps: int = Field(ge=1, le=100)
+    rir: int | None = Field(default=None, ge=0, le=10)
+
+
+class ManualSetsIn(BaseModel):
+    """Serie segnate fuori dall'allenamento, per un giorno passato o oggi."""
+
+    date: dt.date
+    sets: list[ManualSetIn] = Field(min_length=1, max_length=12)
+    workout_plan_id: int | None = None
+    day_label: str | None = Field(default=None, max_length=32)
+
+
 class ExerciseHistoryOut(BaseModel):
     exercise_id: int
     exercise_name: str
