@@ -39,6 +39,7 @@ from app.schemas import (
     PlanExerciseAddIn,
     PlanExerciseUpdate,
     PlanGenerationOut,
+    PlanOrderIn,
     PlanScheduleIn,
     PlanVolumeOut,
     PreferenceIn,
@@ -461,6 +462,22 @@ def remove_plan_exercise(
         raise HTTPException(status_code=409, detail=str(e)) from e
     piano = db.get(WorkoutPlan, piano_id)
     db.refresh(piano)
+    return piano
+
+
+@router.put("/plans/{plan_id}/order", response_model=WorkoutPlanOut)
+def reorder_plan_day(
+    plan_id: int,
+    payload: PlanOrderIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> WorkoutPlan:
+    """L'ordine degli esercizi di un giorno, scelto trascinandoli."""
+    piano = _plan_for(db, profile.id, plan_id)
+    try:
+        plan_editing.reorder_day(db, piano, payload.day_label, payload.plan_exercise_ids)
+    except plan_editing.EditError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return piano
 
 

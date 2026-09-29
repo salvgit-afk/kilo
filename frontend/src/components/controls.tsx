@@ -16,7 +16,7 @@
  *    esercizio.
  */
 
-import { motion } from "framer-motion";
+import { motion, useIsPresent } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { askCoach } from "@/lib/coach";
 import { Mascot } from "@/components/Mascot";
@@ -62,7 +62,11 @@ export function Modal({
   z?: string;
   align?: "center" | "top";
 }) {
-  useEscape(onClose);
+  // Un pannello che si sta chiudendo non deve più ricevere tocchi: se
+  // l'uscita si inceppa (un'animazione condivisa dentro, per esempio) resta
+  // un velo invisibile sopra l'app che blocca tutto.
+  const presente = useIsPresent();
+  useEscape(presente ? onClose : () => {});
 
   return (
     <motion.div
@@ -70,6 +74,8 @@ export function Modal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       role="dialog"
+      aria-hidden={!presente || undefined}
+      style={presente ? undefined : { pointerEvents: "none" }}
       aria-modal="true"
       // mousedown e non click: trascinare una selezione di testo fuori dal
       // pannello non deve chiuderlo.

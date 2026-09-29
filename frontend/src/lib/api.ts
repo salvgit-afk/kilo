@@ -293,6 +293,14 @@ export type NutritionTargets = {
   knowledge_tags: string[];
 };
 
+/** Alimento segnato di recente, con l'ultima quantità usata. */
+export type RecentFood = FoodResult & {
+  grams: number;
+  meal_type: string;
+  last_date: string;
+  kcal: number;
+};
+
 export type FoodResult = {
   ingredient_id: number;
   name: string;

@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
-from app.models import MealItem, MealLog
+from app.models import Ingredient, MealItem, MealLog
 from app.services import clock, rate_limit
 
 PASSWORD = "passwordlunga1"
@@ -104,3 +104,26 @@ def test_lo_storico_altrui_non_si_legge(ambiente):
     h_altro, _ = _account(client, "b@example.com")
     r = client.get(f"/nutrition/diary/days?profile_id={pid}&start={IERI}&end={OGGI}", headers=h_altro)
     assert r.status_code == 404
+
+
+def test_alimenti_recenti_uno_per_prodotto_con_l_ultima_quantita(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    yogurt = Ingredient(name="Greek yogurt", source="manual", kcal_100g=57, protein_100g=10, carbs_100g=3.6, fat_100g=0.4)
+    avena = Ingredient(name="Oats", source="manual", kcal_100g=372, protein_100g=13, carbs_100g=60, fat_100g=7)
+    db.add_all([yogurt, avena])
+    db.flush()
+    for giorno, ing, grammi in ((IERI - dt.timedelta(days=3), yogurt, 125), (IERI, avena, 50), (IERI, yogurt, 170)):
+        pasto = MealLog(profile_id=pid, date=giorno, meal_type="breakfast")
+        db.add(pasto)
+        db.flush()
+        db.add(MealItem(meal_log_id=pasto.id, ingredient_id=ing.id, name=f"{ing.name} it", quantity_g=grammi,
+                        kcal=ing.kcal_100g * grammi / 100, protein_g=1, carbs_g=1, fat_g=1))
+    db.commit()
+
+    r = client.get(f"/nutrition/diary/recent?profile_id={pid}", headers=h)
+    assert r.status_code == 200, r.text
+    recenti = r.json()
+    assert [x["ingredient_id"] for x in recenti] == [yogurt.id, avena.id]
+    assert recenti[0]["grams"] == 170 and recenti[0]["meal_type"] == "breakfast"
+    assert recenti[0]["name_it"] == "Greek yogurt it" and recenti[0]["kcal_100g"] == 57

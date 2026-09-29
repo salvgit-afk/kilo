@@ -79,6 +79,20 @@ def remove_exercise(db: Session, plan_exercise: WorkoutPlanExercise) -> None:
     db.commit()
 
 
+def reorder_day(db: Session, plan: WorkoutPlan, day_label: str, plan_exercise_ids: list[int]) -> None:
+    """Riordina gli esercizi di un giorno. Gli id devono essere tutti e soli
+    quelli del giorno: un elenco parziale lascerebbe buchi nell'ordine."""
+    del_giorno = {e.id: e for e in plan.exercises if e.day_label == day_label}
+    if not del_giorno:
+        raise EditError(f"La scheda non ha un giorno «{day_label}».")
+    if sorted(plan_exercise_ids) != sorted(del_giorno):
+        raise EditError("L'elenco non corrisponde agli esercizi del giorno: ricarica la scheda e riprova.")
+    for posizione, riga_id in enumerate(plan_exercise_ids):
+        del_giorno[riga_id].order_index = posizione
+    db.commit()
+    db.refresh(plan)
+
+
 @dataclass
 class PlanVolume:
     weekly_sets_equivalent: dict[str, float]

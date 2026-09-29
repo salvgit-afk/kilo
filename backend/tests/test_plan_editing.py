@@ -165,3 +165,25 @@ def test_candidati_da_aggiungere_senza_quelli_gia_in_scheda(ambiente):
     r = client.get(f"/workout/plans/{piano.id}/candidates?profile_id={pid}&muscle=Chest", headers=h)
     assert r.status_code == 200, r.text
     assert [c["exercise"]["name"] for c in r.json()] == ["Dumbbell Fly"]
+
+
+def test_riordinare_gli_esercizi_di_un_giorno(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, curl = _scheda_due_esercizi(db, pid)
+    r = client.post(f"/workout/plans/{piano.id}/exercises?profile_id={pid}", headers=h,
+                    json={"exercise_id": curl.id, "day_label": "A"})
+    prima = [e["id"] for e in r.json()["exercises"]]
+
+    nuovo_ordine = list(reversed(prima))
+    r = client.put(f"/workout/plans/{piano.id}/order?profile_id={pid}", headers=h,
+                   json={"day_label": "A", "plan_exercise_ids": nuovo_ordine})
+    assert r.status_code == 200, r.text
+    assert [e["id"] for e in r.json()["exercises"]] == nuovo_ordine
+    # L'ordine resta anche rileggendo la scheda.
+    assert [e["id"] for e in client.get(f"/workout/plans?profile_id={pid}", headers=h).json()[0]["exercises"]] == nuovo_ordine
+
+    # Un elenco che non corrisponde al giorno viene rifiutato.
+    r = client.put(f"/workout/plans/{piano.id}/order?profile_id={pid}", headers=h,
+                   json={"day_label": "A", "plan_exercise_ids": nuovo_ordine[:-1]})
+    assert r.status_code == 409

@@ -510,9 +510,10 @@ class WorkoutPlan(Base):
     exercises: Mapped[list[WorkoutPlanExercise]] = relationship(
         back_populates="plan",
         cascade="all, delete-orphan",
-        # Ordine di inserimento = ordine in cui il generatore costruisce i
-        # giorni (Push, Pull, Gambe). Per nome uscirebbero in ordine alfabetico.
-        order_by="WorkoutPlanExercise.id",
+        # Nel giorno vale l'ordine scelto (`order_index`, che l'utente cambia
+        # trascinando); a parità l'ordine di inserimento, che è anche quello
+        # in cui il generatore costruisce i giorni (Push, Pull, Gambe).
+        order_by="(WorkoutPlanExercise.order_index, WorkoutPlanExercise.id)",
     )
 
     @property

@@ -22,6 +22,7 @@ import {
   type Diary as DiaryData,
   type FoodResult,
   type GapSuggestions,
+  type RecentFood,
 } from "@/lib/api";
 import { mealForNow, type Intent } from "@/lib/coach";
 import { Card, Empty, Notice, Spinner } from "@/components/ui";
@@ -175,6 +176,16 @@ export function Diary({
       </AnimatePresence>
     </>
   );
+}
+
+/** "oggi", "ieri", "3 giorni fa", poi la data. */
+function quando(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const giorni = Math.round((new Date(localDate()).getTime() - new Date(y, m - 1, d).getTime()) / 86_400_000);
+  if (giorni <= 0) return "oggi";
+  if (giorni === 1) return "ieri";
+  if (giorni < 7) return `${giorni} giorni fa`;
+  return new Date(y, m - 1, d).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
 }
 
 function BarcodeIcon() {
@@ -411,10 +422,36 @@ function FoodSearchDialog({
   const [manualReason, setManualReason] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const gramsRef = useRef<HTMLInputElement>(null);
+  // Segnati di recente: si riaggiungono in un tocco, anche senza la
+  // confezione da scansionare.
+  const [recent, setRecent] = useState<RecentFood[] | null>(null);
+  const [allRecent, setAllRecent] = useState(false);
+  const [quickAdding, setQuickAdding] = useState<number | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    api
+      .get<RecentFood[]>(`/nutrition/diary/recent?profile_id=${profileId}&limit=20`)
+      .then(setRecent)
+      .catch(() => setRecent([]));
+  }, [profileId]);
+
+  async function quickAdd(r: RecentFood) {
+    setQuickAdding(r.ingredient_id);
+    setError(null);
+    try {
+      await api.post(`/nutrition/diary/items?profile_id=${profileId}`, {
+        ingredient_id: r.ingredient_id,
+        grams: r.grams,
+        meal_type: meal,
+        date,
+      });
+      onAdded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito ad aggiungere l'alimento");
+      setQuickAdding(null);
+    }
+  }
 
   async function lookupBarcode(code: string) {
     setLookingUp(true);
@@ -607,6 +644,60 @@ function FoodSearchDialog({
               setTimeout(() => gramsRef.current?.focus(), 80);
             }}
           />
+        )}
+
+        {mode === "search" && query.trim().length < 2 && !selected && recent && recent.length > 0 && (
+          <div className="p-2 pb-3">
+            <p className="mb-1.5 px-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
+              Segnati di recente
+            </p>
+            <div className="space-y-1">
+              {(allRecent ? recent : recent.slice(0, 6)).map((r) => (
+                <div
+                  key={r.ingredient_id}
+                  className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.025] py-1.5 pl-3.5 pr-1.5"
+                >
+                  <button
+                    onClick={() => {
+                      setSelected(r);
+                      setGrams(r.grams);
+                      setTimeout(() => gramsRef.current?.focus(), 60);
+                    }}
+                    className="min-w-0 flex-1 py-1 text-left"
+                    title="Scegli i grammi prima di aggiungerlo"
+                  >
+                    <p className="truncate text-[13px] text-white/85">{r.name_it ?? r.name}</p>
+                    <p className="truncate text-[11.5px] text-white/40">
+                      {Math.round(r.grams)} g · {Math.round(r.kcal)} kcal · {quando(r.last_date)}
+                      {MEAL_LABELS[r.meal_type] ? ` a ${MEAL_LABELS[r.meal_type].toLowerCase()}` : ""}
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => quickAdd(r)}
+                    disabled={quickAdding !== null}
+                    aria-label={`Aggiungi di nuovo ${Math.round(r.grams)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-lime-400/40 bg-lime-400/[0.12] text-lime-200 transition hover:bg-lime-400/25 disabled:opacity-50"
+                  >
+                    {quickAdding === r.ingredient_id ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.6}>
+                        <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {recent.length > 6 && (
+              <button
+                onClick={() => setAllRecent(!allRecent)}
+                className="mt-1.5 w-full rounded-xl py-2 text-[12.5px] font-medium text-white/45 transition hover:text-white/80"
+              >
+                {allRecent ? "Mostra meno" : `Mostra tutti (${recent.length})`}
+              </button>
+            )}
+          </div>
         )}
 
         {mode === "search" && query.trim().length < 2 && !selected && (

@@ -214,6 +214,13 @@ class PlanExerciseAddIn(BaseModel):
     day_label: str = Field(min_length=1, max_length=32)
 
 
+class PlanOrderIn(BaseModel):
+    """Il nuovo ordine degli esercizi di un giorno, dal primo all'ultimo."""
+
+    day_label: str = Field(min_length=1, max_length=32)
+    plan_exercise_ids: list[int] = Field(min_length=1, max_length=60)
+
+
 class PlanVolumeOut(BaseModel):
     """Volume della scheda com'è adesso: dirette intere, indirette a metà."""
 
@@ -467,6 +474,15 @@ class FoodSearchOut(BaseModel):
     protein_100g: float
     carbs_100g: float
     fat_100g: float
+
+
+class RecentFoodOut(FoodSearchOut):
+    """Un alimento segnato di recente, con l'ultima quantità usata."""
+
+    grams: float
+    meal_type: str
+    last_date: dt.date
+    kcal: float
 
 
 class BarcodeFoodOut(FoodSearchOut):

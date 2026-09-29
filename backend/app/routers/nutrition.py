@@ -38,13 +38,14 @@ from app.schemas import (
     FoodSearchOut,
     GapFoodOut,
     GapSuggestionsOut,
+    LabelPhotoOut,
     ManualProductIn,
     MealItemIn,
     MealItemOut,
     MealOut,
     NutritionTargetsOut,
+    RecentFoodOut,
     RecipeImportIn,
-    LabelPhotoOut,
     RecipeImportOut,
     RecipeItemOut,
     RecipeSuggestionOut,
@@ -488,6 +489,49 @@ def read_diary(
         remaining=totali.remaining_against(targets),
         progress=totali.progress_against(targets),
     )
+
+
+@router.get("/diary/recent", response_model=list[RecentFoodOut])
+def recent_foods(
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> list[RecentFoodOut]:
+    """Gli alimenti segnati di recente, uno per prodotto, dal più recente.
+
+    Servono ad aggiungere di nuovo in un tocco quello che si mangia spesso,
+    anche senza la confezione da scansionare: lo yogurt di ieri resta qui.
+    Con l'ultima quantità usata, che di solito è quella giusta.
+    """
+    righe = db.execute(
+        select(MealItem, MealLog.meal_type, MealLog.date)
+        .join(MealLog, MealItem.meal_log_id == MealLog.id)
+        .where(
+            MealLog.profile_id == profile.id,
+            MealLog.is_planned.is_(False),
+            MealItem.ingredient_id.is_not(None),
+        )
+        .order_by(MealLog.date.desc(), MealItem.id.desc())
+        .limit(400)
+    ).all()
+    visti: set[int] = set()
+    risultato: list[RecentFoodOut] = []
+    for voce, pasto, giorno in righe:
+        if voce.ingredient_id in visti or voce.ingredient is None:
+            continue
+        visti.add(voce.ingredient_id)
+        risultato.append(
+            RecentFoodOut(
+                **{**_food_out(voce.ingredient), "name_it": voce.name},
+                grams=voce.quantity_g,
+                meal_type=pasto,
+                last_date=giorno,
+                kcal=round(voce.kcal, 1),
+            )
+        )
+        if len(risultato) >= limit:
+            break
+    return risultato
 
 
 @router.get("/diary/days", response_model=DiaryDaysOut)

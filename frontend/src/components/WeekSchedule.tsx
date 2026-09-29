@@ -88,17 +88,14 @@ export function WeekdayPicker({ value, onChange }: { value: number[]; onChange: 
             key={n}
             type="button"
             onClick={() => onChange(defaultWeekdays(n))}
-            className={`relative h-10 w-11 rounded-xl text-[14px] font-semibold transition ${
-              value.length === n ? "text-ink-900" : "text-white/55 hover:text-white"
+            // Senza layoutId: questo selettore vive dentro i pannelli, e
+            // un'animazione condivisa ne blocca la chiusura.
+            className={`relative h-10 w-11 rounded-xl text-[14px] font-semibold transition-colors duration-200 ${
+              value.length === n
+                ? "bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
+                : "text-white/55 hover:text-white"
             }`}
           >
-            {value.length === n && (
-              <motion.span
-                layoutId="freq-pill"
-                className="absolute inset-0 rounded-xl bg-gradient-to-b from-lime-400 to-lime-500"
-                transition={{ type: "spring", stiffness: 420, damping: 32 }}
-              />
-            )}
             <span className="relative">{n}</span>
           </button>
         ))}

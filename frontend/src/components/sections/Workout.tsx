@@ -15,8 +15,8 @@
  *    del problema.
  */
 
-import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, Reorder, motion, useDragControls } from "framer-motion";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   EXPERIENCE_LABELS,
   GOAL_LABELS,
@@ -27,6 +27,7 @@ import {
   exerciseName,
   formatEquipment,
   type Alternative,
+  type ExerciseSession,
   type PlanExercise,
   type PlanVolume,
   type PlanGeneration,
@@ -57,11 +58,13 @@ import { Mascot } from "@/components/Mascot";
 import { KiloNote } from "@/components/KiloNote";
 import {
   CheckIcon,
+  LoadHistoryDialog,
   ParamsChips,
   PlanParamsDialog,
   RestRing,
   SessionDialog,
   clock,
+  kg,
   useElapsed,
 } from "@/components/TrainingLog";
 import { useRest } from "@/lib/restTimer";
@@ -479,31 +482,33 @@ export function Workout({
             />
 
             <div className="space-y-2.5">
-              <AnimatePresence mode="popLayout">
-                {dayExercises.map((ex, i) => (
-                  <ExerciseRow
-                    key={ex.id}
-                    item={ex}
-                    index={i}
-                    onOpenDetail={setDetailId}
-                    onSwap={setSwapping}
-                    onEdit={setEditingParams}
-                    onRemove={dayExercises.length > 1 ? removeExercise : undefined}
-                  />
-                ))}
-              </AnimatePresence>
+              {activeDay && (
+                <DayExerciseList
+                  key={`${plan.id}-${activeDay}`}
+                  planId={plan.id}
+                  day={activeDay}
+                  exercises={dayExercises}
+                  profileId={profile.id}
+                  onOpenDetail={setDetailId}
+                  onSwap={setSwapping}
+                  onEdit={setEditingParams}
+                  onRemove={removeExercise}
+                  onReordered={replacePlan}
+                />
+              )}
               {removeError && <Notice>{removeError}</Notice>}
               {activeDay && (
-                <motion.button
-                  layout
+                <button
                   onClick={() => setAdding(activeDay)}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-3.5 text-[13.5px] font-medium text-white/55 transition hover:border-lime-400/40 hover:bg-lime-400/[0.05] hover:text-lime-200"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-lime-400/40 bg-lime-400/[0.1] py-3.5 text-[14px] font-semibold text-lime-200 shadow-[0_0_24px_-12px_rgba(174,212,74,0.8)] transition hover:border-lime-400/70 hover:bg-lime-400/[0.16] active:scale-[0.99]"
                 >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4}>
-                    <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                  </svg>
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-lime-400 text-ink-900">
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3}>
+                      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                    </svg>
+                  </span>
                   Aggiungi esercizio · {activeDay.length <= 2 ? `giorno ${activeDay}` : activeDay}
-                </motion.button>
+                </button>
               )}
             </div>
           </div>
@@ -599,7 +604,7 @@ export function Workout({
         )}
         {editingParams && (
           <PlanParamsDialog
-            key="params"
+            key={`params-${editingParams.id}`}
             item={editingParams}
             profileId={profile.id}
             onClose={() => setEditingParams(null)}
@@ -904,24 +909,163 @@ function thumbnails(ex: PlanExercise["exercise"]) {
   return ex.demo_images?.length ? ex.demo_images : ex.image_url ? [ex.image_url] : [];
 }
 
-function ExerciseRow({
-  item,
-  index,
+// Tocco prolungato prima di poter trascinare: abbastanza lungo da non
+// scattare mentre si scorre la pagina, abbastanza breve da non sembrare rotto.
+const LONG_PRESS_MS = 380;
+// Un dito che si sposta di più prima del tempo sta scorrendo, non trascinando.
+const LONG_PRESS_SLOP_PX = 10;
+
+/**
+ * Gli esercizi di un giorno, riordinabili: tocco prolungato su una scheda e
+ * poi la si trascina. L'ordine si salva al rilascio.
+ */
+function DayExerciseList({
+  planId,
+  day,
+  exercises,
+  profileId,
   onOpenDetail,
   onSwap,
   onEdit,
   onRemove,
+  onReordered,
+}: {
+  planId: number;
+  day: string;
+  exercises: PlanExercise[];
+  profileId: number;
+  onOpenDetail: (id: number) => void;
+  onSwap: (item: PlanExercise) => void;
+  onEdit: (item: PlanExercise) => void;
+  onRemove: (item: PlanExercise) => Promise<void>;
+  onReordered: (plan: WorkoutPlan) => void;
+}) {
+  const [ordine, setOrdine] = useState(() => exercises.map((e) => e.id));
+  const [errore, setErrore] = useState<string | null>(null);
+  const [carichi, setCarichi] = useState<Record<number, ExerciseSession>>({});
+  const [storico, setStorico] = useState<number | null>(null);
+  const perId = Object.fromEntries(exercises.map((e) => [e.id, e]));
+  const chiave = exercises.map((e) => e.id).join(",");
+  const esercizi = exercises.map((e) => e.exercise.id).join(",");
+
+  // La scheda cambia da fuori (aggiunta, rimozione, sostituzione): si riparte
+  // dal suo ordine.
+  useEffect(() => {
+    setOrdine(chiave ? chiave.split(",").map(Number) : []);
+  }, [chiave]);
+
+  // L'ultima volta di ogni esercizio del giorno, con una richiesta sola.
+  const caricaCarichi = useCallback(() => {
+    if (!esercizi) return;
+    const params = new URLSearchParams({ profile_id: String(profileId) });
+    esercizi.split(",").forEach((id) => params.append("exercise_ids", id));
+    api
+      .get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`)
+      .then(setCarichi)
+      .catch(() => setCarichi({}));
+  }, [esercizi, profileId]);
+  useEffect(caricaCarichi, [caricaCarichi]);
+
+  async function salvaOrdine() {
+    const prima = exercises.map((e) => e.id);
+    if (ordine.join(",") === prima.join(",")) return;
+    setErrore(null);
+    try {
+      onReordered(
+        await api.put<WorkoutPlan>(`/workout/plans/${planId}/order?profile_id=${profileId}`, {
+          day_label: day,
+          plan_exercise_ids: ordine,
+        })
+      );
+    } catch (e) {
+      setOrdine(prima);
+      setErrore(e instanceof Error ? e.message : "Non sono riuscito a salvare l'ordine.");
+    }
+  }
+
+  return (
+    <>
+      <Reorder.Group axis="y" values={ordine} onReorder={setOrdine} className="space-y-2.5">
+        {ordine.map((id, i) =>
+          perId[id] ? (
+            <ExerciseRow
+              key={id}
+              item={perId[id]}
+              index={i}
+              last={carichi[perId[id].exercise.id]}
+              onOpenDetail={onOpenDetail}
+              onSwap={onSwap}
+              onEdit={onEdit}
+              onRemove={ordine.length > 1 ? onRemove : undefined}
+              onOpenLoads={() => setStorico(perId[id].exercise.id)}
+              onDragEnd={salvaOrdine}
+            />
+          ) : null
+        )}
+      </Reorder.Group>
+      {errore && <Notice>{errore}</Notice>}
+      {ordine.length > 1 && (
+        <p className="px-1 text-center text-[11px] text-white/30">Tieni premuto un esercizio per spostarlo</p>
+      )}
+      <AnimatePresence>
+        {storico !== null && (
+          <LoadHistoryDialog
+            key={`carichi-${storico}`}
+            profileId={profileId}
+            exerciseId={storico}
+            onClose={() => setStorico(null)}
+            onChanged={caricaCarichi}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function ExerciseRow({
+  item,
+  index,
+  last,
+  onOpenDetail,
+  onSwap,
+  onEdit,
+  onRemove,
+  onOpenLoads,
+  onDragEnd,
 }: {
   item: PlanExercise;
   index: number;
+  /** L'ultima volta che è stato fatto, con le serie segnate. */
+  last?: ExerciseSession;
   onOpenDetail: (id: number) => void;
   onSwap: (item: PlanExercise) => void;
   onEdit: (item: PlanExercise) => void;
   /** Assente sull'unico esercizio del giorno: senza, il giorno sparirebbe. */
   onRemove?: (item: PlanExercise) => Promise<void>;
+  onOpenLoads: () => void;
+  onDragEnd: () => void;
 }) {
   const ex = item.exercise;
   const nome = exerciseName(ex);
+  const controls = useDragControls();
+  const [trascino, setTrascino] = useState(false);
+  const [carichiAperti, setCarichiAperti] = useState(false);
+  const pressione = useRef<{ timer: number; x: number; y: number } | null>(null);
+  // Dopo un trascinamento il rilascio non deve valere come tocco su un pulsante.
+  const appenaTrascinato = useRef(false);
+
+  function annullaPressione() {
+    if (pressione.current) window.clearTimeout(pressione.current.timer);
+    pressione.current = null;
+  }
+
+  // Mentre si trascina la pagina non deve scorrere sotto il dito (iOS).
+  useEffect(() => {
+    if (!trascino) return;
+    const blocca = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", blocca, { passive: false });
+    return () => document.removeEventListener("touchmove", blocca);
+  }, [trascino]);
   // Doppio tocco: il primo chiede conferma, come nel diario.
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -932,13 +1076,54 @@ function ExerciseRow({
   }, [confirm]);
 
   return (
-    <motion.div
-      layout
+    <Reorder.Item
+      value={item.id}
+      dragListener={false}
+      dragControls={controls}
       initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ delay: index * 0.035 }}
-      className="glass sheen glass-hover overflow-hidden"
+      animate={{ opacity: 1, y: 0, scale: trascino ? 1.02 : 1 }}
+      transition={{ delay: trascino ? 0 : index * 0.035 }}
+      onPointerDown={(e: ReactPointerEvent) => {
+        const evento = e.nativeEvent;
+        annullaPressione();
+        pressione.current = {
+          x: e.clientX,
+          y: e.clientY,
+          timer: window.setTimeout(() => {
+            pressione.current = null;
+            appenaTrascinato.current = true;
+            setTrascino(true);
+            try {
+              navigator.vibrate?.(15);
+            } catch {
+              /* vibrazione non supportata */
+            }
+            controls.start(evento);
+          }, LONG_PRESS_MS),
+        };
+      }}
+      onPointerMove={(e: ReactPointerEvent) => {
+        const p = pressione.current;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > LONG_PRESS_SLOP_PX) annullaPressione();
+      }}
+      onPointerUp={annullaPressione}
+      onPointerCancel={annullaPressione}
+      onDragEnd={() => {
+        setTrascino(false);
+        onDragEnd();
+        window.setTimeout(() => (appenaTrascinato.current = false), 60);
+      }}
+      onClickCapture={(e: ReactMouseEvent) => {
+        if (appenaTrascinato.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          appenaTrascinato.current = false;
+        }
+      }}
+      onContextMenu={(e: ReactMouseEvent) => e.preventDefault()}
+      className={`glass sheen glass-hover relative touch-manipulation select-none overflow-hidden [-webkit-touch-callout:none] ${
+        trascino ? "z-10 !bg-ink-800 border-lime-400/50 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8),0_0_24px_-10px_rgba(174,212,74,0.8)]" : ""
+      }`}
     >
       <div className="flex items-center gap-3.5 px-3.5 py-3">
         <button
@@ -1016,7 +1201,75 @@ function ExerciseRow({
       <div className="px-3.5 pb-3">
         <ParamsChips value={item} onEdit={() => onEdit(item)} />
       </div>
-    </motion.div>
+
+      {/* Carichi dell'ultima volta: a comparsa, modificabili dallo storico. */}
+      <div className="border-t border-white/[0.05]">
+        <button
+          onClick={() => (last ? setCarichiAperti(!carichiAperti) : onOpenLoads())}
+          aria-expanded={last ? carichiAperti : undefined}
+          className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[12px] transition hover:bg-white/[0.03]"
+        >
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-iris-300" fill="none" stroke="currentColor" strokeWidth={2.2}>
+            <path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {last ? (
+            <>
+              <span className="shrink-0 text-white/45">
+                Carichi · {new Date(last.date).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono tabular-nums text-white/75">
+                {last.sets.map((s) => `${kg(s.weight_kg)}×${s.reps}`).join(" · ")}
+              </span>
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-3.5 w-3.5 shrink-0 text-white/35 transition-transform ${carichiAperti ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.4}
+              >
+                <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </>
+          ) : (
+            <span className="text-white/35">Nessun carico ancora: li segni avviando l&apos;allenamento</span>
+          )}
+        </button>
+        <AnimatePresence initial={false}>
+          {last && carichiAperti && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="px-3.5 pb-3">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-1.5">
+                  {last.sets.map((s) => (
+                    <div key={s.id} className="rounded-xl bg-white/[0.05] px-2.5 py-1.5">
+                      <p className="text-[10.5px] text-white/40">serie {s.set_number}</p>
+                      <p className="font-mono text-[13.5px] font-semibold tabular-nums text-white/90">
+                        {kg(s.weight_kg)}
+                        <span className="text-[10.5px] font-normal text-white/40"> kg</span> × {s.reps}
+                      </p>
+                      {s.rir !== null && s.rir !== undefined && (
+                        <p className="text-[10.5px] text-white/35">RIR {s.rir}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={onOpenLoads}
+                  className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-lime-300"
+                >
+                  Modifica i carichi e vedi lo storico →
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </Reorder.Item>
   );
 }
 
@@ -1149,17 +1402,14 @@ function AlternativesDialog({
                 role="radio"
                 aria-checked={scelto}
                 onClick={() => setMuscle(m)}
-                className={`relative shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${
-                  scelto ? "text-ink-900" : "border border-white/10 text-white/60 hover:border-white/25 hover:text-white"
+                // Niente layoutId qui: un'animazione condivisa dentro un
+                // pannello che si chiude ne blocca l'uscita.
+                className={`relative shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors duration-200 ${
+                  scelto
+                    ? "border-lime-400/60 bg-gradient-to-b from-lime-400 to-lime-500 text-ink-900"
+                    : "border-white/10 text-white/60 hover:border-white/25 hover:text-white"
                 }`}
               >
-                {scelto && (
-                  <motion.span
-                    layoutId="swap-muscle"
-                    className="absolute inset-0 rounded-full bg-gradient-to-b from-lime-400 to-lime-500"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
                 <span className="relative">
                   {nomeMuscolo(m)}
                   {item && m === originale && !scelto && <span className="ml-1 text-white/35">· attuale</span>}
