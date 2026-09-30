@@ -145,6 +145,33 @@ giorno.
 
 ---
 
+## 5) Email di verifica e password dimenticata (facoltativo, gratuito)
+
+Con l'invio delle email attivo, chi si registra conferma l'indirizzo con un
+codice di 6 cifre, e dall'accesso si sceglie una password nuova con
+«Password dimenticata?». Senza, la registrazione funziona come prima e il
+recupero della password non è disponibile.
+
+Render gratuito **blocca l'SMTP in uscita** (porte 25, 465 e 587, dal
+settembre 2025): Gmail con Nodemailer o `smtplib` lì non funziona. Kilo usa
+**Brevo**, che si chiama via HTTPS (piano gratuito: 300 email al giorno).
+
+1. Crea un account gratuito su [brevo.com](https://www.brevo.com).
+2. *Senders, Domains & Dedicated IPs → Senders → Add a sender*: metti
+   l'indirizzo da cui partono le email (per esempio un Gmail dedicato a Kilo)
+   e confermalo col link che arriva.
+3. *SMTP & API → API Keys → Generate a new API key*.
+4. Su Render → *Environment*: `BREVO_API_KEY` (la chiave) e `MAIL_FROM`
+   (l'indirizzo del passo 2). Il servizio si riavvia da solo; `/health`
+   mostra `email_configured: true`.
+
+Gli account creati prima contano come verificati. Se un codice non arriva, nel
+log di Render c'è il motivo che dà Brevo (chiave sbagliata, mittente non
+confermato, quota del giorno finita). Con un mittente Gmail qualche email può
+finire nello spam: la schermata del codice lo ricorda.
+
+---
+
 ## Aggiornamenti
 
 Ogni `git push` su `main` rideploya **entrambi** i servizi da soli: Render
@@ -160,7 +187,7 @@ applica al prossimo avvio.
 
 | Limite | Effetto | Rimedio |
 |---|---|---|
-| Render spegne il servizio dopo **15 minuti** senza richieste | La prima richiesta dopo una pausa impiega **circa un minuto** e può andare in errore | Apri prima `/health` e attendi; oppure un ping ogni 10-14 min su `/health` con [cron-job.org](https://cron-job.org); oppure il piano a pagamento |
+| Render spegne il servizio dopo **15 minuti** senza richieste | La prima richiesta dopo una pausa impiega **20-40 secondi** | Il workflow `.github/workflows/tieni-sveglio.yml` chiama `/health` ogni 10 minuti dalle 7 alle 23 (usa lo stesso secret `KILO_BACKEND_URL` dei promemoria): circa 520 delle 750 ore gratuite del workspace. Fuori da quelle ore l'app sveglia il backend appena si apre e mostra «Kilo si sta svegliando…» |
 | **750 ore/mese** gratuite per workspace | Bastano per un servizio acceso tutto il mese | Non tenere altri servizi free sempre accesi nello stesso workspace |
 | Nessun disco persistente | I file scritti dal backend si perdono a ogni riavvio | Kilo salva tutto su Neon, quindi non è un problema |
 | Neon free va in sospensione quando inattivo | Leggera latenza sulla prima query | Già gestito: `pool_pre_ping=True` in `app/database.py` |

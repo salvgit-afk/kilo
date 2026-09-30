@@ -23,6 +23,8 @@ PUBLIC_ROUTES = {
     ("GET", "/"),
     ("GET", "/health"),
     ("POST", "/auth/register"),
+    ("POST", "/auth/email-code"),
+    ("POST", "/auth/reset-password"),
     ("POST", "/auth/login"),
     # Chiave pubblica VAPID: serve prima dell'iscrizione e non è un segreto.
     ("GET", "/push/config"),

@@ -74,6 +74,8 @@ class SlidingWindow:
 LOGIN_FAILURES_PER_EMAIL = SlidingWindow(limit=8, seconds=15 * 60)
 LOGIN_PER_IP = SlidingWindow(limit=40, seconds=15 * 60)
 REGISTER_PER_IP = SlidingWindow(limit=10, seconds=60 * 60)
+# Codici mandati per email: ogni invio consuma la quota gratuita di Brevo.
+EMAIL_CODE_PER_IP = SlidingWindow(limit=10, seconds=60 * 60)
 
 # Quote giornaliere per account.
 DAILY_LIMITS = {

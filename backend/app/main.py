@@ -71,6 +71,7 @@ def health() -> dict:
         "gemini_model": settings.gemini_model,
         "usda_configured": settings.usda_configured,
         "push_configured": settings.push_configured,
+        "email_configured": settings.email_configured,
         # wger e TheMealDB non richiedono chiavi: sempre disponibili.
         "wger_base_url": settings.wger_base_url,
     }

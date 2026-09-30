@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     # qui: si calcolano sommando gli ingredienti (vedi models.Recipe).
     themealdb_base_url: str = "https://www.themealdb.com/api/json/v1/1"
 
+    # --- Email (Brevo, piano gratuito) ---------------------------------------
+    # Codici di verifica alla registrazione e per la password dimenticata.
+    # Render gratuito blocca l'SMTP in uscita: Brevo si chiama via HTTPS.
+    # `MAIL_FROM` è il mittente verificato su Brevo (Senders). Senza chiave
+    # la verifica è spenta e la registrazione funziona come prima.
+    brevo_api_key: str = ""
+    mail_from: str = ""
+    mail_from_name: str = "Kilo"
+    brevo_api_url: str = "https://api.brevo.com/v3/smtp/email"
+
     # --- Notifiche push (Web Push, gratuito) --------------------------------
     # Coppia di chiavi VAPID: identifica il server presso i servizi push di
     # Google, Apple e Mozilla. Si genera una volta con
@@ -128,6 +138,10 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.brevo_api_key and self.mail_from)
 
     @property
     def push_configured(self) -> bool:

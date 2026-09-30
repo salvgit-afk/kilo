@@ -48,5 +48,11 @@ services:
         sync: false
       - key: PUSH_CRON_SECRET
         sync: false
+      # Email di verifica e password dimenticata (Brevo, gratuito). Senza,
+      # la registrazione non chiede il codice. Vedi DEPLOY.md.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite

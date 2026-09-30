@@ -11,11 +11,13 @@ alembic==1.14.0
 
 # --- External APIs ---
 # Nessun SDK: wger, USDA FoodData Central, TheMealDB e Google Gemini vengono
-# tutti chiamati via REST con httpx.
+# tutti chiamati via REST con httpx. Anche Brevo, per le email.
 
 # --- Utils ---
 python-dotenv==1.2.3
 httpx==0.28.1
+# Controlla che il dominio di un'email abbia un server di posta (record MX).
+dnspython==2.8.0
 # Legge le ricette da un link (GialloZafferano, Cucchiaio d'Argento, schema.org).
 recipe-scrapers==15.12.0
 

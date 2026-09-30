@@ -16,7 +16,8 @@
 
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { api, session, type AuthSession, type Profile } from "@/lib/api";
+import { ApiError, api, session, type AuthSession, type Profile } from "@/lib/api";
+import { wakeBackend } from "@/lib/wake";
 import type { Intent } from "@/lib/coach";
 import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
 import { ChatBubble } from "@/components/ChatBubble";
@@ -86,14 +87,32 @@ export default function Page() {
       setLoading(false);
       return;
     }
-    api
-      .get<AuthSession>("/auth/me")
-      .then((s) => {
-        setAccount(s.user);
-        setProfile(s.profile);
-      })
-      .catch(() => session.clear())
-      .finally(() => setLoading(false));
+    // Con Render che si sta svegliando la prima richiesta può fallire senza
+    // che la sessione sia scaduta: si esce solo su 401, altrimenti si
+    // aspetta il backend e si riprova.
+    let annullato = false;
+    (async () => {
+      for (let tentativo = 0; tentativo < 3 && !annullato; tentativo++) {
+        try {
+          await wakeBackend();
+          const s = await api.get<AuthSession>("/auth/me");
+          if (annullato) return;
+          setAccount(s.user);
+          setProfile(s.profile);
+          break;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 401) {
+            session.clear();
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (!annullato) setLoading(false);
+    })();
+    return () => {
+      annullato = true;
+    };
   }, []);
 
   function onAuthenticated(s: AuthSession) {

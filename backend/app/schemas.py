@@ -20,6 +20,28 @@ from pydantic import BaseModel, ConfigDict, Field
 class CredentialsIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=200)
+    # Codice ricevuto per email: serve alla registrazione se l'invio è attivo.
+    code: str | None = Field(default=None, max_length=12)
+
+
+class EmailCodeIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    purpose: Literal["register", "reset"] = "register"
+
+
+class EmailCodeOut(BaseModel):
+    """`required` falso: invio email spento, la registrazione non chiede codici."""
+
+    sent: bool
+    required: bool
+    expires_in_minutes: int = 0
+    resend_after_seconds: int = 0
+
+
+class PasswordResetIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=4, max_length=12)
+    password: str = Field(min_length=8, max_length=200)
 
 
 class UserOut(BaseModel):

@@ -35,3 +35,13 @@ def db() -> Session:
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _email_spenta(monkeypatch):
+    """Nessun test manda email vere: l'invio resta spento, anche se il file
+    .env locale avesse una chiave Brevo. I test della verifica lo accendono
+    con un invio finto."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "brevo_api_key", "")

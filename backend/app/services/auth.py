@@ -64,39 +64,72 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_token(user: User) -> str:
-    scadenza = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=TOKEN_TTL_DAYS)
+    adesso = dt.datetime.now(dt.timezone.utc)
     return jwt.encode(
-        {"sub": str(user.id), "email": user.email, "exp": scadenza},
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "iat": int(adesso.timestamp()),
+            "exp": adesso + dt.timedelta(days=TOKEN_TTL_DAYS),
+        },
         _secret(),
         algorithm=ALGORITHM,
     )
 
 
-def decode_token(token: str) -> int:
-    """Restituisce l'id utente contenuto nel token, se valido."""
+def _payload(token: str) -> dict:
     try:
         payload = jwt.decode(token, _secret(), algorithms=[ALGORITHM])
-        return int(payload["sub"])
+        int(payload["sub"])
+        return payload
     except jwt.ExpiredSignatureError as e:
         raise AuthError("Sessione scaduta: accedi di nuovo.") from e
     except (jwt.InvalidTokenError, KeyError, ValueError) as e:
         raise AuthError("Sessione non valida.") from e
 
 
+def decode_token(token: str) -> int:
+    """Restituisce l'id utente contenuto nel token, se valido."""
+    return int(_payload(token)["sub"])
+
+
+def user_from_token(db: Session, token: str) -> User:
+    """L'utente della sessione. Dopo un cambio password i token vecchi non valgono."""
+    payload = _payload(token)
+    user = get_user(db, int(payload["sub"]))
+    cambio = user.password_changed_at
+    if cambio is not None:
+        if cambio.tzinfo is None:
+            cambio = cambio.replace(tzinfo=dt.timezone.utc)
+        # `iat` è in secondi interi: il token emesso nello stesso secondo del
+        # cambio, cioè quello nuovo, resta valido.
+        if int(payload.get("iat", 0)) < int(cambio.timestamp()):
+            raise AuthError("Password cambiata: accedi di nuovo.")
+    return user
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def register(db: Session, *, email: str, password: str) -> User:
+def email_taken(db: Session, email: str) -> bool:
+    return db.scalar(select(User.id).where(User.email == normalize_email(email))) is not None
+
+
+def register(db: Session, *, email: str, password: str, verified: bool = False) -> User:
     email = normalize_email(email)
 
-    if db.scalar(select(User).where(User.email == email)) is not None:
+    if email_taken(db, email):
         raise AuthError("Esiste già un account con questa email.")
 
     if len(password) < 8:
         raise AuthError("La password deve avere almeno 8 caratteri.")
 
-    user = User(email=email, password_hash=hash_password(password))
+    user = User(
+        email=email,
+        password_hash=hash_password(password),
+        email_verified_at=dt.datetime.now(dt.timezone.utc) if verified else None,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -127,4 +160,22 @@ def get_user(db: Session, user_id: int) -> User:
     user = db.get(User, user_id)
     if user is None:
         raise AuthError("Account non più esistente.")
+    return user
+
+
+def reset_password(db: Session, *, email: str, password: str) -> User:
+    """Nuova password, dopo il codice. Le sessioni aperte altrove si chiudono."""
+    if len(password) < 8:
+        raise AuthError("La password deve avere almeno 8 caratteri.")
+    user = db.scalar(select(User).where(User.email == normalize_email(email)))
+    if user is None:
+        raise AuthError("Il codice è scaduto o non è valido: chiedine uno nuovo.")
+    adesso = dt.datetime.now(dt.timezone.utc)
+    user.password_hash = hash_password(password)
+    user.password_changed_at = adesso
+    # Chi ha ricevuto il codice ha dimostrato che la casella è sua.
+    user.email_verified_at = user.email_verified_at or adesso
+    db.commit()
+    db.refresh(user)
+    logger.info("Password cambiata col codice (id=%s)", user.id)
     return user

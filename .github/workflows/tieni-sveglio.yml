@@ -1,0 +1,38 @@
+# Tiene sveglio il backend di Kilo di giorno.
+#
+# Render (piano gratuito) spegne il backend dopo 15 minuti senza richieste e
+# la ripartenza richiede 20-40 secondi: aprire l'app dopo una pausa sembra
+# bloccato. Il job «Promemoria» lo sveglia una volta l'ora, qui lo si chiama
+# ogni 10 minuti così resta acceso nelle ore in cui l'app si usa.
+#
+# Dalle 5 alle 21 UTC (7-23 in Italia con l'ora legale, 6-22 con quella
+# solare) sono circa 17 ore al giorno, cioè circa 520 ore al mese: dentro le
+# 750 ore gratuite del workspace Render di Kilo, che è solo suo. Per
+# spegnerlo: Actions → «Tieni sveglio il backend» → «…» → Disable workflow.
+# Come ogni job pianificato parte solo da main e GitHub può ritardarlo di
+# qualche minuto; l'app mostra comunque «Kilo si sta svegliando…».
+#
+# Usa lo stesso secret dei promemoria: KILO_BACKEND_URL.
+
+name: Tieni sveglio il backend
+
+on:
+  schedule:
+    # Minuti 3, 13, 23…: allo scoccare dell'ora GitHub è più carico e ritarda.
+    - cron: "3-59/10 5-21 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /health
+        env:
+          BACKEND: ${{ secrets.KILO_BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND" ]; then
+            echo "Secret KILO_BACKEND_URL non configurato: niente da fare."
+            exit 0
+          fi
+          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" --max-time 90 "${BACKEND%/}/health" || true

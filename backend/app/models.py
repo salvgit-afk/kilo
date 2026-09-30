@@ -2,6 +2,10 @@
 
 Modello dati dell'agente allenamento + nutrizione:
 
+  Account
+  - User               : email e hash della password.
+  - EmailCode          : codici di verifica mandati per email.
+
   Profilo e sicurezza
   - UserProfile        : dati antropometrici, obiettivo, esperienza, dieta.
   - ScreeningRecord    : risposte PAR-Q+ (versionate, mai sovrascritte).
@@ -238,10 +242,41 @@ class User(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Quando l'email è stata confermata col codice. Nullo per chi si è
+    # registrato con la verifica spenta.
+    email_verified_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Cambio password: i token emessi prima non valgono più.
+    password_changed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     profiles: Mapped[list[UserProfile]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class EmailCode(Base):
+    """Codice di 6 cifre mandato per email, in attesa di essere scritto.
+
+    Uno per indirizzo e scopo (registrazione o password dimenticata): una
+    nuova richiesta sostituisce la precedente. Sta nel database e non in
+    memoria perché Render gratuito spegne il processo dopo 15 minuti, e con
+    lui i codici. Si salva solo l'impronta del codice, mai il codice.
+    """
+
+    __tablename__ = "email_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    purpose: Mapped[str] = mapped_column(String(16))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (UniqueConstraint("email", "purpose", name="uq_email_code"),)
 
 
 # --- Profilo e sicurezza ----------------------------------------------------
