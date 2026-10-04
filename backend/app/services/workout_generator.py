@@ -315,6 +315,30 @@ def _upper_lower_ppl(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
     ]
 
 
+# Push/Pull con le gambe dentro: le spinte della parte alta con le gambe
+# "davanti" (quadricipiti, polpacci), le tirate con le gambe "dietro"
+# (femorali, glutei). Nessun giorno di sole gambe, e con 4 giorni ogni muscolo
+# lavora due volte a settimana. Prima i muscoli grandi: l'ordine dei muscoli è
+# l'ordine degli esercizi nella seduta.
+PUSH_DAY_MUSCLES = ("Quads", "Chest", "Shoulders", "Triceps", "Calves")
+PULL_DAY_MUSCLES = ("Hamstrings", "Lats", "Glutes", "Rear delts", "Biceps", "Abs")
+# Muscoli piccoli (o già allenati da squat e stacchi): un esercizio da serie
+# piene per seduta, il resto arriva dalle serie indirette dei multi-articolari.
+PUSH_PULL_ACCESSORIES = frozenset({"Triceps", "Calves", "Glutes", "Rear delts", "Biceps", "Abs"})
+# Per i glutei l'esercizio unico resta un multi-articolare (squat bulgaro,
+# hip thrust): un isolamento come il kickback carica molto meno.
+_ACCESSORI_MULTIARTICOLARI = frozenset({"Glutes"})
+
+
+def _push_pull(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
+    """Push, Pull, Push, Pull: pensata per 4 giorni, alterna con qualunque numero."""
+    giorni = []
+    for i in range(max(1, days_per_week)):
+        nome, muscoli = ("Push", PUSH_DAY_MUSCLES) if i % 2 == 0 else ("Pull", PULL_DAY_MUSCLES)
+        giorni.append((f"{nome} {chr(65 + i // 2)}", muscoli))
+    return giorni
+
+
 def _muscle_group_split(days_per_week: int) -> list[tuple[str, tuple[str, ...]]]:
     """Divisione per gruppi muscolari, nel modo classico da palestra.
 
@@ -343,6 +367,7 @@ SPLIT_BUILDERS = {
     SplitType.PUSH_PULL_LEGS: _push_pull_legs,
     SplitType.MUSCLE_GROUP: _muscle_group_split,
     SplitType.UPPER_LOWER_PPL: _upper_lower_ppl,
+    SplitType.PUSH_PULL: _push_pull,
 }
 
 
@@ -382,6 +407,7 @@ SPLIT_NAMES = {
     SplitType.PUSH_PULL_LEGS: "Push/Pull/Gambe",
     SplitType.MUSCLE_GROUP: "Per gruppo muscolare",
     SplitType.UPPER_LOWER_PPL: "Upper/Lower + Push/Pull/Gambe",
+    SplitType.PUSH_PULL: "Push/Pull",
 }
 
 
@@ -438,6 +464,19 @@ def _preference_map(db: Session, profile_id: int | None) -> dict[int, bool]:
     }
 
 
+def _active_plan_exercise_ids(db: Session, profile_id: int | None) -> list[int]:
+    if profile_id is None:
+        return []
+    return list(
+        db.scalars(
+            select(WorkoutPlanExercise.exercise_id)
+            .join(WorkoutPlan, WorkoutPlan.id == WorkoutPlanExercise.workout_plan_id)
+            .where(WorkoutPlan.profile_id == profile_id, WorkoutPlan.is_active.is_(True))
+            .distinct()
+        )
+    )
+
+
 def _pick_exercises(
     db: Session,
     muscle: str,
@@ -447,6 +486,7 @@ def _pick_exercises(
     rotation: int = 0,
     preferences: dict[int, bool] | None = None,
     prefer_isolation: bool = False,
+    exclude_words: tuple[str, ...] = (),
 ) -> list[Exercise]:
     """Sceglie gli esercizi per un gruppo muscolare.
 
@@ -475,6 +515,11 @@ def _pick_exercises(
     if parole:
         candidates = [
             ex for ex in candidates if any(p in (ex.name or "").lower().replace("-", " ") for p in parole)
+        ]
+    if exclude_words:
+        candidates = [
+            ex for ex in candidates
+            if not any(p in (ex.name or "").lower().replace("-", " ") for p in exclude_words)
         ]
     preferences = preferences or {}
     # Gli esercizi esplicitamente sgraditi non vengono riproposti: sarebbe il
@@ -521,6 +566,12 @@ def _pick_exercises(
         # Un solo esercizio: si preferisce il multi-articolare, che copre più
         # massa muscolare per serie.
         return _slice(compound or usable, 1, rotation)
+
+    if not isolation:
+        # Muscolo senza isolamenti (il dorso: lat machine, rematori, pulley):
+        # tutti multi-articolari, con la stessa rotazione. Riempire dopo con
+        # `_slice(usable, …)` ripeteva nella seduta B un esercizio della A.
+        return _slice(compound or usable, wanted, rotation)
 
     # Più esercizi: metà (arrotondata per eccesso) multi-articolari e il resto
     # di isolamento, nell'ordine classico. Prenderli tutti dallo stesso
@@ -600,6 +651,14 @@ def generate_plan(
                 frequency[muscle] = 2
 
     preferences = _preference_map(db, profile.id)
+    # Gli esercizi che si stanno già facendo nelle schede attive sono graditi
+    # anche senza averlo detto: una scheda nuova riparte da quelli (e dai
+    # carichi già segnati), salvo quelli segnati come da evitare.
+    for esercizio_id in _active_plan_exercise_ids(db, profile.id):
+        preferences.setdefault(esercizio_id, True)
+    # Se la scheda ha un posto per i deltoidi posteriori, le croci inverse
+    # stanno lì e non fra gli esercizi per le spalle.
+    posteriori_a_parte = any("Rear delts" in muscoli for _, muscoli in split)
     planned: list[PlannedExercise] = []
     muscles_without_exercises: set[str] = set()
     # Quante volte un muscolo è già stato programmato: usato per ruotare gli
@@ -618,7 +677,11 @@ def generate_plan(
         # I complementari della full body hanno un esercizio da serie piene:
         # il resto del volume arriva dalle serie indirette dei multi-articolari.
         complementari = (
-            set(muscles) - set(FULL_BODY_MUSCLES) if resolved_split == SplitType.FULL_BODY else set()
+            set(muscles) - set(FULL_BODY_MUSCLES)
+            if resolved_split == SplitType.FULL_BODY
+            else set(muscles) & PUSH_PULL_ACCESSORIES
+            if resolved_split == SplitType.PUSH_PULL
+            else set()
         )
         sets_by_muscle = {
             m: TARGET_SETS_PER_EXERCISE if m in complementari else max(1, round(weekly_target / frequency[m]))
@@ -637,7 +700,13 @@ def generate_plan(
             rotation = times_programmed.get(muscle, 0)
             exercises = _pick_exercises(
                 db, muscle, allowed, wanted=exercise_count, rotation=rotation,
-                preferences=preferences, prefer_isolation=muscle in complementari,
+                preferences=preferences,
+                prefer_isolation=muscle in complementari and muscle not in _ACCESSORI_MULTIARTICOLARI,
+                exclude_words=(
+                    PSEUDO_MUSCLES["Rear delts"][1]
+                    if muscle == "Shoulders" and posteriori_a_parte
+                    else ()
+                ),
             )
             times_programmed[muscle] = rotation + 1
 

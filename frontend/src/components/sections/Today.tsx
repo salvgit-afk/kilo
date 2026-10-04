@@ -12,7 +12,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { GOAL_LABELS, api, type Diary, type Profile, type WorkoutPlan } from "@/lib/api";
-import { WeekLine } from "@/components/WeekSchedule";
+import { WeekLine, dayTitle, planDayLabels, scheduledToday } from "@/components/WeekSchedule";
 import { askCoach } from "@/lib/coach";
 import { Card, CardHeader, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
@@ -75,7 +75,8 @@ export function Today({
 
   const ora = new Date().getHours();
   const saluto = ora < 12 ? "Buongiorno" : ora < 18 ? "Buon pomeriggio" : "Buonasera";
-  const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
+  const days = plan ? planDayLabels(plan) : [];
+  const allenamentoDiOggi = plan ? scheduledToday(plan) : null;
 
   // --- Il coach per oggi -----------------------------------------------------
   const briefing: BriefingItem[] = [];
@@ -130,7 +131,7 @@ export function Today({
       key: "scheda",
       tone: "lime",
       title: plan.name,
-      text: `${days.length} giornate: ${days.join(", ")}.`,
+      text: `${allenamentoDiOggi ? `Oggi tocca a ${dayTitle(allenamentoDiOggi)}.` : "Oggi è giorno di riposo."} ${days.length} giornate: ${days.join(", ")}.`,
       action: { label: "Apri la scheda", run: () => onNavigate("scheda") },
     });
   }

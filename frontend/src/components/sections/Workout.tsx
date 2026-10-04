@@ -68,7 +68,16 @@ import {
   useElapsed,
 } from "@/components/TrainingLog";
 import { useRest } from "@/lib/restTimer";
-import { ScheduleDialog, WEEKDAY_NAMES, WeekLine, WeekdayPicker, defaultWeekdays } from "@/components/WeekSchedule";
+import {
+  ScheduleDialog,
+  WEEKDAY_NAMES,
+  WeekLine,
+  WeekdayPicker,
+  defaultWeekdays,
+  planDayLabels,
+  scheduledToday,
+  todayDayLabel,
+} from "@/components/WeekSchedule";
 
 export { formatEquipment } from "@/lib/api";
 
@@ -127,7 +136,8 @@ export function Workout({
 
   const selectPlan = useCallback((p: WorkoutPlan | null) => {
     setSelectedId(p?.id ?? null);
-    setActiveDay(p?.exercises[0]?.day_label ?? null);
+    // Si parte dall'allenamento di oggi (mercoledì → giorno B), non sempre dal primo.
+    setActiveDay(p ? todayDayLabel(p) : null);
   }, []);
 
   useEffect(() => {
@@ -234,8 +244,11 @@ export function Workout({
 
   const plan = plans.find((p) => p.id === selectedId) ?? null;
   const meta = plan ? metaById[plan.id] : undefined;
-  const days = plan ? [...new Set(plan.exercises.map((e) => e.day_label))] : [];
-  const dayExercises = plan?.exercises.filter((e) => e.day_label === activeDay) ?? [];
+  const days = plan ? planDayLabels(plan) : [];
+  // Un giorno che la scheda non ha più (rinominato, tolto) non lascia la pagina vuota.
+  const giornoMostrato = activeDay && days.includes(activeDay) ? activeDay : plan ? todayDayLabel(plan) : null;
+  const dayExercises = plan?.exercises.filter((e) => e.day_label === giornoMostrato) ?? [];
+  const giornoDiOggi = plan ? scheduledToday(plan) : null;
 
   function openActive() {
     if (!activeSession) return;
@@ -433,10 +446,10 @@ export function Workout({
                         key={d}
                         onClick={() => setActiveDay(d)}
                         className={`relative h-10 min-w-0 flex-1 rounded-xl px-2 text-[13px] font-semibold transition ${
-                          d === activeDay ? "text-ink-900" : "text-white/55 hover:text-white"
+                          d === giornoMostrato ? "text-ink-900" : "text-white/55 hover:text-white"
                         }`}
                       >
-                        {d === activeDay && (
+                        {d === giornoMostrato && (
                           <motion.span
                             layoutId="day-pill"
                             className="absolute inset-0 rounded-xl bg-gradient-to-b from-lime-400 to-lime-500"
@@ -444,6 +457,12 @@ export function Workout({
                           />
                         )}
                         <span className="relative block truncate">{d}</span>
+                        {d === giornoDiOggi && (
+                          <span
+                            className={`absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full ${d === giornoMostrato ? "bg-ink-900/70" : "bg-lime-400"}`}
+                            title="L'allenamento di oggi"
+                          />
+                        )}
                       </button>
                     ))}
                   </div>
@@ -455,20 +474,20 @@ export function Workout({
                   {activeSession ? (
                     <ActiveWorkoutPill key="in-corso" session={activeSession} onOpen={openActive} />
                   ) : (
-                    activeDay &&
+                    giornoMostrato &&
                     dayExercises.length > 0 && (
                       <motion.button
                         key="inizia"
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
-                        onClick={() => setSessionDay({ plan, day: activeDay, exercises: dayExercises })}
+                        onClick={() => setSessionDay({ plan, day: giornoMostrato, exercises: dayExercises })}
                         className="btn-primary w-full justify-center py-3.5 text-[14.5px]"
                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
                           <path d="M8 5v14l11-7L8 5Z" />
                         </svg>
-                        Inizia allenamento · {activeDay.length <= 2 ? `giorno ${activeDay}` : activeDay}
+                        Inizia allenamento · {giornoMostrato.length <= 2 ? `giorno ${giornoMostrato}` : giornoMostrato}
                       </motion.button>
                     )
                   )}
@@ -482,11 +501,11 @@ export function Workout({
             />
 
             <div className="space-y-2.5">
-              {activeDay && (
+              {giornoMostrato && (
                 <DayExerciseList
-                  key={`${plan.id}-${activeDay}`}
+                  key={`${plan.id}-${giornoMostrato}`}
                   planId={plan.id}
-                  day={activeDay}
+                  day={giornoMostrato}
                   exercises={dayExercises}
                   profileId={profile.id}
                   onOpenDetail={setDetailId}
@@ -497,9 +516,9 @@ export function Workout({
                 />
               )}
               {removeError && <Notice>{removeError}</Notice>}
-              {activeDay && (
+              {giornoMostrato && (
                 <button
-                  onClick={() => setAdding(activeDay)}
+                  onClick={() => setAdding(giornoMostrato)}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-lime-400/40 bg-lime-400/[0.1] py-3.5 text-[14px] font-semibold text-lime-200 shadow-[0_0_24px_-12px_rgba(174,212,74,0.8)] transition hover:border-lime-400/70 hover:bg-lime-400/[0.16] active:scale-[0.99]"
                 >
                   <span className="grid h-6 w-6 place-items-center rounded-full bg-lime-400 text-ink-900">
@@ -507,7 +526,7 @@ export function Workout({
                       <path d="M12 5v14M5 12h14" strokeLinecap="round" />
                     </svg>
                   </span>
-                  Aggiungi esercizio · {activeDay.length <= 2 ? `giorno ${activeDay}` : activeDay}
+                  Aggiungi esercizio · {giornoMostrato.length <= 2 ? `giorno ${giornoMostrato}` : giornoMostrato}
                 </button>
               )}
             </div>
@@ -599,7 +618,11 @@ export function Workout({
             plan={plan}
             profileId={profile.id}
             onClose={() => setEditingSchedule(false)}
-            onSaved={replacePlan}
+            onSaved={(aggiornata) => {
+              replacePlan(aggiornata);
+              // Con i giorni nuovi oggi può toccare un altro allenamento.
+              setActiveDay(todayDayLabel(aggiornata));
+            }}
           />
         )}
         {editingParams && (
@@ -948,7 +971,8 @@ function DayExerciseList({
   const [ordine, setOrdine] = useState(() => exercises.map((e) => e.id));
   const [errore, setErrore] = useState<string | null>(null);
   const [carichi, setCarichi] = useState<Record<number, ExerciseSession>>({});
-  const [storico, setStorico] = useState<number | null>(null);
+  // Esercizio di cui è aperto lo storico, con la serie toccata da modificare.
+  const [storico, setStorico] = useState<{ exerciseId: number; setId?: number } | null>(null);
   const [riordino, setRiordino] = useState(false);
   const inizio = useRef<HTMLDivElement>(null);
   const perId = Object.fromEntries(exercises.map((e) => [e.id, e]));
@@ -1063,7 +1087,7 @@ function DayExerciseList({
                 onSwap={onSwap}
                 onEdit={onEdit}
                 onRemove={ordine.length > 1 ? onRemove : undefined}
-                onOpenLoads={() => setStorico(perId[id].exercise.id)}
+                onOpenLoads={(setId) => setStorico({ exerciseId: perId[id].exercise.id, setId })}
                 onLongPress={ordine.length > 1 ? entraNelRiordino : undefined}
               />
             ) : null
@@ -1074,9 +1098,10 @@ function DayExerciseList({
       <AnimatePresence>
         {storico !== null && (
           <LoadHistoryDialog
-            key={`carichi-${storico}`}
+            key={`carichi-${storico.exerciseId}`}
             profileId={profileId}
-            exerciseId={storico}
+            exerciseId={storico.exerciseId}
+            editSetId={storico.setId}
             planId={planId}
             dayLabel={day}
             onClose={() => setStorico(null)}
@@ -1193,7 +1218,8 @@ function ExerciseRow({
   onEdit: (item: PlanExercise) => void;
   /** Assente sull'unico esercizio del giorno: senza, il giorno sparirebbe. */
   onRemove?: (item: PlanExercise) => Promise<void>;
-  onOpenLoads: () => void;
+  /** Con l'id di una serie, la apre già in modifica. */
+  onOpenLoads: (setId?: number) => void;
   /** Tocco prolungato: si entra nel riordino. Assente se l'esercizio è uno solo. */
   onLongPress?: () => void;
 }) {
@@ -1380,8 +1406,18 @@ function ExerciseRow({
               <div className="px-3.5 pb-3">
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-1.5">
                   {last.sets.map((s) => (
-                    <div key={s.id} className="rounded-xl bg-white/[0.05] px-2.5 py-1.5">
-                      <p className="text-[10.5px] text-white/40">serie {s.set_number}</p>
+                    <button
+                      key={s.id}
+                      onClick={() => onOpenLoads(s.id)}
+                      aria-label={`Modifica la serie ${s.set_number}`}
+                      className="rounded-xl border border-transparent bg-white/[0.05] px-2.5 py-1.5 text-left transition hover:border-lime-400/40"
+                    >
+                      <p className="flex items-center justify-between text-[10.5px] text-white/40">
+                        serie {s.set_number}
+                        <svg viewBox="0 0 24 24" className="h-3 w-3 text-white/30" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                          <path d="M4 20h4L19 9l-4-4L4 16v4Z" strokeLinejoin="round" />
+                        </svg>
+                      </p>
                       <p className="font-mono text-[13.5px] font-semibold tabular-nums text-white/90">
                         {kg(s.weight_kg)}
                         <span className="text-[10.5px] font-normal text-white/40"> kg</span> × {s.reps}
@@ -1389,11 +1425,11 @@ function ExerciseRow({
                       {s.rir !== null && s.rir !== undefined && (
                         <p className="text-[10.5px] text-white/35">RIR {s.rir}</p>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
                 <button
-                  onClick={onOpenLoads}
+                  onClick={() => onOpenLoads()}
                   className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-lime-300"
                 >
                   Modifica i carichi e vedi lo storico →

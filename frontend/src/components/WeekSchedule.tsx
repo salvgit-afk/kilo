@@ -51,8 +51,40 @@ export function mondayOf(iso: string): string {
   return shiftDate(iso, -((parseISO(iso).getDay() + 6) % 7));
 }
 
+/**
+ * Gli allenamenti della scheda nel loro ordine (A, B, C; Push, Pull, Gambe).
+ *
+ * Non l'ordine in cui arrivano gli esercizi: il server li ordina per
+ * posizione nel giorno, e dopo un riordino o un'aggiunta il primo esercizio
+ * della lista può essere del giorno C, che finiva così in testa. Il
+ * generatore crea i giorni in ordine, quindi conta l'esercizio più vecchio
+ * di ciascun giorno.
+ */
 export function planDayLabels(plan: WorkoutPlan): string[] {
-  return [...new Set(plan.exercises.map((e) => e.day_label))];
+  const primo = new Map<string, number>();
+  for (const e of plan.exercises) primo.set(e.day_label, Math.min(primo.get(e.day_label) ?? Infinity, e.id));
+  return [...primo.keys()].sort((a, b) => primo.get(a)! - primo.get(b)!);
+}
+
+/** L'allenamento in programma oggi; null nei giorni di riposo. */
+export function scheduledToday(plan: WorkoutPlan, oggi: string = localDate()): string | null {
+  return weekAssignments(plan, mondayOf(oggi))[(parseISO(oggi).getDay() + 6) % 7] ?? null;
+}
+
+/**
+ * L'allenamento da mostrare aprendo la scheda: quello di oggi, o nei giorni
+ * di riposo il prossimo in programma.
+ */
+export function todayDayLabel(plan: WorkoutPlan, oggi: string = localDate()): string | null {
+  const etichette = planDayLabels(plan);
+  if (!etichette.length) return null;
+  const lunedi = mondayOf(oggi);
+  const g = (parseISO(oggi).getDay() + 6) % 7;
+  const questa = weekAssignments(plan, lunedi);
+  for (let i = g; i < 7; i++) if (questa[i] !== undefined) return questa[i];
+  const prossima = weekAssignments(plan, shiftDate(lunedi, 7));
+  for (let i = 0; i < 7; i++) if (prossima[i] !== undefined) return prossima[i];
+  return etichette[0];
 }
 
 export function dayTitle(label: string): string {

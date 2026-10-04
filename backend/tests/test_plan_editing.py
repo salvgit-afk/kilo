@@ -187,3 +187,34 @@ def test_riordinare_gli_esercizi_di_un_giorno(ambiente):
     r = client.put(f"/workout/plans/{piano.id}/order?profile_id={pid}", headers=h,
                    json={"day_label": "A", "plan_exercise_ids": nuovo_ordine[:-1]})
     assert r.status_code == 409
+
+
+def test_i_giorni_restano_in_ordine_dopo_un_riordino(ambiente):
+    """Gli esercizi arrivano ordinati per posizione nel giorno: un esercizio
+    aggiunto ad A e portato in cima non deve far passare B e C davanti."""
+    from app.services import plan_editing
+
+    client, db = ambiente
+    _, profile_id = _account(client, "ordine@example.com")
+    piano = WorkoutPlan(
+        profile_id=profile_id, name="Full body", goal="hypertrophy", days_per_week=3,
+        started_at=dt.date.today(),
+    )
+    db.add(piano)
+    db.flush()
+    esercizi = [Exercise(name=f"Ex {i}", primary_muscle="Chest", is_compound=True) for i in range(4)]
+    db.add_all(esercizi)
+    db.flush()
+    for giorno, ex in zip(("A", "B", "C", "A"), esercizi):
+        db.add(WorkoutPlanExercise(
+            workout_plan_id=piano.id, exercise_id=ex.id, day_label=giorno,
+            order_index=1 if ex is esercizi[3] else 0,
+            target_sets=3, target_reps_min=6, target_reps_max=8, target_rir=2, rest_seconds=150,
+        ))
+    db.commit()
+    db.refresh(piano)
+    giorno_a = [e.id for e in piano.exercises if e.day_label == "A"]
+    plan_editing.reorder_day(db, piano, "A", list(reversed(giorno_a)))
+
+    assert piano.exercises[0].day_label != "A"  # l'ordine grezzo mette B davanti
+    assert plan_editing._days(piano) == ["A", "B", "C"]

@@ -329,6 +329,8 @@ export function ParamsChips({
 type Row = {
   key: string;
   setId: number | null;
+  /** Numero della serie salvata: dopo un'eliminazione non coincide più con la posizione. */
+  num?: number;
   // null = campo vuoto: vale il suggerimento mostrato in grigio.
   kg: number | null;
   reps: number | null;
@@ -349,6 +351,7 @@ function rowsFor(target: PlanExerciseParams, logged: SessionSet[]): Row[] {
   const rows: Row[] = logged.map((s) => ({
     key: newKey(),
     setId: s.id,
+    num: s.set_number,
     kg: s.weight_kg,
     reps: s.reps,
     rir: s.rir,
@@ -545,12 +548,17 @@ export function SessionDialog({
       } else {
         const s = sessionRef.current?.started_at && !sessionRef.current.ended_at ? sessionRef.current : await start();
         if (!s) throw new Error("allenamento non avviato");
+        // La posizione, se libera: eliminata la serie 2 di 3, la nuova terza
+        // non deve prendere il numero 3 che ha già l'ultima.
+        const usati = (rows[item.id] ?? []).filter((r) => r.setId && r.num).map((r) => r.num!);
+        const numero = usati.includes(index + 1) ? Math.max(...usati) + 1 : index + 1;
         const creata = await api.post<SessionSet>(`/workout/sessions/${s.id}/sets`, {
           ...corpo,
           exercise_id: item.exercise.id,
-          set_number: index + 1,
+          set_number: numero,
         });
         id = creata.id;
+        patchRow(item.id, row.key, { num: creata.set_number });
         const prossima = nextStep(item, index, pesi, ripetizioni);
         if (prossima) restTimer.start({ sessionId: s.id, total: targets[item.id].rest_seconds, ...prossima });
       }
@@ -1113,15 +1121,18 @@ function Summary({ summary }: { summary: SessionSummary }) {
 /** Storico di un esercizio: ogni sessione con le sue serie, correggibili. */
 type ManualRow = { key: string; kg: number | null; reps: number | null; rir: number | null };
 
-function manualRow(kgValue: number | null = null, reps: number | null = null): ManualRow {
-  return { key: Math.random().toString(36).slice(2), kg: kgValue, reps, rir: null };
+function manualRow(kgValue: number | null = null, reps: number | null = null, rir: number | null = null): ManualRow {
+  return { key: Math.random().toString(36).slice(2), kg: kgValue, reps, rir };
 }
+
+const RIR_VALUES = [0, 1, 2, 3, 4, 5];
 
 export function LoadHistoryDialog({
   profileId,
   exerciseId,
   planId,
   dayLabel,
+  editSetId,
   onClose,
   onChanged,
 }: {
@@ -1130,6 +1141,8 @@ export function LoadHistoryDialog({
   /** Scheda e giorno da cui si arriva: le serie segnate a mano vanno lì. */
   planId?: number;
   dayLabel?: string;
+  /** Serie da aprire già in modifica (toccata nella scheda). */
+  editSetId?: number;
   onClose: () => void;
   onChanged?: () => void;
 }) {
@@ -1144,11 +1157,29 @@ export function LoadHistoryDialog({
   const ieri = localDate(new Date(Date.now() - 86_400_000));
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SessionSet | null>(null);
-  const [draft, setDraft] = useState<{ kg: number | null; reps: number | null }>({ kg: null, reps: null });
+  const [draft, setDraft] = useState<{ kg: number | null; reps: number | null; rir: number | null }>({
+    kg: null,
+    reps: null,
+    rir: null,
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  // La serie toccata nella scheda si apre in modifica una volta sola, al primo caricamento.
+  const daAprire = useRef(editSetId);
 
   const load = useCallback(async () => {
     try {
-      setData(await api.get<ExerciseHistory>(`/workout/exercises/${exerciseId}/history?profile_id=${profileId}`));
+      const storico = await api.get<ExerciseHistory>(`/workout/exercises/${exerciseId}/history?profile_id=${profileId}`);
+      setData(storico);
+      const id = daAprire.current;
+      if (id !== undefined) {
+        daAprire.current = undefined;
+        const serie = storico.sessions.flatMap((x) => x.sets).find((x) => x.id === id);
+        if (serie) {
+          setEditing(serie);
+          setDraft({ kg: serie.weight_kg, reps: serie.reps, rir: serie.rir ?? null });
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Non riesco a caricare lo storico.");
     }
@@ -1158,25 +1189,47 @@ export function LoadHistoryDialog({
     load();
   }, [load]);
 
+  function startEdit(serie: SessionSet) {
+    setEditing(serie);
+    setDraft({ kg: serie.weight_kg, reps: serie.reps, rir: serie.rir ?? null });
+    setEditError(null);
+  }
+
   async function save() {
     if (!editing || draft.kg === null || !draft.reps) return;
-    await api.patch(`/workout/sets/${editing.id}`, { weight_kg: draft.kg, reps: draft.reps });
-    setEditing(null);
-    await load();
-    onChanged?.();
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await api.patch(`/workout/sets/${editing.id}`, { weight_kg: draft.kg, reps: draft.reps, rir: draft.rir });
+      setEditing(null);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Non sono riuscito a salvare la serie.");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   async function remove(s: SessionSet) {
-    await api.del(`/workout/sets/${s.id}`);
-    setEditing(null);
-    await load();
-    onChanged?.();
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await api.del(`/workout/sets/${s.id}`);
+      setEditing(null);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Non sono riuscito a eliminare la serie.");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   function openManual() {
     // Si parte dalle serie dell'ultima volta: di solito si cambia poco.
     const ultima = data?.sessions[0]?.sets ?? [];
-    setRows(ultima.length ? ultima.map((s) => manualRow(s.weight_kg, s.reps)) : [manualRow()]);
+    setRows(ultima.length ? ultima.map((s) => manualRow(s.weight_kg, s.reps, s.rir ?? null)) : [manualRow()]);
     setDate(oggi);
     setManualError(null);
     setAdding(true);
@@ -1305,7 +1358,7 @@ export function LoadHistoryDialog({
                         className="h-9 rounded-lg border border-white/10 bg-black/30 px-1 text-center font-mono text-[12.5px] text-white outline-none focus:border-lime-400/50"
                       >
                         <option value="">RIR</option>
-                        {[0, 1, 2, 3, 4, 5].map((v) => (
+                        {RIR_VALUES.map((v) => (
                           <option key={v} value={v}>
                             {v}
                           </option>
@@ -1325,7 +1378,8 @@ export function LoadHistoryDialog({
                 <button
                   onClick={() => {
                     const ultima = rows[rows.length - 1];
-                    setRows((x) => [...x, manualRow(ultima?.kg ?? null, ultima?.reps ?? null)]);
+                    // Come carico e ripetizioni, anche il RIR riparte da quello della serie prima.
+                    setRows((x) => [...x, manualRow(ultima?.kg ?? null, ultima?.reps ?? null, ultima?.rir ?? null)]);
                   }}
                   disabled={rows.length >= 12}
                   className="w-full rounded-lg py-1.5 text-[12.5px] font-medium text-white/50 transition hover:text-white/85"
@@ -1358,7 +1412,11 @@ export function LoadHistoryDialog({
             <div className="mb-1.5 flex items-baseline justify-between gap-3">
               <p className="text-[13px] font-medium text-white/85">
                 {shortDate(s.date)}
-                {s.day_label && <span className="ml-1.5 text-white/35">· giorno {s.day_label}</span>}
+                {s.day_label && (
+                  <span className="ml-1.5 text-white/35">
+                    · {s.day_label.length <= 2 ? `giorno ${s.day_label}` : s.day_label}
+                  </span>
+                )}
               </p>
               <p className="font-mono text-[11.5px] tabular-nums text-white/40">
                 max {kg(s.top_weight_kg)} kg · 1RM ~{kg(Math.round(s.best_e1rm))}
@@ -1367,45 +1425,72 @@ export function LoadHistoryDialog({
             <div className="flex flex-wrap gap-1.5">
               {s.sets.map((set) =>
                 editing?.id === set.id ? (
-                  <div key={set.id} className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-black/25 p-2">
-                    <NumberField
-                      value={draft.kg}
-                      onChange={(v) => setDraft({ ...draft, kg: v })}
-                      step={2.5}
-                      decimals={2}
-                      min={0}
-                      max={1000}
-                      suffix="kg"
-                      size="sm"
-                      ariaLabel="Carico"
-                      className="w-36"
-                    />
-                    <NumberField
-                      value={draft.reps}
-                      onChange={(v) => setDraft({ ...draft, reps: v })}
-                      min={1}
-                      max={100}
-                      suffix="rip"
-                      size="sm"
-                      ariaLabel="Ripetizioni"
-                      className="w-32"
-                    />
-                    <div className="ml-auto flex gap-1.5">
-                      <button className="btn-ghost h-9 px-3 text-[12px] text-rose-200" onClick={() => remove(set)}>
+                  <div key={set.id} className="w-full space-y-2 rounded-lg border border-lime-400/30 bg-black/25 p-2">
+                    <p className="text-[11.5px] text-white/45">Serie {set.set_number}</p>
+                    <div className="grid grid-cols-[1fr_1fr_58px] items-center gap-1.5">
+                      <NumberField
+                        value={draft.kg}
+                        onChange={(v) => setDraft((d) => ({ ...d, kg: v }))}
+                        step={2.5}
+                        decimals={2}
+                        min={0}
+                        max={1000}
+                        suffix="kg"
+                        size="sm"
+                        steppers="sm"
+                        ariaLabel="Carico"
+                      />
+                      <NumberField
+                        value={draft.reps}
+                        onChange={(v) => setDraft((d) => ({ ...d, reps: v }))}
+                        min={1}
+                        max={100}
+                        suffix="rip"
+                        size="sm"
+                        steppers="sm"
+                        ariaLabel="Ripetizioni"
+                        onEnter={save}
+                      />
+                      <select
+                        value={draft.rir ?? ""}
+                        onChange={(e) => setDraft((d) => ({ ...d, rir: e.target.value === "" ? null : Number(e.target.value) }))}
+                        aria-label="RIR"
+                        className="h-9 rounded-lg border border-white/10 bg-black/30 px-1 text-center font-mono text-[12.5px] text-white outline-none focus:border-lime-400/50"
+                      >
+                        <option value="">RIR</option>
+                        {RIR_VALUES.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {editError && <Notice>{editError}</Notice>}
+                    <div className="flex gap-1.5">
+                      <button
+                        className="btn-ghost h-9 px-3 text-[12px] text-rose-200"
+                        onClick={() => remove(set)}
+                        disabled={savingEdit}
+                      >
                         Elimina
                       </button>
-                      <button className="btn-primary h-9 px-3 text-[12px]" onClick={save}>
-                        Salva
+                      <button className="btn-ghost ml-auto h-9 px-3 text-[12px]" onClick={() => setEditing(null)} disabled={savingEdit}>
+                        Annulla
+                      </button>
+                      <button
+                        className="btn-primary h-9 px-3 text-[12px]"
+                        onClick={save}
+                        disabled={savingEdit || draft.kg === null || !draft.reps}
+                      >
+                        {savingEdit ? "Salvo…" : "Salva"}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <button
                     key={set.id}
-                    onClick={() => {
-                      setEditing(set);
-                      setDraft({ kg: set.weight_kg, reps: set.reps });
-                    }}
+                    onClick={() => startEdit(set)}
+                    aria-label={`Modifica la serie ${set.set_number}: ${kg(set.weight_kg)} kg per ${set.reps}`}
                     className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 font-mono text-[12.5px] tabular-nums text-white/75 transition hover:border-lime-400/40 hover:text-lime-100"
                   >
                     {kg(set.weight_kg)}×{set.reps}

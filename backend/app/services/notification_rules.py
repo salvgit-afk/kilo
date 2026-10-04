@@ -101,7 +101,13 @@ def gym_hour(db: Session, profile: UserProfile, *, fuso: dt.tzinfo, override: in
         .order_by(WorkoutSession.date.desc())
         .limit(GYM_HOUR_SESSIONS)
     ).all()
-    ore = [a.astimezone(fuso).hour for a in avvii if a is not None]
+    # Senza fuso (SQLite) l'orario salvato è in UTC: `astimezone` lo
+    # leggerebbe invece nell'ora locale del server.
+    ore = [
+        (a if a.tzinfo else a.replace(tzinfo=dt.timezone.utc)).astimezone(fuso).hour
+        for a in avvii
+        if a is not None
+    ]
     return round(statistics.median(ore)) if ore else DEFAULT_GYM_HOUR
 
 

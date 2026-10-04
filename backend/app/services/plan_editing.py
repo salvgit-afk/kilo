@@ -26,7 +26,16 @@ class EditError(ValueError):
 
 
 def _days(plan: WorkoutPlan) -> list[str]:
-    return list(dict.fromkeys(e.day_label for e in plan.exercises))
+    """I giorni nell'ordine della scheda (A, B, C).
+
+    Gli esercizi arrivano ordinati per posizione nel giorno, non per giorno:
+    dopo un riordino il primo può essere del giorno C. Il generatore crea i
+    giorni in ordine, quindi vale l'esercizio più vecchio di ciascuno.
+    """
+    primo: dict[str, int] = {}
+    for e in plan.exercises:
+        primo[e.day_label] = min(primo.get(e.day_label, e.id), e.id)
+    return sorted(primo, key=primo.__getitem__)
 
 
 def add_exercise(

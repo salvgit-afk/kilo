@@ -702,3 +702,79 @@ def test_serie_equivalenti_contano_le_indirette_a_meta():
     assert eq["Quads"] == 4 and eq["Glutes"] == 2
     # Lo squat non fa crescere i femorali (Kubo 2019): non contano.
     assert "Hamstrings" not in eq
+
+
+# --- Push/Pull con le gambe dentro --------------------------------------------
+
+
+def test_push_pull_quattro_giorni_con_le_gambe_dentro(catalogo):
+    _aggiungi(catalogo, ("Face pull", "Shoulders"))
+    profilo = _profilo(training_days_per_week=4)
+    catalogo.add(profilo)
+    catalogo.commit()
+    piano = wg.generate_plan(catalogo, profilo, split_type="push_pull")
+
+    giorni = list(dict.fromkeys(e.day_label for e in piano.exercises))
+    assert giorni == ["Push A", "Pull A", "Push B", "Pull B"]
+    muscoli = {g: {e.target_muscle for e in piano.exercises if e.day_label == g} for g in giorni}
+    assert {"Quads", "Calves"} <= muscoli["Push A"] and {"Hamstrings", "Glutes"} <= muscoli["Pull A"]
+    # Ogni muscolo due volte a settimana, e nessuna seduta oltre il tetto.
+    for m in wg.PUSH_DAY_MUSCLES + wg.PULL_DAY_MUSCLES:
+        assert sum(m in muscoli[g] for g in giorni) == 2
+    for g in giorni:
+        assert sum(1 for e in piano.exercises if e.day_label == g) <= wg.MAX_EXERCISES_PER_SESSION
+    # I muscoli piccoli hanno un esercizio da serie piene, i grandi di più.
+    da_push_a = [e for e in piano.exercises if e.day_label == "Push A"]
+    assert sum(e.sets for e in da_push_a if e.target_muscle == "Triceps") == wg.TARGET_SETS_PER_EXERCISE
+    assert sum(e.sets for e in da_push_a if e.target_muscle == "Quads") > wg.TARGET_SETS_PER_EXERCISE
+    # Si parte dalle gambe.
+    assert da_push_a[0].target_muscle == "Quads"
+
+
+def test_push_pull_riparte_dagli_esercizi_delle_schede_attive(catalogo):
+    """Gli esercizi della scheda in corso sono graditi: la scheda nuova li
+    ripropone, con i carichi già segnati."""
+    nuovi = _aggiungi(catalogo, ("Pectoral machine", "Chest"), ("Seated leg curl machine", "Hamstrings"))
+    profilo = _profilo(training_days_per_week=3)
+    catalogo.add(profilo)
+    catalogo.commit()
+    attuale = wg.persist_plan(catalogo, profilo, wg.generate_plan(catalogo, profilo, split_type="full_body"))
+    for e in nuovi.values():
+        catalogo.add(WorkoutPlanExercise(
+            workout_plan_id=attuale.id, exercise_id=e.id, day_label=attuale.exercises[0].day_label,
+            target_sets=2, target_reps_min=8, target_reps_max=10, target_rir=3, rest_seconds=90,
+        ))
+    catalogo.commit()
+
+    profilo.training_days_per_week = 4
+    piano = wg.generate_plan(catalogo, profilo, split_type="push_pull")
+    scelti = {e.exercise.name for e in piano.exercises}
+    assert {"Pectoral machine", "Seated leg curl machine"} <= scelti
+
+
+def test_push_pull_tiene_le_croci_inverse_fra_i_deltoidi_posteriori(catalogo):
+    _aggiungi(catalogo, ("Reverse fly cable", "Shoulders"))
+    profilo = _profilo(training_days_per_week=4)
+    catalogo.add(profilo)
+    catalogo.commit()
+    piano = wg.generate_plan(catalogo, profilo, split_type="push_pull")
+    spalle = {e.exercise.name for e in piano.exercises if e.target_muscle == "Shoulders"}
+    posteriori = {e.exercise.name for e in piano.exercises if e.target_muscle == "Rear delts"}
+    assert "Reverse fly cable" not in spalle
+    assert "Reverse fly cable" in posteriori
+
+
+def test_dorso_senza_isolamenti_non_ripete_esercizi_fra_le_sedute(catalogo):
+    """Il dorso ha solo multi-articolari: Pull A e Pull B ne usano di diversi."""
+    for nome in ("Lats isolation", "Lats bodyweight"):
+        catalogo.delete(catalogo.query(Exercise).filter_by(name=nome).one())
+    _aggiungi(catalogo)
+    for nome in ("Lat pulldown", "Seated row", "One arm pulldown"):
+        catalogo.add(Exercise(name=nome, primary_muscle="Lats", equipment="Machine", is_compound=True))
+    profilo = _profilo(training_days_per_week=4)
+    catalogo.add(profilo)
+    catalogo.commit()
+    piano = wg.generate_plan(catalogo, profilo, split_type="push_pull")
+    a = [e.exercise.name for e in piano.exercises if e.day_label == "Pull A" and e.target_muscle == "Lats"]
+    b = [e.exercise.name for e in piano.exercises if e.day_label == "Pull B" and e.target_muscle == "Lats"]
+    assert len(set(a)) == len(a) == 2 and not set(a) & set(b)

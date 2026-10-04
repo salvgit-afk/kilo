@@ -100,7 +100,10 @@ def test_promemoria_allenamento_all_ora_abituale(db: Session):
         db.add(
             WorkoutSession(
                 profile_id=p.id, date=OGGI - dt.timedelta(days=i),
-                started_at=dt.datetime.combine(OGGI - dt.timedelta(days=i), dt.time(19), tzinfo=ROMA),
+                # In UTC, come le salva l'app: SQLite scarta il fuso.
+                started_at=dt.datetime.combine(
+                    OGGI - dt.timedelta(days=i), dt.time(19), tzinfo=ROMA
+                ).astimezone(dt.timezone.utc),
             )
         )
     db.commit()
