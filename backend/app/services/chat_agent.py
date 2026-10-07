@@ -179,8 +179,9 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "notte": ("sonno",),
     "ore di sonno": ("sonno", "recupero_notturno"),
     "riposo notturno": ("sonno", "recupero_notturno"),
-    "stanco": ("sonno", "autoregolazione", "doms"),
-    "stanchezza": ("sonno", "autoregolazione", "doms"),
+    # La radice copre stanco, stanca, stanchi e stanchezza: con "stanco" una
+    # domanda al femminile ("sono stanca") non trovava nessun documento.
+    "stanc": ("sonno", "autoregolazione", "doms"),
     "sveglia": ("sonno",),
     "turni di notte": ("sonno",),
     # Tecniche di intensità ed efficienza temporale
@@ -265,8 +266,13 @@ KEYWORD_TAGS: dict[str, tuple[str, ...]] = {
     "ciclo è saltato": ("reds", "deficit_calorico"),
     "mestruazion": ("reds", "deficit_calorico"),
     "amenorrea": ("reds", "deficit_calorico"),
+    # Solo la stanchezza che dura: la parola da sola compariva due volte in
+    # questo dizionario e la seconda cancellava la prima, così "stanchezza"
+    # non portava più ai documenti su sonno e recupero.
     "sempre stanc": ("reds", "deficit_calorico"),
-    "stanchezza": ("reds", "deficit_calorico"),
+    "stanchezza cronica": ("reds", "deficit_calorico"),
+    "stanchezza costante": ("reds", "deficit_calorico"),
+    "stanchezza continua": ("reds", "deficit_calorico"),
     # Attività fisica per la salute (linee guida OMS).
     "aerobic": ("attivita_generale", "cardio"),
     "salute generale": ("attivita_generale",),
