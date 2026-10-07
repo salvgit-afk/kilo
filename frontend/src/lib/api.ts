@@ -168,6 +168,8 @@ export type SessionSet = {
   reps: number;
   weight_kg: number;
   rir: number | null;
+  /** Dato dal telefono alle serie salvate senza rete (vedi `lib/offline.ts`). */
+  client_id?: string | null;
 };
 
 export type WorkoutSessionLog = {

@@ -428,3 +428,92 @@ def test_scheda_di_un_altro_non_si_sceglie(ambiente):
     assert r.status_code == 404
     db.refresh(altrui)
     assert altrui.is_current is False
+
+
+# --- Allenamento senza rete: invii ripetuti e orari del telefono ---------------------
+
+
+def test_sessione_e_serie_inviate_due_volte_restano_una(ambiente):
+    """La risposta si perde, il telefono rimanda: niente doppioni."""
+    client, db = ambiente
+    h, pid = _account(client, "offline@example.com")
+    piano, riga, panca, _ = _scheda(db, pid)
+    corpo = {"day_label": "A", "workout_plan_id": piano.id, "date": str(dt.date.today()),
+             "start": True, "client_id": "11111111-aaaa-4bbb-8ccc-000000000001"}
+    s1 = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json=corpo).json()
+    s2 = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json=corpo).json()
+    assert s1["id"] == s2["id"]
+    assert db.query(WorkoutSession).filter_by(profile_id=pid).count() == 1
+
+    serie = {"exercise_id": panca.id, "set_number": 1, "reps": 8, "weight_kg": 60,
+             "client_id": "11111111-aaaa-4bbb-8ccc-000000000002"}
+    a = client.post(f"/workout/sessions/{s1['id']}/sets", headers=h, json=serie)
+    b = client.post(f"/workout/sessions/{s1['id']}/sets", headers=h, json=serie)
+    assert a.status_code == 201 and a.json()["id"] == b.json()["id"]
+    assert len(client.get(f"/workout/sessions/current?profile_id={pid}&day_label=A&plan_id={piano.id}&today={dt.date.today()}", headers=h).json()["sets"]) == 1
+
+
+def test_identificativo_di_un_altro_rifiutato(ambiente):
+    client, db = ambiente
+    h1, pid1 = _account(client, "primo@example.com")
+    h2, pid2 = _account(client, "secondo@example.com")
+    corpo = {"date": str(dt.date.today()), "client_id": "22222222-aaaa-4bbb-8ccc-000000000001"}
+    assert client.post(f"/workout/sessions?profile_id={pid1}", headers=h1, json=corpo).status_code == 201
+    r = client.post(f"/workout/sessions?profile_id={pid2}", headers=h2, json=corpo)
+    assert r.status_code == 409
+
+
+def test_orari_dell_allenamento_fatto_senza_rete(ambiente):
+    """Avvio e fine sono quelli veri, non l'ora in cui torna la rete."""
+    client, db = ambiente
+    h, pid = _account(client, "orari@example.com")
+    piano, *_ = _scheda(db, pid)
+    adesso = dt.datetime.now(dt.timezone.utc)
+    inizio = adesso - dt.timedelta(hours=2)
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json={
+        "workout_plan_id": piano.id, "date": str(dt.date.today()), "start": True,
+        "started_at": inizio.isoformat(), "client_id": "33333333-aaaa-4bbb-8ccc-000000000001",
+    }).json()
+    fine = inizio + dt.timedelta(minutes=65)
+    r = client.post(f"/workout/sessions/{s['id']}/finish", headers=h, json={"ended_at": fine.isoformat()})
+    assert r.status_code == 200
+    assert abs(r.json()["duration_seconds"] - 65 * 60) <= 1
+
+
+def test_orari_impossibili_diventano_adesso(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "futuro@example.com")
+    domani = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    s = client.post(f"/workout/sessions?profile_id={pid}", headers=h, json={
+        "date": str(dt.date.today()), "start": True, "started_at": domani.isoformat(),
+    }).json()
+    avvio = dt.datetime.fromisoformat(s["started_at"].replace("Z", "+00:00"))
+    if avvio.tzinfo is None:
+        avvio = avvio.replace(tzinfo=dt.timezone.utc)
+    assert avvio < dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=1)
+    # Fine prima dell'avvio: si usa adesso, la durata non è negativa.
+    r = client.post(f"/workout/sessions/{s['id']}/finish", headers=h,
+                    json={"ended_at": (avvio - dt.timedelta(hours=1)).isoformat()})
+    assert r.json()["duration_seconds"] >= 0
+
+
+# --- Note sugli esercizi ---------------------------------------------------------------
+
+
+def test_note_sugli_esercizi(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "note@example.com")
+    _, _, panca, squat = _scheda(db, pid)
+    r = client.put(f"/workout/exercises/{panca.id}/note?profile_id={pid}", headers=h,
+                   json={"text": "  Sedile 4, schienale 2  "})
+    assert r.status_code == 200 and r.json()["text"] == "Sedile 4, schienale 2"
+    note = client.get(f"/workout/exercise-notes?profile_id={pid}&exercise_ids={panca.id}&exercise_ids={squat.id}",
+                      headers=h).json()
+    assert note == {str(panca.id): "Sedile 4, schienale 2"}
+    # Un altro utente non vede le note.
+    h2, pid2 = _account(client, "altro-note@example.com")
+    assert client.get(f"/workout/exercise-notes?profile_id={pid2}&exercise_ids={panca.id}", headers=h2).json() == {}
+    assert client.get(f"/workout/exercise-notes?profile_id={pid}&exercise_ids={panca.id}", headers=h2).status_code in (403, 404)
+    # Vuota = cancellata.
+    client.put(f"/workout/exercises/{panca.id}/note?profile_id={pid}", headers=h, json={"text": ""})
+    assert client.get(f"/workout/exercise-notes?profile_id={pid}&exercise_ids={panca.id}", headers=h).json() == {}

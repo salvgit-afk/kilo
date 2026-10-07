@@ -63,6 +63,7 @@ def find_alternatives(
     limit: int = 5,
     q: str | None = None,
     muscle: str | None = None,
+    equipment: str | None = None,
 ) -> list[Alternative]:
     """Alternative per lo stesso gruppo muscolare primario, o per `muscle`
     quando l'utente vuole cambiare proprio il gruppo allenato.
@@ -93,6 +94,7 @@ def find_alternatives(
         Exercise.primary_muscle == gruppo,
         Exercise.id != exercise.id,
         exercise_library.catalog_condition(db),
+        exercise_library.equipment_condition(equipment),
     )
     if q and q.strip():
         # Nome italiano e originale: "cavo" e "cable" trovano lo stesso
@@ -135,6 +137,7 @@ def find_candidates(
     limit: int = 24,
     q: str | None = None,
     exclude_ids: set[int] | None = None,
+    equipment: str | None = None,
 ) -> list[Alternative]:
     """Esercizi da aggiungere alla scheda per un gruppo muscolare.
 
@@ -147,7 +150,9 @@ def find_candidates(
         for p in db.scalars(select(ExercisePreference).where(ExercisePreference.profile_id == profile.id))
     }
     query = select(Exercise).where(
-        Exercise.primary_muscle == muscle, exercise_library.catalog_condition(db)
+        Exercise.primary_muscle == muscle,
+        exercise_library.catalog_condition(db),
+        exercise_library.equipment_condition(equipment),
     )
     if q and q.strip():
         query = query.where(exercise_library.search_condition(q, every_word=False))

@@ -53,6 +53,28 @@ import {
 } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
+import { AlternativesDialog } from "@/components/ExercisePicker";
+import { ExerciseDetailHost } from "@/components/ExerciseDetail";
+import { ExerciseNoteLine, recallNotes, rememberNotes } from "@/components/ExerciseNote";
+import {
+  QUEUE_EVENT,
+  addSet,
+  createSession,
+  deleteSet,
+  finishSession,
+  isRetryable,
+  newClientId,
+  pendingCount,
+  pendingEdits,
+  pendingFinish,
+  pendingSession,
+  pendingSets,
+  recallLast,
+  rememberLast,
+  reopenSession,
+  updateSet,
+  type QueueEvent,
+} from "@/lib/offline";
 import { primeRestSound, restTimer, useRest, type Rest } from "@/lib/restTimer";
 
 // --- Formati ----------------------------------------------------------------------
@@ -329,6 +351,10 @@ export function ParamsChips({
 type Row = {
   key: string;
   setId: number | null;
+  /** Identificativo dato dal telefono: vale finché la serie è in coda senza rete. */
+  clientId?: string;
+  /** Salvata sul telefono, non ancora arrivata al server. */
+  pending?: boolean;
   /** Numero della serie salvata: dopo un'eliminazione non coincide più con la posizione. */
   num?: number;
   // null = campo vuoto: vale il suggerimento mostrato in grigio.
@@ -347,10 +373,19 @@ function emptyRow(): Row {
   return { key: newKey(), setId: null, kg: null, reps: null, rir: null, saved: null };
 }
 
-function rowsFor(target: PlanExerciseParams, logged: SessionSet[]): Row[] {
+/** Una serie già segnata: arrivata al server (`setId`) o ancora in coda (`pending`). */
+type LoggedSet = Pick<SessionSet, "set_number" | "reps" | "weight_kg" | "rir"> & {
+  setId: number | null;
+  clientId?: string;
+  pending?: boolean;
+};
+
+function rowsFor(target: PlanExerciseParams, logged: LoggedSet[]): Row[] {
   const rows: Row[] = logged.map((s) => ({
     key: newKey(),
-    setId: s.id,
+    setId: s.setId,
+    clientId: s.clientId,
+    pending: s.pending,
     num: s.set_number,
     kg: s.weight_kg,
     reps: s.reps,
@@ -393,6 +428,92 @@ function compare(saved: { kg: number; reps: number }, prev?: SessionSet): { text
 
 type Phase = "loading" | "ready" | "running" | "done";
 
+// --- Cosa il telefono ricorda dell'allenamento di oggi ---------------------------------
+//
+// Chiave: scheda, giorno della scheda e data. Si tiene solo il giorno corrente.
+
+const SWAPS_KEY = "kilo:cambi-allenamento";
+const TODAY_KEY = "kilo:allenamento-oggi";
+type Swaps = Record<number, PlanExercise["exercise"]>;
+
+function readStore<T>(key: string, chiave: string): T | null {
+  try {
+    return (JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, T>)[chiave] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStore<T>(key: string, chiave: string, valore: T | null) {
+  try {
+    const data = chiave.split(":").pop();
+    const tutto = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, T>;
+    // Gli altri giorni non servono più.
+    const tenuti = Object.fromEntries(Object.entries(tutto).filter(([k]) => k.endsWith(`:${data}`) && k !== chiave));
+    if (valore !== null) tenuti[chiave] = valore;
+    localStorage.setItem(key, JSON.stringify(tenuti));
+  } catch {
+    /* solo una comodità */
+  }
+}
+
+/** Gli esercizi cambiati "solo per oggi": riga della scheda -> esercizio scelto. */
+function readSwaps(chiave: string): Swaps {
+  return readStore<Swaps>(SWAPS_KEY, chiave) ?? {};
+}
+
+function writeSwaps(chiave: string, swaps: Swaps) {
+  writeStore(SWAPS_KEY, chiave, Object.keys(swaps).length ? swaps : null);
+}
+
+/** La sessione di oggi letta l'ultima volta: senza rete non se ne crea una seconda. */
+function rememberToday(chiave: string, s: WorkoutSessionLog | null) {
+  if (s && s.id > 0) writeStore(TODAY_KEY, chiave, s);
+}
+
+function recallToday(chiave: string): WorkoutSessionLog | null {
+  return readStore<WorkoutSessionLog>(TODAY_KEY, chiave);
+}
+
+/**
+ * Le serie della sessione: quelle del server, con le correzioni ancora in coda,
+ * più quelle salvate sul telefono e non ancora arrivate. Una serie arrivata ma
+ * ancora in coda (risposta persa) compare una volta sola.
+ */
+function loggedSets(corrente: WorkoutSessionLog | null): (LoggedSet & { exercise_id: number })[] {
+  if (!corrente) return [];
+  const { updates, deletes } = pendingEdits();
+  const dalServer = corrente.sets
+    .filter((x) => !deletes.has(x.id))
+    .map((x) => {
+      const u = updates.get(x.id);
+      return {
+        exercise_id: x.exercise_id,
+        set_number: x.set_number,
+        reps: u?.reps ?? x.reps,
+        weight_kg: u?.weight_kg ?? x.weight_kg,
+        rir: u ? u.rir : x.rir,
+        setId: x.id,
+        clientId: x.client_id ?? undefined,
+        pending: !!u,
+      };
+    });
+  const arrivate = new Set(dalServer.map((x) => x.clientId).filter(Boolean));
+  const inAttesa = pendingSets([corrente.id])
+    .filter((x) => !arrivate.has(x.client_id))
+    .map((x) => ({
+      exercise_id: x.exercise_id,
+      set_number: x.set_number,
+      reps: x.reps,
+      weight_kg: x.weight_kg,
+      rir: x.rir,
+      setId: null,
+      clientId: x.client_id,
+      pending: true,
+    }));
+  return [...dalServer, ...inAttesa];
+}
+
 export function SessionDialog({
   profileId,
   plan,
@@ -422,55 +543,130 @@ export function SessionDialog({
     Object.fromEntries(exercises.map((e) => [e.id, paramsOf(e)]))
   );
   const [rows, setRows] = useState<Record<number, Row[]>>({});
+  // Gli esercizi di oggi: quelli della scheda, con i cambi "solo per oggi".
+  const [items, setItems] = useState<PlanExercise[]>(exercises);
+  const [notes, setNotes] = useState<Record<number, string>>({});
   const [editing, setEditing] = useState<PlanExercise | null>(null);
   const [savingParams, setSavingParams] = useState(false);
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlanExercise | null>(null);
+  const [swapping, setSwapping] = useState<PlanExercise | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  // Operazioni salvate sul telefono e non ancora arrivate al server.
+  const [inCoda, setInCoda] = useState(() => pendingCount());
+  // Terminato senza rete: il riepilogo del server arriva quando torna.
+  const [fineInCoda, setFineInCoda] = useState(false);
   const creating = useRef<Promise<WorkoutSessionLog> | null>(null);
   const sessionRef = useRef<WorkoutSessionLog | null>(null);
   sessionRef.current = session;
   const elapsed = useElapsed(phase === "running" ? session?.started_at : null);
   const oggi = useMemo(() => localDate(), []);
+  const chiaveGiorno = `${plan.id}:${dayLabel}:${oggi}`;
 
-  // La sessione di oggi (se c'è) e l'ultima volta di ogni esercizio.
+  // La sessione di oggi (se c'è) e l'ultima volta di ogni esercizio. Senza
+  // rete si riparte da quello che il telefono ricorda: la sessione di oggi,
+  // le serie in coda, l'ultima volta e le note lette l'ultima volta.
   useEffect(() => {
     let annullato = false;
     (async () => {
+      const cambi = readSwaps(chiaveGiorno);
+      const lista = exercises.map((e) => (cambi[e.id] ? { ...e, exercise: cambi[e.id] } : e));
+      const ids = lista.map((e) => e.exercise.id);
+      let corrente: WorkoutSessionLog | null = null;
+      let ultime: Record<number, ExerciseSession> = {};
+      let note: Record<number, string> = {};
       try {
-        const corrente = await api.get<WorkoutSessionLog | null>(
+        corrente = await api.get<WorkoutSessionLog | null>(
           `/workout/sessions/current?profile_id=${profileId}&day_label=${encodeURIComponent(dayLabel)}&plan_id=${plan.id}&today=${oggi}`
         );
         const params = new URLSearchParams({ profile_id: String(profileId) });
-        exercises.forEach((e) => params.append("exercise_ids", String(e.exercise.id)));
+        ids.forEach((id) => params.append("exercise_ids", String(id)));
+        const perNote = new URLSearchParams(params);
         if (corrente) params.set("exclude_session_id", String(corrente.id));
-        const ultime = await api.get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`);
-        if (annullato) return;
-        setSession(corrente);
-        setLast(ultime);
-        setRows(
-          Object.fromEntries(
-            exercises.map((e) => [
-              e.id,
-              rowsFor(
-                paramsOf(e),
-                (corrente?.sets ?? [])
-                  .filter((s) => s.exercise_id === e.exercise.id)
-                  .sort((a, b) => a.set_number - b.set_number)
-              ),
-            ])
-          )
-        );
-        setPhase(corrente?.started_at && !corrente.ended_at ? "running" : "ready");
+        ultime = await api.get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`);
+        rememberLast(ultime);
+        note = await api.get<Record<number, string>>(`/workout/exercise-notes?${perNote}`).catch(() => recallNotes(ids));
+        rememberNotes(note, ids);
+        rememberToday(chiaveGiorno, corrente);
       } catch (e) {
-        if (!annullato) setError(e instanceof Error ? e.message : "Non riesco a caricare l'allenamento.");
+        if (annullato) return;
+        if (!isRetryable(e)) {
+          setError(e instanceof Error ? e.message : "Non riesco a caricare l'allenamento.");
+          return;
+        }
+        corrente = recallToday(chiaveGiorno);
+        ultime = recallLast<ExerciseSession>(ids);
+        note = recallNotes(ids);
+        setError("Sei senza rete: l'allenamento continua, le serie si salvano sul telefono e partono appena torna.");
       }
+      if (annullato) return;
+      // Avviato senza rete e non ancora arrivato: la sessione provvisoria.
+      if (!corrente) corrente = pendingSession(plan.id, dayLabel, oggi);
+      const segnate = loggedSets(corrente);
+      setItems(lista);
+      setSession(corrente);
+      setLast(ultime);
+      setNotes(note);
+      setRows(
+        Object.fromEntries(
+          lista.map((e) => [
+            e.id,
+            rowsFor(
+              paramsOf(e),
+              segnate.filter((s) => s.exercise_id === e.exercise.id).sort((a, b) => a.set_number - b.set_number)
+            ),
+          ])
+        )
+      );
+      const chiusa = !!corrente?.ended_at || (corrente ? pendingFinish(corrente.id) : false);
+      setPhase(corrente?.started_at && !chiusa ? "running" : "ready");
     })();
     return () => {
       annullato = true;
     };
-  }, [profileId, plan.id, dayLabel, exercises, oggi]);
+  }, [profileId, plan.id, dayLabel, exercises, oggi, chiaveGiorno]);
+
+  // Quello che era in coda arriva al server: le righe prendono l'id vero.
+  useEffect(() => {
+    const onQueue = (ev: Event) => {
+      const d = (ev as CustomEvent<QueueEvent>).detail;
+      if (d.type === "changed") {
+        setInCoda(d.pending);
+        if (d.pending === 0) {
+          setRows((prev) =>
+            Object.fromEntries(Object.entries(prev).map(([k, righe]) => [k, righe.map((r) => (r.pending ? { ...r, pending: false } : r))]))
+          );
+        }
+      } else if (d.type === "session") {
+        const s = sessionRef.current;
+        if (s && s.id === d.tempId) {
+          const vera = { ...d.session, ended_at: s.ended_at };
+          setSession(vera);
+          rememberToday(chiaveGiorno, vera);
+          restTimer.rename(d.tempId, d.session.id);
+          onSessionChange?.(vera.started_at && !vera.ended_at ? vera : null);
+        }
+      } else if (d.type === "set") {
+        setRows((prev) =>
+          Object.fromEntries(
+            Object.entries(prev).map(([k, righe]) => [
+              k,
+              righe.map((r) => (r.clientId === d.clientId ? { ...r, setId: d.set.id, pending: false } : r)),
+            ])
+          )
+        );
+      } else if (d.type === "finish") {
+        setSummary((prima) => prima ?? d.summary);
+      } else if (d.type === "dropped") {
+        setError(d.message);
+      }
+    };
+    window.addEventListener(QUEUE_EVENT, onQueue);
+    return () => window.removeEventListener(QUEUE_EVENT, onQueue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chiaveGiorno]);
 
   // Recupero: condiviso con la pillola della scheda, sopravvive a "Riduci".
   const { rest, remaining } = useRest(phase === "running" ? session?.id : null);
@@ -480,24 +676,26 @@ export function SessionDialog({
     onSessionChange?.(s && s.started_at && !s.ended_at ? s : null);
   }
 
-  /** Avvia l'allenamento: crea la sessione di oggi, o riapre quella chiusa. */
+  /** Avvia l'allenamento: crea la sessione di oggi, o riapre quella chiusa.
+   * Senza rete la sessione è provvisoria e parte con la coda. */
   const start = useCallback(async () => {
     setError(null);
     try {
       let s = sessionRef.current;
-      if (s) {
-        s = await api.post<WorkoutSessionLog>(`/workout/sessions/${s.id}/start`);
-      } else {
+      if (s && (!s.started_at || s.ended_at)) {
+        const riaperta = await reopenSession(s.id);
+        s = riaperta.session ?? { ...s, started_at: s.started_at ?? new Date().toISOString(), ended_at: null };
+      } else if (!s) {
         if (!creating.current) {
-          creating.current = api.post<WorkoutSessionLog>(`/workout/sessions?profile_id=${profileId}`, {
+          creating.current = createSession(profileId, {
             day_label: dayLabel,
             workout_plan_id: plan.id,
             date: oggi,
-            start: true,
-          });
+          }).then((r) => r.session);
         }
         s = await creating.current;
       }
+      rememberToday(chiaveGiorno, s);
       update(s);
       setPhase("running");
       notifyLogged(); // il pallino della Scheda sparisce: l'allenamento è iniziato
@@ -508,17 +706,23 @@ export function SessionDialog({
       return null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, dayLabel, plan.id, oggi]);
+  }, [profileId, dayLabel, plan.id, oggi, chiaveGiorno]);
 
   async function finish() {
     const s = sessionRef.current;
     if (!s) return;
     setFinishing(true);
     try {
-      const r = await api.post<SessionSummary>(`/workout/sessions/${s.id}/finish`);
-      setSummary(r);
-      update(r.session);
+      const r = await finishSession(s.id);
       restTimer.clearSession(s.id);
+      if (r.summary) {
+        setSummary(r.summary);
+        update(r.summary.session);
+      } else {
+        // Senza rete: chiuso sul telefono, il riepilogo del server arriva dopo.
+        setFineInCoda(true);
+        update({ ...s, ended_at: new Date().toISOString() });
+      }
       setPhase("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Non sono riuscito a chiudere l'allenamento.");
@@ -542,27 +746,36 @@ export function SessionDialog({
     setError(null);
     try {
       const corpo = { weight_kg: pesi, reps: ripetizioni, rir };
-      let id = row.setId;
-      if (id) {
-        await api.patch(`/workout/sets/${id}`, corpo);
+      const salvata = { busy: false, kg: pesi, reps: ripetizioni, rir, saved: { kg: pesi, reps: ripetizioni, rir } };
+      const ref = row.setId ?? (row.saved ? row.clientId : undefined);
+      if (ref !== undefined) {
+        // Correzione di una serie già segnata (anche se ancora in coda).
+        const { queued } = await updateSet(ref, corpo);
+        patchRow(item.id, row.key, { ...salvata, pending: row.pending || queued });
       } else {
         const s = sessionRef.current?.started_at && !sessionRef.current.ended_at ? sessionRef.current : await start();
         if (!s) throw new Error("allenamento non avviato");
         // La posizione, se libera: eliminata la serie 2 di 3, la nuova terza
         // non deve prendere il numero 3 che ha già l'ultima.
-        const usati = (rows[item.id] ?? []).filter((r) => r.setId && r.num).map((r) => r.num!);
+        const usati = (rows[item.id] ?? []).filter((r) => r.saved && r.num).map((r) => r.num!);
         const numero = usati.includes(index + 1) ? Math.max(...usati) + 1 : index + 1;
-        const creata = await api.post<SessionSet>(`/workout/sessions/${s.id}/sets`, {
+        const clientId = newClientId();
+        const { set, queued } = await addSet(s.id, {
           ...corpo,
           exercise_id: item.exercise.id,
           set_number: numero,
+          client_id: clientId,
         });
-        id = creata.id;
-        patchRow(item.id, row.key, { num: creata.set_number });
+        patchRow(item.id, row.key, {
+          ...salvata,
+          setId: set?.id ?? null,
+          clientId,
+          pending: queued,
+          num: set?.set_number ?? numero,
+        });
         const prossima = nextStep(item, index, pesi, ripetizioni);
         if (prossima) restTimer.start({ sessionId: s.id, total: targets[item.id].rest_seconds, ...prossima });
       }
-      patchRow(item.id, row.key, { setId: id, busy: false, kg: pesi, reps: ripetizioni, rir, saved: { kg: pesi, reps: ripetizioni, rir } });
     } catch (e) {
       patchRow(item.id, row.key, { busy: false });
       setError(e instanceof Error ? `Serie non salvata: ${e.message}` : "Serie non salvata.");
@@ -575,10 +788,10 @@ export function SessionDialog({
     if (index + 1 < serie) {
       return { next: `Poi la serie ${index + 2}`, detail: `${kg(pesi)} kg × ${ripetizioni} · ${exerciseName(item.exercise)}` };
     }
-    const n = exercises.findIndex((e) => e.id === item.id);
-    const dopo = exercises[n + 1];
+    const n = items.findIndex((e) => e.id === item.id);
+    const dopo = items[n + 1];
     return dopo
-      ? { next: `Poi: ${exerciseName(dopo.exercise)}`, detail: `Esercizio ${n + 2} di ${exercises.length}` }
+      ? { next: `Poi: ${exerciseName(dopo.exercise)}`, detail: `Esercizio ${n + 2} di ${items.length}` }
       : null;
   }
 
@@ -588,12 +801,16 @@ export function SessionDialog({
       setTimeout(() => patchRow(item.id, row.key, { confirmDelete: false }), 3000);
       return;
     }
-    if (row.setId) {
+    const ref = row.setId ?? (row.saved ? row.clientId : undefined);
+    if (ref !== undefined) {
       patchRow(item.id, row.key, { busy: true });
       try {
-        await api.del(`/workout/sets/${row.setId}`);
-      } catch {
+        // Senza rete l'eliminazione parte con la coda; una serie mai partita
+        // si toglie solo dal telefono.
+        await deleteSet(ref);
+      } catch (e) {
         patchRow(item.id, row.key, { busy: false });
+        setError(e instanceof Error ? `Serie non eliminata: ${e.message}` : "Serie non eliminata.");
         return;
       }
     }
@@ -605,7 +822,7 @@ export function SessionDialog({
     setRows((prev) => {
       let righe = [...prev[item.id]];
       while (righe.length < v.target_sets) righe.push(emptyRow());
-      while (righe.length > v.target_sets && righe[righe.length - 1].setId === null) righe = righe.slice(0, -1);
+      while (righe.length > v.target_sets && righe[righe.length - 1].saved === null) righe = righe.slice(0, -1);
       return { ...prev, [item.id]: righe };
     });
   }
@@ -626,10 +843,39 @@ export function SessionDialog({
   }
 
   const tutte = Object.values(rows).flat();
-  const fatte = tutte.filter((r) => r.setId).length;
+  const fatte = tutte.filter((r) => r.saved).length;
   const stimaMinuti = Math.round(
-    exercises.reduce((t, e) => t + targets[e.id].target_sets * (targets[e.id].rest_seconds + 45), 0) / 60
+    items.reduce((t, e) => t + targets[e.id].target_sets * (targets[e.id].rest_seconds + 45), 0) / 60
   );
+  // Il riscaldamento si propone sul primo multi-articolare della seduta.
+  const primoMulti = items.find((e) => e.exercise.is_compound)?.id;
+  const cambiOggi = readSwaps(chiaveGiorno);
+
+  /** Cambio dell'esercizio durante l'allenamento (prima di averne segnato le serie). */
+  function cambiaEsercizio(item: PlanExercise, nuovo: PlanExercise["exercise"], ancheScheda: boolean) {
+    const cambi = readSwaps(chiaveGiorno);
+    const originale = exercises.find((e) => e.id === item.id)?.exercise;
+    if (ancheScheda || nuovo.id === originale?.id) delete cambi[item.id];
+    else cambi[item.id] = nuovo;
+    writeSwaps(chiaveGiorno, cambi);
+    setItems((prev) => prev.map((e) => (e.id === item.id ? { ...e, exercise: nuovo } : e)));
+    setRows((prev) => ({ ...prev, [item.id]: rowsFor(targets[item.id], []) }));
+    // L'ultima volta e la nota del nuovo esercizio.
+    const params = new URLSearchParams({ profile_id: String(profileId), exercise_ids: String(nuovo.id) });
+    const s = sessionRef.current;
+    if (s && s.id > 0) params.set("exclude_session_id", String(s.id));
+    api
+      .get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`)
+      .then((u) => {
+        rememberLast(u);
+        setLast((prev) => ({ ...prev, ...u }));
+      })
+      .catch(() => setLast((prev) => ({ ...prev, ...recallLast<ExerciseSession>([nuovo.id]) })));
+    api
+      .get<Record<number, string>>(`/workout/exercise-notes?profile_id=${profileId}&exercise_ids=${nuovo.id}`)
+      .then((n) => setNotes((prev) => ({ ...prev, ...n })))
+      .catch(() => setNotes((prev) => ({ ...prev, ...recallNotes([nuovo.id]) })));
+  }
 
   return (
     <>
@@ -688,18 +934,30 @@ export function SessionDialog({
               <Notice>{error}</Notice>
             </div>
           )}
+          {inCoda > 0 && phase !== "loading" && (
+            <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.07] px-3 py-2 text-[12.5px] leading-snug text-amber-100/90">
+              <svg viewBox="0 0 24 24" className="mt-[1px] h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M3 3l18 18M8.5 8.6A5 5 0 0 0 7 18h10.5M20.3 16.4A4 4 0 0 0 17 10h-.5A6 6 0 0 0 11 5.1" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>
+                {inCoda === 1 ? "1 modifica salvata" : `${inCoda} modifiche salvate`} sul telefono: le invio appena torna la rete.
+              </span>
+            </div>
+          )}
           {phase === "loading" && !error && <Spinner label="Preparo l'allenamento…" />}
 
           {phase === "done" && summary && <Summary summary={summary} />}
+          {phase === "done" && !summary && fineInCoda && <OfflineSummary rows={tutte} />}
 
           {(phase === "ready" || phase === "running") && (
             <div className="space-y-4">
-              {exercises.map((item, n) => {
+              {items.map((item, n) => {
                 const t = targets[item.id];
                 const volta = last[item.exercise.id];
                 const cambiati = !sameParams(t, base[item.id]);
                 const righe = rows[item.id] ?? [];
                 const suggerimenti = hintsFor(righe, t, volta);
+                const iniziato = righe.some((r) => r.saved);
                 return (
                   <motion.section
                     key={item.id}
@@ -713,7 +971,27 @@ export function SessionDialog({
                         {n + 1}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-[16px] font-semibold leading-snug text-white">{exerciseName(item.exercise)}</h3>
+                        <div className="flex items-start gap-2">
+                          <h3 className="min-w-0 flex-1 text-[16px] font-semibold leading-snug text-white">
+                            {exerciseName(item.exercise)}
+                            {cambiOggi[item.id] && (
+                              <span className="ml-1.5 align-middle text-[11px] font-medium text-iris-200/80">· solo oggi</span>
+                            )}
+                          </h3>
+                          {/* Macchina occupata: si cambia prima di cominciare l'esercizio. */}
+                          {!iniziato && (
+                            <button
+                              onClick={() => setSwapping(item)}
+                              aria-label={`Cambia ${exerciseName(item.exercise)}`}
+                              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[12px] font-medium text-white/60 transition hover:border-lime-400/30 hover:text-lime-200"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z" />
+                              </svg>
+                              Cambia
+                            </button>
+                          )}
+                        </div>
                         <button
                           onClick={() => setHistory(item)}
                           className="mt-0.5 text-left text-[12.5px] leading-snug text-white/45 transition hover:text-white/75"
@@ -727,6 +1005,23 @@ export function SessionDialog({
                             "Prima volta: scegli un carico con cui arrivi al RIR indicato"
                           )}
                         </button>
+                        <div className="mt-1.5">
+                          <ExerciseNoteLine
+                            exerciseId={item.exercise.id}
+                            profileId={profileId}
+                            note={notes[item.exercise.id]}
+                            compact
+                            onSaved={(id, testo) => {
+                              setNotes((prev) => {
+                                const nuove = { ...prev };
+                                if (testo) nuove[id] = testo;
+                                else delete nuove[id];
+                                rememberNotes(nuove, [id]);
+                                return nuove;
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -734,6 +1029,10 @@ export function SessionDialog({
                     <div className="mt-3">
                       <ParamsChips value={t} changed={cambiati} onEdit={() => setEditing(item)} />
                     </div>
+
+                    {item.id === primoMulti && !iniziato && (
+                      <WarmupLine workKg={righe[0]?.kg ?? suggerimenti[0]?.kg ?? null} />
+                    )}
 
                     <div className="mt-4">
                       <div className="grid grid-cols-[34px_1fr_1fr_62px_46px] items-center gap-2 px-0.5 pb-1.5 text-[11px] uppercase tracking-wide text-white/35">
@@ -810,9 +1109,17 @@ export function SessionDialog({
                                   whileTap={{ scale: 0.88 }}
                                   onClick={() => saveRow(item, row, i, h)}
                                   disabled={row.busy || effettivo.kg === null || !effettivo.reps || (salvata && !modificata)}
-                                  aria-label={salvata && !modificata ? `Serie ${i + 1} salvata` : `Salva la serie ${i + 1}`}
-                                  className={`grid h-11 w-[46px] place-items-center rounded-xl border transition ${
+                                  aria-label={
                                     salvata && !modificata
+                                      ? row.pending
+                                        ? `Serie ${i + 1} salvata sul telefono, in attesa di rete`
+                                        : `Serie ${i + 1} salvata`
+                                      : `Salva la serie ${i + 1}`
+                                  }
+                                  className={`grid h-11 w-[46px] place-items-center rounded-xl border transition ${
+                                    salvata && !modificata && row.pending
+                                      ? "border-amber-300/60 bg-amber-300/80 text-ink-900"
+                                      : salvata && !modificata
                                       ? "border-lime-400/60 bg-lime-400 text-ink-900"
                                       : "border-lime-400/45 bg-lime-400/[0.12] text-lime-200 hover:bg-lime-400/25 disabled:border-white/10 disabled:bg-transparent disabled:text-white/25"
                                   }`}
@@ -827,7 +1134,18 @@ export function SessionDialog({
                                 </motion.button>
                               </div>
                               <AnimatePresence>
-                                {confronto && (
+                                {row.pending && salvata && !modificata && (
+                                  <motion.p
+                                    key="attesa"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="mt-1 pr-1 text-right text-[11px] text-amber-200/75"
+                                  >
+                                    salvata sul telefono · parte appena torna la rete
+                                  </motion.p>
+                                )}
+                                {confronto && !row.pending && (
                                   <motion.p
                                     initial={{ opacity: 0, y: -4 }}
                                     animate={{ opacity: 1, y: 0 }}
@@ -928,8 +1246,75 @@ export function SessionDialog({
             onClose={() => setHistory(null)}
           />
         )}
+        {swapping && (
+          <AlternativesDialog
+            key={`cambia-${swapping.id}`}
+            item={swapping}
+            profileId={profileId}
+            inSession={{ onPick: (nuovo, ancheScheda) => cambiaEsercizio(swapping, nuovo, ancheScheda) }}
+            onClose={() => setSwapping(null)}
+            onSwapped={onPlanUpdated}
+            onOpenDetail={setDetailId}
+          />
+        )}
       </AnimatePresence>
+      <ExerciseDetailHost exerciseId={detailId} profileId={profileId} onClose={() => setDetailId(null)} />
     </>
+  );
+}
+
+// --- Riscaldamento ---------------------------------------------------------------
+//
+// `advanced_techniques_efficiency.md` (Iversen 2021): riscaldamento specifico
+// dell'esercizio, non generico. Le fonti non danno percentuali: le due serie
+// di avvicinamento (metà del carico × 8, tre quarti × 4) sono una proposta
+// operativa di Kilo, dichiarata come tale. Pesi arrotondati a 2,5 kg.
+
+export function warmupSets(workKg: number | null): { kg: number; reps: number }[] | null {
+  if (workKg === null || workKg < 10) return null;
+  const arrotonda = (x: number) => Math.round(x / 2.5) * 2.5;
+  const serie = [
+    { kg: arrotonda(workKg * 0.5), reps: 8 },
+    { kg: arrotonda(workKg * 0.75), reps: 4 },
+  ];
+  return serie.filter((x, i) => x.kg > 0 && x.kg < workKg && (i === 0 || x.kg > serie[i - 1].kg));
+}
+
+function WarmupLine({ workKg }: { workKg: number | null }) {
+  const serie = warmupSets(workKg);
+  return (
+    <div className="mt-3 rounded-xl border border-iris-400/20 bg-iris-400/[0.06] px-3 py-2 text-[12.5px] leading-snug text-white/70">
+      <span className="font-semibold text-iris-100">Riscaldamento</span>{" "}
+      <span className="font-mono tabular-nums">
+        {serie?.length
+          ? serie.map((x) => `${kg(x.kg)} kg × ${x.reps}`).join(" · ")
+          : "due serie leggere: metà del carico × 8, poi tre quarti × 4"}
+      </span>
+      <span className="mt-0.5 block text-[11px] text-white/40">
+        Specifico per questo esercizio, prima delle serie di lavoro. Non si segna e non conta nel volume. Proposta di Kilo.
+      </span>
+    </div>
+  );
+}
+
+/** Allenamento terminato senza rete: quello che si sa sul telefono. */
+function OfflineSummary({ rows }: { rows: Row[] }) {
+  const fatte = rows.filter((r) => r.saved);
+  const volume = fatte.reduce((t, r) => t + r.saved!.kg * r.saved!.reps, 0);
+  return (
+    <div className="space-y-2 py-4 text-center">
+      <div className="flex justify-center">
+        <Mascot size={56} mood="happy" />
+      </div>
+      <p className="text-[17px] font-semibold text-white">Allenamento terminato</p>
+      <p className="font-mono text-[13px] tabular-nums text-white/65">
+        {fatte.length} serie · {kg(Math.round(volume))} kg sollevati
+      </p>
+      <p className="mx-auto max-w-sm text-[12.5px] leading-snug text-amber-100/85">
+        Sei senza rete: è tutto salvato sul telefono. Lo invio appena torna la connessione, con l&apos;ora vera
+        di fine; durata e record compaiono qui allora.
+      </p>
+    </div>
   );
 }
 

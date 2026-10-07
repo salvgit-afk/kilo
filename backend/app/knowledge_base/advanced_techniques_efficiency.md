@@ -175,8 +175,15 @@ La stessa revisione, per chi ha poco tempo, raccomanda di:
 - Questo file affianca `hypertrophy_prescription.md`, che già copre le
   tecniche avanzate dal lato della prescrizione: qui c'è il dato aggiornato
   sull'efficienza temporale.
+- **Riscaldamento nell'allenamento**: sul primo esercizio multi-articolare
+  della seduta l'app propone un riscaldamento **specifico dell'esercizio**,
+  come indicato da Iversen e colleghi: due serie di avvicinamento, circa metà
+  del carico di lavoro per 8 ripetizioni e tre quarti per 4, pesi arrotondati
+  a 2,5 kg. Non si segnano e non contano nel volume.
 
 **Traduzione operativa dichiarata**: la tabella "quando conviene usarle" è una
 sintesi di progetto. Le fonti dicono che gli effetti sono simili e che l'uso
 va guidato da obiettivi e vincoli individuali, ma non forniscono questo elenco
-di casi.
+di casi. Allo stesso modo, nel riscaldamento le **percentuali e le
+ripetizioni** (metà × 8, tre quarti × 4) sono una proposta di Kilo: la fonte
+indica che il riscaldamento sia specifico dell'esercizio, non quanto caricare.

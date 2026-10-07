@@ -79,6 +79,11 @@ export const restTimer = {
   clear() {
     write(null);
   },
+  /** La sessione avviata senza rete ha ricevuto il suo id vero: il recupero la segue. */
+  rename(from: number, to: number) {
+    const r = read();
+    if (r?.sessionId === from) write({ ...r, sessionId: to });
+  },
   /** Da chiamare quando la sessione finisce: il timer non le sopravvive. */
   clearSession(sessionId: number) {
     if (read()?.sessionId === sessionId) write(null);

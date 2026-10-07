@@ -493,3 +493,45 @@ def test_lo_storico_dei_carichi_vale_per_tutto_il_gruppo_di_doppioni(db):
         ultima = training_log.last_performance(db, profilo.id, [esercizio.id])[esercizio.id]
         assert [(s.weight_kg, s.reps) for s in ultima.sets] == [(10, 8)]
     assert set(training_log.same_exercise_ids(db, altro.id)) == {altro.id}
+
+
+# --- Filtro per attrezzatura ------------------------------------------------------------
+
+
+def test_filtro_attrezzatura(db):
+    for eid, nome, att in [
+        ("C", "Triceps Pushdown: Cable", "cable"), ("M", "Triceps Extension: Machine", "machine"),
+        ("S", "Bench Press: Smith Machine (Close Grip)", "smith machine"),
+        ("D", "Tate Press with Dumbbell", "dumbbell"), ("B", "JM Press", "barbell"),
+        ("Z", "Lying Triceps Press", "e-z curl bar"), ("P", "Bench Dips", lib.BODYWEIGHT),
+        ("X", "Triceps Dips", "parallel bars"),
+    ]:
+        _ex(db, lib.SOURCE_EVERKINETIC, eid, nome, "Triceps", equipment=att)
+    profilo = _profilo()
+    db.add(profilo)
+    db.commit()
+
+    def con(chiave):
+        return {c.exercise.external_id for c in sw.find_candidates(db, profilo, "Triceps", equipment=chiave)}
+
+    assert con("cavi") == {"C"}
+    assert con("macchine") == {"M"}, "il multipower è a parte"
+    assert con("multipower") == {"S"}
+    assert con("manubri") == {"D"}
+    assert con("bilanciere") == {"B", "Z"}
+    assert con("corpo_libero") == {"P", "X"}
+    assert len(con(None)) == len(con("sconosciuto")) == 8
+
+
+def test_nota_vale_anche_per_il_doppione(db):
+    from app.services import exercise_notes
+
+    a_mano = _ex(db, lib.SOURCE_MANUAL, "single-arm-overhead-cable-triceps-extension", "Overhead", "Triceps",
+                 in_catalog=True)
+    disegni = _ex(db, lib.SOURCE_EVERKINETIC, "0199", "Overhead drawn", "Triceps", in_catalog=True)
+    profilo = _profilo()
+    db.add(profilo)
+    db.commit()
+    exercise_notes.set_note(db, profilo.id, a_mano.id, "Cavo alla tacca 3")
+    lib.apply_duplicates(db, [["everkinetic:0199", "kilo:single-arm-overhead-cable-triceps-extension"]])
+    assert exercise_notes.notes_for(db, profilo.id, [disegni.id]) == {disegni.id: "Cavo alla tacca 3"}

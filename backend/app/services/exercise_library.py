@@ -816,6 +816,33 @@ _SEARCH_STOPWORDS = frozenset(
 )
 
 
+# Filtro per attrezzatura nel selettore degli esercizi: chiave -> parole che
+# devono comparire nel campo `equipment` (già normalizzato fra le fonti), e
+# quelle che lo escludono. Il multipower è a parte dalle macchine: in palestra
+# è un attrezzo diverso.
+EQUIPMENT_FILTERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "cavi": (("cable",), ()),
+    "macchine": (("machine",), ("smith",)),
+    "manubri": (("dumbbell",), ()),
+    "bilanciere": (("barbell", "e-z curl bar", "trap bar"), ()),
+    "multipower": (("smith",), ()),
+    "corpo_libero": (("bodyweight", "pull-up bar", "parallel bars", "rings"), ()),
+    "elastici": (("band",), ()),
+}
+
+
+def equipment_condition(chiave: str | None):
+    """Filtro SQL per una chiave di `EQUIPMENT_FILTERS`; nessun filtro se sconosciuta."""
+    regola = EQUIPMENT_FILTERS.get(chiave or "")
+    if regola is None:
+        return true()
+    dentro, fuori = regola
+    return and_(
+        or_(*(Exercise.equipment.ilike(f"%{p}%") for p in dentro)),
+        *(~Exercise.equipment.ilike(f"%{p}%") for p in fuori),
+    )
+
+
 def _search_words(q: str) -> list[tuple[str, tuple[str, ...]]]:
     """Le parole utili della ricerca, ciascuna con i termini inglesi che la traducono."""
     parole = []
