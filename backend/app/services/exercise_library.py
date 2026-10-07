@@ -146,6 +146,14 @@ EVERKINETIC_PRIMARY_OVERRIDE = {
     "0135": "Adductors", "0157": "Adductors",            # adductor: fuori scheda
     "0099": "Hamstrings", "0100": "Hamstrings", "0107": "Hamstrings",  # stacchi
     "0101": "Hamstrings", "0102": "Hamstrings",          # good morning
+    # Hyperextension alla panca a 45° con la schiena neutra: un'estensione
+    # dell'anca, quindi femorali e glutei; i lombari lavorano da fermi. Il
+    # dataset la dà ai soli lombari, che non sono un gruppo della scheda.
+    "0103": "Hamstrings",
+}
+# Secondari da aggiungere a quelli del dataset dove il primario è stato cambiato.
+EVERKINETIC_SECONDARY_EXTRA = {
+    "0103": ("Glutes", "Lower back"),
 }
 
 # Esclusi: esercizi a tempo (plank, isometrie del collo), mobilità, equilibrio
@@ -356,7 +364,7 @@ def parse_everkinetic_entry(raw: dict) -> dict | None:
     if primario not in _CATALOG_GROUPS:
         return None
 
-    secondari: list[str] = []
+    secondari: list[str] = list(EVERKINETIC_SECONDARY_EXTRA.get(external_id, ()))
     for nome in [*primari[1:], *(raw.get("secondary") or [])]:
         muscolo = EVERKINETIC_MUSCLES.get(nome)
         if muscolo and muscolo != primario and muscolo not in secondari:
@@ -802,6 +810,12 @@ _SEARCH_STEMS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("spall", ("shoulder", "delt")),
     ("sopra", ("overhead",)),
     ("incrociat", ("cross",)),
+    ("iperestension", ("hyperextension", "back extension")),
+)
+# Parole italiane che dicono la stessa cosa nei nomi tradotti: chi cerca
+# "braccio singolo" deve trovare anche le "alzate laterali monolaterali".
+_SEARCH_IT_SIBLINGS: tuple[tuple[str, ...], ...] = (
+    ("singol", "monolateral", "unilateral", "un braccio", "una gamba"),
 )
 _SEARCH_WORDS = {
     "alto": ("high",), "alti": ("high",), "alta": ("high",), "alte": ("high",),
@@ -811,8 +825,8 @@ _SEARCH_WORDS = {
 # Articoli e preposizioni: "croci ai cavi" non deve richiedere "ai" nel nome
 # inglese di un esercizio non ancora tradotto.
 _SEARCH_STOPWORDS = frozenset(
-    "a al ai allo alla alle agli con col coi di del dei della delle da dal dai dalla "
-    "in su sul sui sulla per e il lo la le gli i un una uno".split()
+    "a ad al ai allo alla alle agli con col coi di del dei della delle da dal dai dalla "
+    "in su sul sui sulla per e ed o il lo la le gli i un una uno".split()
 )
 
 
@@ -843,8 +857,9 @@ def equipment_condition(chiave: str | None):
     )
 
 
-def _search_words(q: str) -> list[tuple[str, tuple[str, ...]]]:
-    """Le parole utili della ricerca, ciascuna con i termini inglesi che la traducono."""
+def _search_words(q: str) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Le parole utili della ricerca: per ciascuna le forme da cercare nel nome
+    italiano (la parola e i suoi sinonimi) e i termini inglesi che la traducono."""
     parole = []
     for parola in re.findall(r"[a-zàèéìòù0-9'-]+", q.lower()):
         if parola in _SEARCH_STOPWORDS or len(parola) < 2:
@@ -853,14 +868,18 @@ def _search_words(q: str) -> list[tuple[str, tuple[str, ...]]]:
         for radice, inglesi in _SEARCH_STEMS:
             if parola.startswith(radice):
                 termini.update(inglesi)
-        parole.append((parola, tuple(sorted(termini))))
+        italiane = {parola}
+        for gruppo in _SEARCH_IT_SIBLINGS:
+            if any(parola.startswith(r) for r in gruppo):
+                italiane.update(gruppo)
+        parole.append((tuple(sorted(italiane)), tuple(sorted(termini))))
     return parole
 
 
-def _word_condition(parola: str, termini: tuple[str, ...]):
+def _word_condition(italiane: tuple[str, ...], termini: tuple[str, ...]):
     # Anche l'attrezzatura: "adductor machine" ha "macchina" solo lì.
     return or_(
-        Exercise.name_it.ilike(f"%{parola}%"),
+        *(Exercise.name_it.ilike(f"%{i}%") for i in italiane),
         *(Exercise.name.ilike(f"%{t}%") for t in termini),
         *(Exercise.equipment.ilike(f"%{t}%") for t in termini),
     )
@@ -887,8 +906,8 @@ def search_score(exercise: Exercise, q: str) -> int:
     attrezzi = (exercise.equipment or "").lower()
     return sum(
         1
-        for parola, termini in _search_words(q)
-        if parola in nome_it or any(t in nome or t in attrezzi for t in termini)
+        for italiane, termini in _search_words(q)
+        if any(i in nome_it for i in italiane) or any(t in nome or t in attrezzi for t in termini)
     )
 
 

@@ -296,6 +296,7 @@ def list_alternatives(
             exercise=a.exercise,
             preserves_stimulus=a.preserves_stimulus,
             already_preferred=a.already_preferred,
+            avoided=a.avoided,
         )
         for a in alternative
     ]
@@ -438,18 +439,36 @@ def list_candidates(
     q: str | None = None,
     limit: int = 24,
     equipment: str | None = Query(default=None, max_length=20),
+    day: str | None = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> list[AlternativeOut]:
-    """Esercizi da aggiungere alla scheda per un gruppo muscolare."""
+    """Esercizi da aggiungere alla scheda per un gruppo muscolare.
+
+    Con `day` si escludono solo quelli già in quel giorno (doppioni compresi):
+    in una Push/Pull lo stesso esercizio può stare nel Pull A e nel Pull B.
+    Senza, come prima, tutti quelli della scheda.
+    """
     piano = _plan_for(db, profile.id, plan_id)
+    if day is None:
+        esclusi = {e.exercise_id for e in piano.exercises}
+    else:
+        esclusi = {
+            i
+            for e in piano.exercises
+            if e.day_label == day
+            for i in training_log.same_exercise_ids(db, e.exercise_id)
+        }
     candidati = exercise_swap.find_candidates(
         db, profile, muscle, limit=max(1, min(limit, 200)), q=q, equipment=equipment,
-        exclude_ids={e.exercise_id for e in piano.exercises},
+        exclude_ids=esclusi,
     )
     translation.ensure_translated(db, [c.exercise for c in candidati])
     return [
-        AlternativeOut(exercise=c.exercise, preserves_stimulus=False, already_preferred=c.already_preferred)
+        AlternativeOut(
+            exercise=c.exercise, preserves_stimulus=False,
+            already_preferred=c.already_preferred, avoided=c.avoided,
+        )
         for c in candidati
     ]
 

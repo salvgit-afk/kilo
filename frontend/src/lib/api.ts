@@ -276,6 +276,8 @@ export type Alternative = {
   exercise: Exercise;
   preserves_stimulus: boolean;
   already_preferred: boolean;
+  /** Da evitare: tolto da una scheda in passato o segnato come sgradito. Resta fra le scelte, in fondo. */
+  avoided?: "replaced" | "disliked" | null;
 };
 
 export type NutritionTargets = {

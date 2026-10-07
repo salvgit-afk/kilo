@@ -167,6 +167,72 @@ def test_candidati_da_aggiungere_senza_quelli_gia_in_scheda(ambiente):
     assert [c["exercise"]["name"] for c in r.json()] == ["Dumbbell Fly"]
 
 
+def test_candidati_di_un_giorno_ammettono_quelli_degli_altri_giorni(ambiente):
+    """In una Push/Pull lo stesso esercizio sta nel Pull A e nel Pull B: col
+    giorno si escludono solo quelli già lì, doppioni compresi."""
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, _riga, panca, squat = _scheda(db, pid)
+    # Nel giorno B la versione ora nascosta della stessa panca.
+    gemella = Exercise(name="Barbell Bench Press", primary_muscle="Chest", is_compound=True,
+                       duplicate_of_id=panca.id)
+    croci = Exercise(name="Dumbbell Fly", primary_muscle="Chest", is_compound=False)
+    db.add_all([gemella, croci])
+    db.flush()
+    db.add(WorkoutPlanExercise(
+        workout_plan_id=piano.id, exercise_id=squat.id, day_label="C", target_sets=3,
+        target_reps_min=6, target_reps_max=8, target_rir=2, rest_seconds=150,
+    ))
+    db.add(WorkoutPlanExercise(
+        workout_plan_id=piano.id, exercise_id=gemella.id, day_label="B", target_sets=3,
+        target_reps_min=6, target_reps_max=8, target_rir=2, rest_seconds=150,
+    ))
+    db.commit()
+
+    def nomi(giorno):
+        r = client.get(f"/workout/plans/{piano.id}/candidates?profile_id={pid}&muscle=Chest&day={giorno}", headers=h)
+        assert r.status_code == 200, r.text
+        return [c["exercise"]["name"] for c in r.json()]
+
+    assert nomi("A") == ["Dumbbell Fly"]
+    assert nomi("B") == ["Dumbbell Fly"], "la gemella nascosta nel giorno B esclude la panca visibile"
+    assert set(nomi("C")) == {"Bench Press", "Dumbbell Fly"}
+    r = client.post(f"/workout/plans/{piano.id}/exercises?profile_id={pid}", headers=h,
+                    json={"exercise_id": panca.id, "day_label": "C"})
+    assert r.status_code == 201, r.text
+    assert sum(e["exercise"]["id"] == panca.id for e in r.json()["exercises"]) == 2
+
+
+def test_cambiare_esercizio_non_lo_fa_sparire_dalle_scelte(ambiente):
+    """Il vecchio esercizio resta fra le alternative. Quelli già segnati così
+    da una sostituzione di prima tornano visibili, in fondo e segnalati."""
+    from app.models import ExercisePreference
+
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    piano, riga, panca, _squat = _scheda(db, pid)
+    croci = Exercise(name="Dumbbell Fly", primary_muscle="Chest", is_compound=False)
+    vecchio = Exercise(name="Cable Crossover", primary_muscle="Chest", is_compound=False)
+    db.add_all([croci, vecchio])
+    db.flush()
+    db.add(ExercisePreference(profile_id=pid, exercise_id=vecchio.id, is_preferred=False,
+                              note="sostituito nella scheda"))
+    db.commit()
+
+    r = client.post(f"/workout/plan-exercises/{riga.id}/swap?profile_id={pid}", headers=h,
+                    json={"replacement_exercise_id": croci.id})
+    assert r.status_code == 200, r.text
+    r = client.get(f"/workout/plan-exercises/{riga.id}/alternatives?profile_id={pid}&limit=20", headers=h)
+    assert r.status_code == 200, r.text
+    scelte = [(a["exercise"]["name"], a["avoided"]) for a in r.json()]
+    assert scelte == [("Bench Press", None), ("Cable Crossover", "replaced")]
+    # Sceglierlo di nuovo lo rimette fra i graditi.
+    client.post(f"/workout/plan-exercises/{riga.id}/swap?profile_id={pid}", headers=h,
+                json={"replacement_exercise_id": vecchio.id})
+    r = client.get(f"/workout/plan-exercises/{riga.id}/alternatives?profile_id={pid}&limit=20", headers=h)
+    assert all(a["avoided"] is None for a in r.json())
+
+
 def test_riordinare_gli_esercizi_di_un_giorno(ambiente):
     client, db = ambiente
     h, pid = _account(client, "a@example.com")

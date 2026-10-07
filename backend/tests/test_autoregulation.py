@@ -343,7 +343,9 @@ def test_alternative_preferiscono_la_stessa_tipologia(scenario):
     assert alternative[0].preserves_stimulus
 
 
-def test_esercizi_sgraditi_non_vengono_riproposti(scenario):
+def test_esercizi_sgraditi_in_fondo_e_segnalati(scenario):
+    """Non spariscono: chi li cerca per nome deve trovarli. Restano in fondo,
+    con il motivo, e il generatore continua a non proporli."""
     db, profilo, plan = scenario
     riga = db.scalars(
         select(WorkoutPlanExercise).where(WorkoutPlanExercise.workout_plan_id == plan.id)
@@ -352,8 +354,12 @@ def test_esercizi_sgraditi_non_vengono_riproposti(scenario):
     scartato = sw.find_alternatives(db, profilo, riga.exercise)[0].exercise
     sw.set_preference(db, profilo, scartato, preferred=False)
 
-    ancora = sw.find_alternatives(db, profilo, riga.exercise)
-    assert scartato.id not in [a.exercise.id for a in ancora]
+    ancora = sw.find_alternatives(db, profilo, riga.exercise, limit=500)
+    assert ancora[-1].exercise.id == scartato.id
+    assert ancora[-1].avoided == "disliked"
+    assert all(a.avoided is None for a in ancora[:-1])
+    nuova = wg.generate_plan(db, profilo)
+    assert scartato.id not in {e.exercise.id for e in nuova.exercises}
 
 
 def test_esercizi_graditi_proposti_per_primi(scenario):

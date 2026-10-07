@@ -87,7 +87,7 @@ ALLOWED_GYM_TERMS = (
     "good morning", "step up", "skull crusher", "spider curl", "zottman",
     "pushdown", "pulley", "t-bar", "crunch", "curl", "ez", "air bike", "sissy",
     "jefferson", "zercher", "zecher", "gironda", "butterfly", "multipower", "dip",
-    "adductor machine", "abductor machine",
+    "adductor machine", "abductor machine", "hyperextension",
 )
 
 _EXERCISE_PROMPT = """Sei un istruttore di sala pesi italiano. Per ogni esercizio scrivi la scheda

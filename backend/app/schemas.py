@@ -272,6 +272,9 @@ class AlternativeOut(BaseModel):
     exercise: ExerciseOut
     preserves_stimulus: bool
     already_preferred: bool
+    # "replaced" (tolto da una scheda) o "disliked" (segnato come sgradito):
+    # resta fra le scelte, in fondo e segnalato.
+    avoided: str | None = None
 
 
 class PreferenceIn(BaseModel):

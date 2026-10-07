@@ -60,7 +60,8 @@ def test_classificazione_ricavata_dal_movimento():
     [
         _voce("0113", "Side Plank", "abdominals"),
         _voce("0001", "Static Neck Flexion and Extension", "trapezius", type_="isometric"),
-        _voce("0103", "Hyperextensions", "erector spinae"),
+        # Solo lombari: non sono un gruppo della scheda (la 0103 sì, vedi i femorali).
+        _voce("0104", "Back Extension on Stability Ball", "erector spinae"),
         {**_voce("0500", "Senza disegni", "deltoid"), "svg": []},
     ],
 )

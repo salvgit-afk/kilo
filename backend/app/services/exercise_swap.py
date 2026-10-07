@@ -42,17 +42,46 @@ class SwapError(RuntimeError):
     """Sostituzione non possibile (esercizio inesistente o nessuna alternativa)."""
 
 
+# La nota con cui una sostituzione segnava il vecchio esercizio come sgradito.
+REPLACED_NOTE = "sostituito nella scheda"
+
+
 @dataclass
 class Alternative:
     exercise: Exercise
     same_type: bool          # stessa tipologia multi-articolare/isolamento
     already_preferred: bool  # già segnato come gradito dall'utente
+    # Segnato da evitare: "replaced" se è successo sostituendolo in una
+    # scheda, "disliked" se l'ha detto l'utente; None altrimenti.
+    avoided: str | None = None
 
     @property
     def preserves_stimulus(self) -> bool:
         """Se la tipologia coincide, la sostituzione non altera nemmeno il
         tempo di recupero previsto dalla scheda."""
         return self.same_type
+
+
+def _preferences(db: Session, profile: UserProfile) -> dict[int, ExercisePreference]:
+    return {
+        p.exercise_id: p
+        for p in db.scalars(select(ExercisePreference).where(ExercisePreference.profile_id == profile.id))
+    }
+
+
+def _alternative(
+    exercise: Exercise, preferenze: dict[int, ExercisePreference], *, same_type: bool
+) -> Alternative:
+    preferenza = preferenze.get(exercise.id)
+    evitato = None
+    if preferenza is not None and not preferenza.is_preferred:
+        evitato = "replaced" if preferenza.note == REPLACED_NOTE else "disliked"
+    return Alternative(
+        exercise=exercise,
+        same_type=same_type,
+        already_preferred=preferenza is not None and preferenza.is_preferred,
+        avoided=evitato,
+    )
 
 
 def find_alternatives(
@@ -70,7 +99,9 @@ def find_alternatives(
 
     Ordinamento: prima quelle già gradite dall'utente, poi quelle che
     preservano la tipologia (e quindi il recupero), infine gli esercizi con
-    immagine e descrizione, che in wger sono i più curati.
+    immagine e descrizione, che in wger sono i più curati. Quelle segnate da
+    evitare restano in fondo, segnalate: non spariscono, perché chi le cerca
+    per nome deve trovarle (e sceglierle di nuovo le rende gradite).
     """
     gruppo = muscle or exercise.primary_muscle
     if not gruppo:
@@ -80,15 +111,7 @@ def find_alternatives(
         )
 
     allowed = _available_equipment_filter(profile)
-
-    preferenze = {
-        p.exercise_id: p.is_preferred
-        for p in db.scalars(
-            select(ExercisePreference).where(
-                ExercisePreference.profile_id == profile.id
-            )
-        )
-    }
+    preferenze = _preferences(db, profile)
 
     query = select(Exercise).where(
         Exercise.primary_muscle == gruppo,
@@ -103,20 +126,14 @@ def find_alternatives(
     candidati = db.scalars(query.order_by(*exercise_library.catalog_order()))
 
     alternative = [
-        Alternative(
-            exercise=candidato,
-            same_type=candidato.is_compound == exercise.is_compound,
-            already_preferred=preferenze.get(candidato.id, False),
-        )
+        _alternative(candidato, preferenze, same_type=candidato.is_compound == exercise.is_compound)
         for candidato in candidati
-        # Gli esercizi che l'utente ha esplicitamente segnato come sgraditi
-        # non vanno riproposti: sarebbe il contrario dello scopo.
-        if preferenze.get(candidato.id, True) is not False
-        and _is_usable(candidato, allowed)
+        if _is_usable(candidato, allowed)
     ]
 
     alternative.sort(
         key=lambda a: (
+            a.avoided is not None,
             not a.already_preferred,
             not a.same_type,
             # A parità di tipologia, prima le varianti in allungamento
@@ -141,14 +158,12 @@ def find_candidates(
 ) -> list[Alternative]:
     """Esercizi da aggiungere alla scheda per un gruppo muscolare.
 
-    Stessi filtri delle alternative (attrezzatura, sgraditi esclusi, graditi
-    in testa), senza un esercizio di partenza con cui confrontarsi.
+    Stessi filtri e stesso ordine delle alternative (attrezzatura, graditi in
+    testa, da evitare in fondo), senza un esercizio di partenza con cui
+    confrontarsi.
     """
     allowed = _available_equipment_filter(profile)
-    preferenze = {
-        p.exercise_id: p.is_preferred
-        for p in db.scalars(select(ExercisePreference).where(ExercisePreference.profile_id == profile.id))
-    }
+    preferenze = _preferences(db, profile)
     query = select(Exercise).where(
         Exercise.primary_muscle == muscle,
         exercise_library.catalog_condition(db),
@@ -158,13 +173,11 @@ def find_candidates(
         query = query.where(exercise_library.search_condition(q, every_word=False))
     esclusi = exclude_ids or set()
     candidati = [
-        Alternative(exercise=ex, same_type=False, already_preferred=preferenze.get(ex.id, False))
+        _alternative(ex, preferenze, same_type=False)
         for ex in db.scalars(query.order_by(*exercise_library.catalog_order()))
-        if ex.id not in esclusi
-        and preferenze.get(ex.id, True) is not False
-        and _is_usable(ex, allowed)
+        if ex.id not in esclusi and _is_usable(ex, allowed)
     ]
-    candidati.sort(key=lambda a: not a.already_preferred)
+    candidati.sort(key=lambda a: (a.avoided is not None, not a.already_preferred))
     return exercise_library.rank_search(candidati, q, key=lambda a: a.exercise)[:limit]
 
 
@@ -239,7 +252,7 @@ def swap_in_plan(
     plan_exercise.exercise_id = replacement.id
 
     if mark_old_as_disliked:
-        set_preference(db, profile, vecchio, preferred=False, note="sostituito nella scheda")
+        set_preference(db, profile, vecchio, preferred=False, note=REPLACED_NOTE)
     set_preference(db, profile, replacement, preferred=True, note="scelto dall'utente")
 
     db.add(
