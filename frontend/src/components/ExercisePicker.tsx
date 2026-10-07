@@ -106,7 +106,8 @@ export function AlternativesDialog({
         api
           .get<Alternative[]>(
             addTo
-              ? `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=${quanti}&muscle=${encodeURIComponent(muscle)}${q}${a}`
+              ? // Esclusi solo quelli già in questo giorno: lo stesso esercizio può stare nel Pull A e nel Pull B.
+                `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=${quanti}&muscle=${encodeURIComponent(muscle)}&day=${encodeURIComponent(addTo.day)}${q}${a}`
               : `/workout/plan-exercises/${item!.id}/alternatives?profile_id=${profileId}&limit=${quanti}${q}${m}${a}`
           )
           .then(setAlts)
@@ -143,8 +144,10 @@ export function AlternativesDialog({
       }
       const updated = await api.post<WorkoutPlan>(
         `/workout/plan-exercises/${item!.id}/swap?profile_id=${profileId}`,
-        // Cambiando muscolo l'esercizio tolto non è sgradito: si vuole allenare altro.
-        { replacement_exercise_id: exerciseId, mark_old_as_disliked: !cambiaMuscolo, allow_muscle_change: cambiaMuscolo }
+        // Cambiare non vuol dire che l'esercizio tolto non piace (si varia, la
+        // macchina è scomoda in quella palestra...): segnarlo sgradito lo faceva
+        // sparire dalle scelte. Lo sgradito si dice dalla scheda dell'esercizio.
+        { replacement_exercise_id: exerciseId, allow_muscle_change: cambiaMuscolo }
       );
       onSwapped(updated);
       if (inSession) {
@@ -297,6 +300,14 @@ export function AlternativesDialog({
                     <div className="absolute left-2 top-2 flex flex-wrap gap-1">
                       {a.already_preferred && (
                         <span className="pill bg-lime-400 text-ink-900">tra i preferiti</span>
+                      )}
+                      {a.avoided && (
+                        <span
+                          className="pill bg-black/65 text-amber-200 backdrop-blur-md"
+                          title="Sceglierlo di nuovo lo rimette fra quelli graditi"
+                        >
+                          {a.avoided === "replaced" ? "sostituito in passato" : "segnato da evitare"}
+                        </span>
                       )}
                       {a.preserves_stimulus && (
                         <span

@@ -314,7 +314,15 @@ NAME_IT_OVERRIDES: dict[str, str] = {
     "free_exercise_db:Cable_Rear_Delt_Fly": "Croci inverse ai cavi incrociati a X",
     "everkinetic:0035": "Alzate posteriori ai cavi da seduto",
     "everkinetic:0017": "Alzata posteriore monolaterale al cavo basso",
-    "repdb:cable-lateral-raise": "Alzate laterali al cavo davanti al corpo",
+    # A un braccio, col cavo davanti al corpo: si distingue così da quelle
+    # "dietro la schiena" e si trova cercando "braccio singolo".
+    "repdb:cable-lateral-raise": "Alzate laterali monolaterali al cavo basso",
+    # Il curl a martello con la corda al cavo basso: "corda" e "martello" nel
+    # nome, come lo si cerca.
+    "everkinetic:0216": "Curl a martello al cavo con corda",
+    # La hyperextension alla panca a 45° (col disco al petto per caricarla),
+    # nel catalogo per i femorali: vedi `EVERKINETIC_PRIMARY_OVERRIDE`.
+    "everkinetic:0103": "Hyperextension per femorali",
     "free_exercise_db:One-Arm_Incline_Lateral_Raise": "Alzate laterali su panca inclinata",
     "repdb:side-lying-lateral-raise": "Alzate laterali sdraiato su un fianco",
     "free_exercise_db:Cable_Rope_Overhead_Triceps_Extension": "French press al cavo basso con corda",

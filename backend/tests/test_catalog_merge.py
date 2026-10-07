@@ -460,6 +460,42 @@ def test_ricerca_di_due_parole_le_vuole_entrambe(db):
     assert [c.exercise.external_id for c in sw.find_candidates(db, profilo, "Biceps", q="curl corda")] == ["C1"]
 
 
+def test_ricerca_braccio_singolo_trova_le_versioni_monolaterali(db):
+    """"Braccio singolo", "monolaterale" e "a un braccio" sono la stessa cosa."""
+    _ex(db, lib.SOURCE_REPDB, "cable-lateral-raise", "Cable Lateral Raise", "Shoulders", equipment="cable",
+        name_it="Alzate laterali monolaterali al cavo basso")
+    _ex(db, lib.SOURCE_MANUAL, "behind-back-cable-lateral-raise", "Cable Lateral Raise Behind the Back",
+        "Shoulders", equipment="cable", name_it="Alzate laterali dietro la schiena")
+    _ex(db, lib.SOURCE_REPDB, "lateral-raise", "Dumbbell Lateral Raise", "Shoulders", equipment="dumbbell")
+    _ex(db, lib.SOURCE_EVERKINETIC, "X1", "Cable Rear Delt Fly", "Shoulders", equipment="cable",
+        name_it="Croci inverse ai cavi incrociati a X")
+    profilo = _profilo()
+    db.add(profilo)
+    db.commit()
+
+    def cerca(q):
+        return [c.exercise.external_id for c in sw.find_candidates(db, profilo, "Shoulders", q=q)]
+
+    assert cerca("alzate laterali a braccio singolo al cavo") == ["cable-lateral-raise"]
+    assert cerca("croci inverse al cavo ad x") == ["X1"]
+
+
+def test_hyperextension_entra_fra_i_femorali():
+    """Il dataset la dà ai soli lombari, che non sono un gruppo della scheda."""
+    c = lib.parse_everkinetic_entry({
+        "id": "0103", "title": "Hyperextensions", "name": "hyperextensions", "type": "isolation",
+        "primary": ["erector spinae"], "secondary": ["ischiocrural muscles", "core"],
+        "equipment": ["bench: hyperextension"], "steps": ["Step one."], "tips": [],
+        "svg": ["svg/0103-relaxation.svg", "svg/0103-tension.svg"],
+    })
+    assert c["primary_muscle"] == "Hamstrings"
+    assert c["secondary_muscles"] == "Glutes, Lower back"
+    assert c["is_compound"] is False
+    assert lib.name_override(Exercise(source=lib.SOURCE_EVERKINETIC, external_id="0103")) == (
+        "Hyperextension per femorali"
+    )
+
+
 # --- Storico dei carichi fra doppioni ---------------------------------------------------
 
 

@@ -197,9 +197,9 @@ export function PreferencesDialog({
 
         <div className="shrink-0 border-t border-white/[0.06] p-4">
           <p className="mb-3 text-[11.5px] leading-relaxed text-white/35">
-            Gli esercizi da evitare non ti vengono più proposti; quelli preferiti vengono
-            scelti per primi. Clicca di nuovo sulla stessa icona per togliere la
-            preferenza.
+            Gli esercizi da evitare non entrano nelle schede nuove e, quando cerchi o cambi un
+            esercizio, restano in fondo; quelli preferiti vengono scelti per primi. Clicca di
+            nuovo sulla stessa icona per togliere la preferenza.
           </p>
           <button className="btn-primary w-full" onClick={onClose}>
             Fatto
