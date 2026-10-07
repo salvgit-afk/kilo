@@ -249,6 +249,8 @@ export type WorkoutPlan = {
   split_type: string | null;
   rationale: string | null;
   is_active: boolean;
+  /** Scelta nel menu della Scheda: i suoi giorni valgono per promemoria e Oggi. */
+  is_current?: boolean;
   started_at: string;
   exercises: PlanExercise[];
 };

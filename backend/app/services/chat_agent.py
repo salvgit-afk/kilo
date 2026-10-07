@@ -28,7 +28,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SupplementDeclaration, UserProfile, WorkoutPlan
-from app.services import clock, food_diary, knowledge_base, nutrition_targets, supplement_intake
+from app.services import (
+    clock,
+    food_diary,
+    knowledge_base,
+    nutrition_targets,
+    plan_editing,
+    supplement_intake,
+    training_schedule,
+)
 
 logger = logging.getLogger("chat_agent")
 
@@ -336,10 +344,12 @@ def _user_context(db: Session, profile: UserProfile) -> str:
         .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
         .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
     ).all()
+    in_uso = training_schedule.current_plan(db, profile.id)
     for piano in piani:
-        giorni = sorted({e.day_label for e in piano.exercises})
+        giorni = plan_editing.day_labels(piano)
+        stato = "Scheda in uso" if in_uso is not None and piano.id == in_uso.id else "Altra scheda attiva"
         righe.append(
-            f"- Scheda attiva: «{piano.name}», {piano.days_per_week} giorni "
+            f"- {stato}: «{piano.name}», {piano.days_per_week} giorni "
             f"({', '.join(giorni)}), {len(piano.exercises)} esercizi in totale"
         )
     if not piani:

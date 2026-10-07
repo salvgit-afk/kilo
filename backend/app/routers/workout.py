@@ -106,17 +106,12 @@ def _latest_screening(db: Session, profile_id: int) -> ScreeningRecord | None:
 
 
 def _active_plan(db: Session, profile_id: int) -> WorkoutPlan | None:
-    """La scheda attiva più recente (possono essercene più d'una)."""
-    return db.scalar(
-        select(WorkoutPlan)
-        .where(WorkoutPlan.profile_id == profile_id, WorkoutPlan.is_active.is_(True))
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
+    """La scheda in uso fra quelle attive (possono essercene più d'una)."""
+    return training_schedule.current_plan(db, profile_id)
 
 
 def _plan_for(db: Session, profile_id: int, plan_id: int | None) -> WorkoutPlan | None:
-    """La scheda indicata, se è del profilo; senza indicazione la più recente."""
+    """La scheda indicata, se è del profilo; senza indicazione quella in uso."""
     if plan_id is None:
         return _active_plan(db, profile_id)
     piano = db.get(WorkoutPlan, plan_id)
@@ -216,6 +211,21 @@ def generate_plan(
     )
 
 
+@router.put("/plans/{plan_id}/current", response_model=WorkoutPlanOut)
+def choose_current_plan(
+    plan_id: int, db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> WorkoutPlan:
+    """La scheda scelta nel menu diventa quella in uso: i suoi giorni decidono
+    promemoria, notifiche e pagina Oggi."""
+    piano = _plan_for(db, profile.id, plan_id)
+    if piano is None or not piano.is_active:
+        raise HTTPException(status_code=404, detail="Scheda non trovata")
+    training_schedule.set_current_plan(db, piano)
+    db.commit()
+    db.refresh(piano)
+    return piano
+
+
 @router.get("/plans/active", response_model=WorkoutPlanOut | None)
 def read_active_plan(
     db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
@@ -265,7 +275,7 @@ def list_alternatives(
     Serve all'aderenza: un esercizio scelto e gradito viene eseguito, uno
     imposto e noioso viene saltato.
     """
-    limit = max(1, min(limit, 40))
+    limit = max(1, min(limit, 200))
     riga = _plan_row(db, profile, plan_exercise_id)
 
     try:
@@ -419,7 +429,7 @@ def list_candidates(
     """Esercizi da aggiungere alla scheda per un gruppo muscolare."""
     piano = _plan_for(db, profile.id, plan_id)
     candidati = exercise_swap.find_candidates(
-        db, profile, muscle, limit=max(1, min(limit, 40)), q=q,
+        db, profile, muscle, limit=max(1, min(limit, 200)), q=q,
         exclude_ids={e.exercise_id for e in piano.exercises},
     )
     translation.ensure_translated(db, [c.exercise for c in candidati])
@@ -858,12 +868,14 @@ def list_exercises(
     )
     if muscle:
         query = query.where(Exercise.primary_muscle == muscle)
-    if q:
-        # Nome italiano e originale: "panca" e "bench" trovano lo stesso
-        # esercizio, anche se non è ancora tradotto.
-        query = query.where(exercise_library.search_condition(q))
-    query = query.order_by(*exercise_library.catalog_order()).limit(max(1, min(limit, 100)))
-    return list(db.scalars(query))
+    limit = max(1, min(limit, 200))
+    query = query.order_by(*exercise_library.catalog_order())
+    if not q:
+        return list(db.scalars(query.limit(limit)))
+    # Nome italiano e originale: "panca" e "bench" trovano lo stesso
+    # esercizio, anche se non è ancora tradotto.
+    query = query.where(exercise_library.search_condition(q, every_word=False))
+    return exercise_library.rank_search(db.scalars(query), q)[:limit]
 
 
 @router.get("/preferences", response_model=list[PreferenceOut])

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import UserProfile, WeightLog, WorkoutPlan, WorkoutSession
-from app.services import food_diary, nutrition_targets, supplement_intake
+from app.services import food_diary, nutrition_targets, supplement_intake, training_schedule
 
 # Coerente con `progress_report._moving_average`: con meno di 2 pesate in una
 # settimana la media resta esposta all'oscillazione di un singolo giorno.
@@ -98,16 +98,20 @@ def build(db: Session, profile: UserProfile, *, today: dt.date) -> WeeklySummary
             )
         ).all()
     )
-    piano = db.scalar(
-        select(WorkoutPlan)
-        .where(
-            WorkoutPlan.profile_id == profile.id,
-            WorkoutPlan.is_active.is_(True),
-            WorkoutPlan.started_at <= fine,
+    # La scheda in uso, se c'era già in quella settimana; altrimenti la più
+    # recente fra quelle attive allora.
+    piano = training_schedule.current_plan(db, profile.id)
+    if piano is None or piano.started_at > fine:
+        piano = db.scalar(
+            select(WorkoutPlan)
+            .where(
+                WorkoutPlan.profile_id == profile.id,
+                WorkoutPlan.is_active.is_(True),
+                WorkoutPlan.started_at <= fine,
+            )
+            .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
+            .limit(1)
         )
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
 
     media, pesate = _weight_average(db, profile, inizio, fine)
     media_prima, _ = _weight_average(

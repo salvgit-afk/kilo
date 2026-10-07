@@ -57,6 +57,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -539,6 +540,11 @@ class WorkoutPlan(Base):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # La scheda in uso fra quelle attive, scelta nel menu della Scheda: decide
+    # i giorni di allenamento di promemoria, notifiche e pagina Oggi. Al più
+    # una per profilo; senza scelta vale la più recente
+    # (`training_schedule.current_plan`).
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     started_at: Mapped[dt.date] = mapped_column(Date)
     ended_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 

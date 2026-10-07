@@ -43,6 +43,22 @@ class SessionEntry:
         return round(sum(s.weight_kg * s.reps for s in self.sets), 1)
 
 
+def same_exercise_ids(db: Session, exercise_id: int) -> list[int]:
+    """L'esercizio e i suoi doppioni: per lo storico sono lo stesso esercizio.
+
+    Lo stesso movimento compare in più fonti, e se ne tiene visibile uno solo
+    (`exercise_library.apply_duplicates`). Una scheda vecchia può però usare la
+    versione ora nascosta, e una nuova quella visibile: senza questa unione i
+    carichi segnati sull'una sparirebbero passando all'altra.
+    """
+    esercizio = db.get(Exercise, exercise_id)
+    if esercizio is None:
+        return [exercise_id]
+    principale = esercizio.duplicate_of_id or esercizio.id
+    gemelli = set(db.scalars(select(Exercise.id).where(Exercise.duplicate_of_id == principale)))
+    return sorted(gemelli | {principale, exercise_id})
+
+
 def exercise_history(
     db: Session,
     profile_id: int,
@@ -52,11 +68,14 @@ def exercise_history(
     exclude_session_id: int | None = None,
     limit: int = 60,
 ) -> list[SessionEntry]:
-    """Le sessioni in cui compare l'esercizio, dalla più recente."""
+    """Le sessioni in cui compare l'esercizio (o un suo doppione), dalla più recente."""
     query = (
         select(SessionSet, WorkoutSession)
         .join(WorkoutSession, SessionSet.workout_session_id == WorkoutSession.id)
-        .where(WorkoutSession.profile_id == profile_id, SessionSet.exercise_id == exercise_id)
+        .where(
+            WorkoutSession.profile_id == profile_id,
+            SessionSet.exercise_id.in_(same_exercise_ids(db, exercise_id)),
+        )
         .order_by(WorkoutSession.date.desc(), WorkoutSession.id.desc(), SessionSet.set_number)
     )
     if since is not None:
@@ -168,7 +187,7 @@ def summarize_session(db: Session, session: WorkoutSession) -> SessionSummary:
             .join(WorkoutSession, SessionSet.workout_session_id == WorkoutSession.id)
             .where(
                 WorkoutSession.profile_id == session.profile_id,
-                SessionSet.exercise_id == exercise_id,
+                SessionSet.exercise_id.in_(same_exercise_ids(db, exercise_id)),
                 WorkoutSession.id != session.id,
                 WorkoutSession.date <= session.date,
             )

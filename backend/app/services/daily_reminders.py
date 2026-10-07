@@ -4,8 +4,9 @@ Pensati per non dare fastidio. Ricordano solo abitudini che l'utente ha già:
   - gli integratori, solo se ne ha dichiarati;
   - il diario, solo se lo ha usato di recente. A chi non conta le calorie
     non va ricordato ogni giorno di farlo;
-  - l'allenamento, solo nei giorni scelti per la scheda e finché la sessione
-    di oggi non è iniziata (avviata o con almeno una serie segnata).
+  - l'allenamento, solo nei giorni della scheda in uso (quella scelta nel
+    menu della Scheda, non tutte le attive) e finché oggi non è iniziato un
+    allenamento (avviato o con almeno una serie segnata).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutSession,
 )
-from app.services import supplement_intake
+from app.services import supplement_intake, training_schedule
 
 # Il diario conta come "in uso" se c'è almeno un pasto in questi giorni.
 DIARY_RECENT_DAYS = 14
@@ -59,31 +60,27 @@ def _has_food(db: Session, profile: UserProfile, start: dt.date, end: dt.date) -
 
 
 def workouts_due(db: Session, profile: UserProfile, today: dt.date) -> list[WorkoutPlan]:
-    """Schede attive che prevedono allenamento oggi, senza sessione iniziata."""
-    previste = [
-        p
-        for p in db.scalars(
-            select(WorkoutPlan).where(
-                WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-            )
-        )
-        if today.weekday() in p.training_weekdays
-    ]
-    if not previste:
+    """La scheda in uso, se prevede allenamento oggi e non ne è iniziato uno.
+
+    Una lista (vuota o di un elemento) perché chi la usa elenca le schede.
+    Basta un allenamento iniziato oggi, anche con l'altra scheda: ci si è
+    allenati, il promemoria non serve più.
+    """
+    piano = training_schedule.current_plan(db, profile.id)
+    if piano is None or today.weekday() not in piano.training_weekdays:
         return []
-    # Iniziata = avviata con il cronometro, oppure con almeno una serie.
-    iniziate = set(
-        db.scalars(
-            select(WorkoutSession.workout_plan_id)
-            .outerjoin(SessionSet, SessionSet.workout_session_id == WorkoutSession.id)
-            .where(
-                WorkoutSession.profile_id == profile.id,
-                WorkoutSession.date == today,
-                or_(WorkoutSession.started_at.is_not(None), SessionSet.id.is_not(None)),
-            )
+    # Iniziato = avviato con il cronometro, oppure con almeno una serie.
+    iniziato = db.scalar(
+        select(WorkoutSession.id)
+        .outerjoin(SessionSet, SessionSet.workout_session_id == WorkoutSession.id)
+        .where(
+            WorkoutSession.profile_id == profile.id,
+            WorkoutSession.date == today,
+            or_(WorkoutSession.started_at.is_not(None), SessionSet.id.is_not(None)),
         )
+        .limit(1)
     )
-    return [p for p in previste if p.id not in iniziate]
+    return [] if iniziato is not None else [piano]
 
 
 def build(db: Session, profile: UserProfile, *, today: dt.date) -> DailyReminders:

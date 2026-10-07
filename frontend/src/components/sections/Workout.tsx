@@ -36,6 +36,7 @@ import {
   type WorkoutPlan,
   type WorkoutSessionLog,
   localDate,
+  notifyLogged,
 } from "@/lib/api";
 import type { Intent } from "@/lib/coach";
 import { Card, CardHeader, Empty, Notice, SourceTags, Spinner } from "@/components/ui";
@@ -145,9 +146,11 @@ export function Workout({
       .get<WorkoutPlan[]>(`/workout/plans?profile_id=${profile.id}&active_only=true`)
       .then((lista) => {
         // Se nel frattempo è arrivata una scheda appena generata, vince quella.
+        // Altrimenti si apre la scheda in uso; senza scelta la più recente,
+        // come fa il server per promemoria e pagina Oggi.
         setPlans((correnti) => {
           if (correnti) return correnti;
-          selectPlan(lista[0] ?? null);
+          selectPlan(lista.find((p) => p.is_current) ?? lista[0] ?? null);
           return lista;
         });
       })
@@ -204,6 +207,17 @@ export function Workout({
       onIntentHandled?.();
     }
   }, [intent, generate, onIntentHandled]);
+
+  /** Scelta dal menu: diventa la scheda in uso anche per promemoria e Oggi. */
+  function choosePlan(p: WorkoutPlan) {
+    selectPlan(p);
+    setPlans((correnti) => (correnti ?? []).map((x) => ({ ...x, is_current: x.id === p.id })));
+    api
+      .put<WorkoutPlan>(`/workout/plans/${p.id}/current?profile_id=${profile.id}`)
+      // Il banner "oggi è giorno di allenamento" si ricalcola sulla scheda nuova.
+      .then(() => notifyLogged())
+      .catch(() => undefined);
+  }
 
   async function removePlan(target: WorkoutPlan) {
     await api.del(`/workout/plans/${target.id}?profile_id=${profile.id}`);
@@ -370,7 +384,7 @@ export function Workout({
                       <MenuItem
                         key={p.id}
                         onClick={() => {
-                          selectPlan(p);
+                          choosePlan(p);
                           setMenu(null);
                         }}
                         active={p.id === selectedId}
@@ -1444,11 +1458,17 @@ function ExerciseRow({
 }
 
 // Gruppi fra cui scegliere quando si cambia proprio il muscolo: quelli che
-// la scheda allena, senza i gruppi minori.
+// la scheda allena, senza i gruppi minori. Gli adduttori il generatore non li
+// programma, ma si possono aggiungere a mano.
 const GRUPPI_SOSTITUZIONE = [
   "Chest", "Lats", "Shoulders", "Trapezius", "Biceps", "Triceps",
-  "Quads", "Hamstrings", "Glutes", "Calves", "Abs",
+  "Quads", "Hamstrings", "Glutes", "Adductors", "Calves", "Abs",
 ];
+
+// Esercizi caricati per volta: "Mostra altri" ne aggiunge altrettanti. Un
+// gruppo arriva a 150 esercizi; con un elenco fisso di 24 la maggior parte non
+// si vedeva mai.
+const PAGINA_ALTERNATIVE = 24;
 
 /**
  * Cambio o aggiunta di un esercizio: le alternative come schede con
@@ -1477,6 +1497,7 @@ function AlternativesDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [query, setQuery] = useState("");
+  const [quanti, setQuanti] = useState(PAGINA_ALTERNATIVE);
   const originale = item?.exercise.primary_muscle ?? "";
   // Il gruppo da cui pescare: di base lo stesso, ma si può cambiare proprio
   // il muscolo allenato da questo esercizio.
@@ -1484,7 +1505,9 @@ function AlternativesDialog({
   const cambiaMuscolo = !!item && muscle !== originale;
 
   useEffect(() => {
-    setAlts(null);
+    // "Mostra altri" tiene a vista quelli già caricati; una nuova ricerca o
+    // un altro gruppo ripartono dallo spinner.
+    if (quanti === PAGINA_ALTERNATIVE) setAlts(null);
     setError(null);
     const q = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
     const m = cambiaMuscolo ? `&muscle=${encodeURIComponent(muscle)}` : "";
@@ -1494,8 +1517,8 @@ function AlternativesDialog({
         api
           .get<Alternative[]>(
             addTo
-              ? `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=24&muscle=${encodeURIComponent(muscle)}${q}`
-              : `/workout/plan-exercises/${item!.id}/alternatives?profile_id=${profileId}&limit=24${q}${m}`
+              ? `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=${quanti}&muscle=${encodeURIComponent(muscle)}${q}`
+              : `/workout/plan-exercises/${item!.id}/alternatives?profile_id=${profileId}&limit=${quanti}${q}${m}`
           )
           .then(setAlts)
           .catch((e) => {
@@ -1506,7 +1529,7 @@ function AlternativesDialog({
       query ? 300 : 0
     );
     return () => clearTimeout(timer);
-  }, [item, addTo, profileId, query, muscle, cambiaMuscolo]);
+  }, [item, addTo, profileId, query, muscle, cambiaMuscolo, quanti]);
 
   async function swap(exerciseId: number) {
     setBusy(exerciseId);
@@ -1561,7 +1584,10 @@ function AlternativesDialog({
           className="input py-2 text-[13px]"
           placeholder={addTo ? "Cerca un esercizio — es. cavi, manubri, macchina, hammer" : "Cerca fra le alternative — es. cavi, manubri, macchina, hammer"}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setQuanti(PAGINA_ALTERNATIVE);
+          }}
         />
         <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]" role="radiogroup" aria-label="Gruppo muscolare">
           {GRUPPI_SOSTITUZIONE.map((m) => {
@@ -1571,7 +1597,10 @@ function AlternativesDialog({
                 key={m}
                 role="radio"
                 aria-checked={scelto}
-                onClick={() => setMuscle(m)}
+                onClick={() => {
+                  setMuscle(m);
+                  setQuanti(PAGINA_ALTERNATIVE);
+                }}
                 // Niente layoutId qui: un'animazione condivisa dentro un
                 // pannello che si chiude ne blocca l'uscita.
                 className={`relative shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors duration-200 ${
@@ -1618,7 +1647,9 @@ function AlternativesDialog({
                   key={ex.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  // Solo le prime entrano una dopo l'altra: con "Mostra altri"
+                  // l'ultima comparirebbe dopo secondi.
+                  transition={{ delay: (i % PAGINA_ALTERNATIVE) < 8 ? (i % PAGINA_ALTERNATIVE) * 0.05 : 0.4 }}
                   className="flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025] transition hover:border-lime-400/30"
                 >
                   <button
@@ -1676,6 +1707,15 @@ function AlternativesDialog({
               );
             })}
           </div>
+        )}
+        {/* Il server ne ha restituiti quanti chiesti: probabilmente ce ne sono altri. */}
+        {alts && alts.length >= quanti && (
+          <button
+            onClick={() => setQuanti((n) => n + PAGINA_ALTERNATIVE)}
+            className="mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-3 text-[13px] font-semibold text-white/70 transition hover:border-lime-400/40 hover:text-lime-200"
+          >
+            Mostra altri esercizi
+          </button>
         )}
       </div>
 

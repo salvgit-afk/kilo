@@ -387,3 +387,44 @@ def test_carichi_a_mano_non_per_il_futuro_ne_su_schede_altrui(ambiente):
                        json={"date": fra_tre, "sets": serie}).status_code == 422
     assert client.post(f"/workout/exercises/{panca.id}/manual-sets?profile_id={pid_altro}", headers=h_altro,
                        json={"date": str(dt.date.today()), "workout_plan_id": piano.id, "sets": serie}).status_code == 404
+
+
+# --- La scheda in uso ---------------------------------------------------------------
+
+
+def test_scheda_in_uso_scelta_dal_menu(ambiente):
+    client, db = ambiente
+    h, pid = _account(client, "uso@example.com")
+    tre, *_ = _scheda(db, pid)
+    quattro = WorkoutPlan(
+        profile_id=pid, name="Push/Pull", goal="hypertrophy", days_per_week=4,
+        started_at=dt.date.today() - dt.timedelta(days=10),
+    )
+    db.add(quattro)
+    db.commit()
+
+    # Senza scelta vale la più recente (la full body, iniziata oggi).
+    assert client.get(f"/workout/plans/active?profile_id={pid}", headers=h).json()["id"] == tre.id
+
+    r = client.put(f"/workout/plans/{quattro.id}/current?profile_id={pid}", headers=h)
+    assert r.status_code == 200 and r.json()["is_current"] is True
+    assert client.get(f"/workout/plans/active?profile_id={pid}", headers=h).json()["id"] == quattro.id
+    elenco = client.get(f"/workout/plans?profile_id={pid}&active_only=true", headers=h).json()
+    assert {p["id"]: p["is_current"] for p in elenco} == {tre.id: False, quattro.id: True}
+
+    # Eliminata quella in uso, torna la più recente fra le altre.
+    client.delete(f"/workout/plans/{quattro.id}?profile_id={pid}", headers=h)
+    assert client.get(f"/workout/plans/active?profile_id={pid}", headers=h).json()["id"] == tre.id
+    # Una scheda archiviata non si sceglie.
+    assert client.put(f"/workout/plans/{quattro.id}/current?profile_id={pid}", headers=h).status_code == 404
+
+
+def test_scheda_di_un_altro_non_si_sceglie(ambiente):
+    client, db = ambiente
+    h1, pid1 = _account(client, "uno@example.com")
+    _, pid2 = _account(client, "due@example.com")
+    altrui, *_ = _scheda(db, pid2)
+    r = client.put(f"/workout/plans/{altrui.id}/current?profile_id={pid1}", headers=h1)
+    assert r.status_code == 404
+    db.refresh(altrui)
+    assert altrui.is_current is False

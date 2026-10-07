@@ -227,6 +227,9 @@ class WorkoutPlanOut(BaseModel):
     split_type: str | None = None
     rationale: str | None
     is_active: bool
+    # La scheda scelta nel menu (al più una); senza scelta nessuna lo è e vale
+    # la più recente.
+    is_current: bool = False
     started_at: dt.date
     exercises: list[PlanExerciseOut] = []
 

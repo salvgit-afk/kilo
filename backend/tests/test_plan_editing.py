@@ -217,4 +217,4 @@ def test_i_giorni_restano_in_ordine_dopo_un_riordino(ambiente):
     plan_editing.reorder_day(db, piano, "A", list(reversed(giorno_a)))
 
     assert piano.exercises[0].day_label != "A"  # l'ordine grezzo mette B davanti
-    assert plan_editing._days(piano) == ["A", "B", "C"]
+    assert plan_editing.day_labels(piano) == ["A", "B", "C"]

@@ -178,7 +178,7 @@ MANUAL_EXERCISES: list[dict] = [
             "Keep the elbow pointing up: do not let it drift out to the side.",
             "Do not arch the lower back to move the handle.",
         ],
-        "name_it": "French press monolaterale al cavo",
+        "name_it": "Estensioni monolaterali sopra la testa",
         "instructions_it": [
             "Monta una maniglia singola sul cavo basso e mettiti in piedi dando le spalle alla macchina.",
             "Afferra la maniglia con una mano e portala sopra la testa, con il gomito piegato rivolto verso l'alto e il cavo che passa dietro la schiena.",
@@ -318,4 +318,15 @@ NAME_IT_OVERRIDES: dict[str, str] = {
     "free_exercise_db:One-Arm_Incline_Lateral_Raise": "Alzate laterali su panca inclinata",
     "repdb:side-lying-lateral-raise": "Alzate laterali sdraiato su un fianco",
     "free_exercise_db:Cable_Rope_Overhead_Triceps_Extension": "French press al cavo basso con corda",
+    # La versione con i disegni di "Estensioni monolaterali sopra la testa",
+    # scritta a mano quando questa era nascosta per errore fra i doppioni del
+    # pushdown a un braccio: nome simile, così si riconosce.
+    "everkinetic:0199": "Estensioni monolaterali al cavo sopra la testa",
+    "everkinetic:0166": "Pushdown a un braccio con presa inversa",
+    # Adduttori e abduttori: come si chiamano le macchine in palestra.
+    "everkinetic:0157": "Adductor machine",
+    "everkinetic:0156": "Abductor machine",
+    "everkinetic:0135": "Adduzioni al cavo basso",
+    "repdb:banded-standing-hip-adduction": "Adduzioni in piedi con elastico",
+    "repdb:side-lying-hip-adduction": "Adduzioni sdraiato su un fianco",
 }

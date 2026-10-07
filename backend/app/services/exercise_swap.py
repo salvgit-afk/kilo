@@ -95,8 +95,9 @@ def find_alternatives(
         exercise_library.catalog_condition(db),
     )
     if q and q.strip():
-        # Nome italiano e originale: "cavo" e "cable" trovano lo stesso esercizio.
-        query = query.where(exercise_library.search_condition(q))
+        # Nome italiano e originale: "cavo" e "cable" trovano lo stesso
+        # esercizio. Basta una parola: la pertinenza la decide `rank_search`.
+        query = query.where(exercise_library.search_condition(q, every_word=False))
     candidati = db.scalars(query.order_by(*exercise_library.catalog_order()))
 
     alternative = [
@@ -123,7 +124,7 @@ def find_alternatives(
             a.exercise.name,
         )
     )
-    return alternative[:limit]
+    return exercise_library.rank_search(alternative, q, key=lambda a: a.exercise)[:limit]
 
 
 def find_candidates(
@@ -149,7 +150,7 @@ def find_candidates(
         Exercise.primary_muscle == muscle, exercise_library.catalog_condition(db)
     )
     if q and q.strip():
-        query = query.where(exercise_library.search_condition(q))
+        query = query.where(exercise_library.search_condition(q, every_word=False))
     esclusi = exclude_ids or set()
     candidati = [
         Alternative(exercise=ex, same_type=False, already_preferred=preferenze.get(ex.id, False))
@@ -159,7 +160,7 @@ def find_candidates(
         and _is_usable(ex, allowed)
     ]
     candidati.sort(key=lambda a: not a.already_preferred)
-    return candidati[:limit]
+    return exercise_library.rank_search(candidati, q, key=lambda a: a.exercise)[:limit]
 
 
 def set_preference(

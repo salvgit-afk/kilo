@@ -491,6 +491,8 @@ def test_piu_schede_restano_attive_insieme(catalogo):
 
     catalogo.refresh(full)
     assert full.is_active and ppl.is_active
+    # L'ultima creata è quella che si apre, e quindi quella in uso.
+    assert ppl.is_current and not full.is_current
     assert (full.split_type, ppl.split_type) == ("full_body", "push_pull_legs")
     assert "Full body" in full.name and "Push/Pull/Gambe" in ppl.name
 
