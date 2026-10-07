@@ -45,6 +45,9 @@ from app.schemas import (
     PlanVolumeOut,
     PreferenceIn,
     PreferenceOut,
+    ExerciseNoteIn,
+    ExerciseNoteOut,
+    SessionFinishIn,
     SessionIn,
     SessionOut,
     SessionRecordOut,
@@ -63,6 +66,7 @@ from app.services import (
     clock,
     exercise_guidance,
     exercise_library,
+    exercise_notes,
     exercise_swap,
     plan_editing,
     push_notifications,
@@ -106,17 +110,12 @@ def _latest_screening(db: Session, profile_id: int) -> ScreeningRecord | None:
 
 
 def _active_plan(db: Session, profile_id: int) -> WorkoutPlan | None:
-    """La scheda attiva più recente (possono essercene più d'una)."""
-    return db.scalar(
-        select(WorkoutPlan)
-        .where(WorkoutPlan.profile_id == profile_id, WorkoutPlan.is_active.is_(True))
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
+    """La scheda in uso fra quelle attive (possono essercene più d'una)."""
+    return training_schedule.current_plan(db, profile_id)
 
 
 def _plan_for(db: Session, profile_id: int, plan_id: int | None) -> WorkoutPlan | None:
-    """La scheda indicata, se è del profilo; senza indicazione la più recente."""
+    """La scheda indicata, se è del profilo; senza indicazione quella in uso."""
     if plan_id is None:
         return _active_plan(db, profile_id)
     piano = db.get(WorkoutPlan, plan_id)
@@ -216,6 +215,21 @@ def generate_plan(
     )
 
 
+@router.put("/plans/{plan_id}/current", response_model=WorkoutPlanOut)
+def choose_current_plan(
+    plan_id: int, db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
+) -> WorkoutPlan:
+    """La scheda scelta nel menu diventa quella in uso: i suoi giorni decidono
+    promemoria, notifiche e pagina Oggi."""
+    piano = _plan_for(db, profile.id, plan_id)
+    if piano is None or not piano.is_active:
+        raise HTTPException(status_code=404, detail="Scheda non trovata")
+    training_schedule.set_current_plan(db, piano)
+    db.commit()
+    db.refresh(piano)
+    return piano
+
+
 @router.get("/plans/active", response_model=WorkoutPlanOut | None)
 def read_active_plan(
     db: Session = Depends(get_db), profile: UserProfile = Depends(owned_profile)
@@ -257,6 +271,7 @@ def list_alternatives(
     limit: int = 6,
     q: str | None = None,
     muscle: str | None = None,
+    equipment: str | None = Query(default=None, max_length=20),
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> list[AlternativeOut]:
@@ -265,12 +280,12 @@ def list_alternatives(
     Serve all'aderenza: un esercizio scelto e gradito viene eseguito, uno
     imposto e noioso viene saltato.
     """
-    limit = max(1, min(limit, 40))
+    limit = max(1, min(limit, 200))
     riga = _plan_row(db, profile, plan_exercise_id)
 
     try:
         alternative = exercise_swap.find_alternatives(
-            db, profile, riga.exercise, limit=limit, q=q, muscle=muscle
+            db, profile, riga.exercise, limit=limit, q=q, muscle=muscle, equipment=equipment
         )
     except exercise_swap.SwapError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
@@ -322,6 +337,14 @@ def log_session(
     Sono questi i dati su cui si basano i report di progressione, e non
     dipendono da nessuna API esterna.
     """
+    # Già arrivata (inviata di nuovo dopo una risposta persa): la stessa.
+    if payload.client_id:
+        esistente = db.scalar(select(WorkoutSession).where(WorkoutSession.client_id == payload.client_id))
+        if esistente is not None:
+            if esistente.profile_id != profile.id:
+                raise HTTPException(status_code=409, detail="Identificativo già usato")
+            return esistente
+
     piano = _plan_for(db, profile.id, payload.workout_plan_id)
 
     sessione = WorkoutSession(
@@ -333,7 +356,8 @@ def log_session(
         day_label=payload.day_label,
         perceived_fatigue=payload.perceived_fatigue,
         note=payload.note,
-        started_at=dt.datetime.now(dt.timezone.utc) if payload.start else None,
+        started_at=_client_time(payload.started_at) if payload.start else None,
+        client_id=payload.client_id,
     )
     db.add(sessione)
     db.flush()
@@ -413,13 +437,14 @@ def list_candidates(
     muscle: str,
     q: str | None = None,
     limit: int = 24,
+    equipment: str | None = Query(default=None, max_length=20),
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> list[AlternativeOut]:
     """Esercizi da aggiungere alla scheda per un gruppo muscolare."""
     piano = _plan_for(db, profile.id, plan_id)
     candidati = exercise_swap.find_candidates(
-        db, profile, muscle, limit=max(1, min(limit, 40)), q=q,
+        db, profile, muscle, limit=max(1, min(limit, 200)), q=q, equipment=equipment,
         exclude_ids={e.exercise_id for e in piano.exercises},
     )
     translation.ensure_translated(db, [c.exercise for c in candidati])
@@ -500,6 +525,35 @@ def _owned_session(db: Session, session_id: int, user: User) -> WorkoutSession:
         raise HTTPException(status_code=404, detail="Sessione non trovata")
     ensure_owner(db, sessione.profile_id, user, "Sessione non trovata")
     return sessione
+
+
+# Quanto indietro può arrivare un orario mandato dal telefono: un allenamento
+# fatto senza rete e inviato al rientro, anche il giorno dopo.
+CLIENT_TIME_MAX_AGE = dt.timedelta(days=2)
+
+
+def _client_time(
+    valore: dt.datetime | None, *, not_before: dt.datetime | None = None
+) -> dt.datetime:
+    """L'orario mandato dal telefono, se plausibile; altrimenti adesso.
+
+    Plausibile = né nel futuro (oltre qualche minuto di orologio sfasato) né
+    più vecchio di due giorni, e non prima dell'avvio. Un orario strano non
+    fa fallire il salvataggio: si usa l'ora del server.
+    """
+    adesso = dt.datetime.now(dt.timezone.utc)
+    if valore is None:
+        return adesso
+    if valore.tzinfo is None:
+        valore = valore.replace(tzinfo=dt.timezone.utc)
+    inizio = not_before
+    if inizio is not None and inizio.tzinfo is None:
+        inizio = inizio.replace(tzinfo=dt.timezone.utc)
+    if valore > adesso + dt.timedelta(minutes=5) or valore < adesso - CLIENT_TIME_MAX_AGE:
+        return adesso
+    if inizio is not None and valore < inizio:
+        return adesso
+    return valore
 
 
 def _owned_set(db: Session, set_id: int, user: User) -> SessionSet:
@@ -593,12 +647,18 @@ def start_session(
 
 @router.post("/sessions/{session_id}/finish", response_model=SessionSummaryOut)
 def finish_session(
-    session_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+    session_id: int,
+    payload: SessionFinishIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ) -> SessionSummaryOut:
     """Termina l'allenamento e restituisce il riepilogo: durata, serie,
-    chili sollevati e i carichi mai raggiunti prima."""
+    chili sollevati e i carichi mai raggiunti prima.
+
+    Terminato senza rete, il telefono manda l'ora vera della fine: la durata
+    non deve includere il tempo passato ad aspettare la connessione."""
     sessione = _owned_session(db, session_id, user)
-    adesso = dt.datetime.now(dt.timezone.utc)
+    adesso = _client_time(payload.ended_at if payload else None, not_before=sessione.started_at)
     if sessione.started_at is None:
         sessione.started_at = adesso
     sessione.ended_at = adesso
@@ -651,6 +711,13 @@ def add_set(
     """Una serie appena eseguita: si salva subito, non a fine allenamento,
     così niente va perso se il telefono si blocca a metà."""
     sessione = _owned_session(db, session_id, user)
+    # Già arrivata (inviata di nuovo dopo una risposta persa): la stessa serie.
+    if payload.client_id:
+        esistente = db.scalar(select(SessionSet).where(SessionSet.client_id == payload.client_id))
+        if esistente is not None:
+            if esistente.workout_session_id != sessione.id:
+                raise HTTPException(status_code=409, detail="Identificativo già usato")
+            return esistente
     if db.get(Exercise, payload.exercise_id) is None:
         raise HTTPException(status_code=404, detail="Esercizio non trovato")
     serie = SessionSet(workout_session_id=sessione.id, **payload.model_dump())
@@ -844,6 +911,30 @@ def read_exercise(exercise_id: int, db: Session = Depends(get_db)) -> ExerciseOu
     return risposta
 
 
+@router.get("/exercise-notes", response_model=dict[int, str])
+def list_exercise_notes(
+    exercise_ids: list[int] = Query(default=[], max_length=60),
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> dict[int, str]:
+    """Le note dell'utente per gli esercizi indicati (regolazioni, presa…)."""
+    return exercise_notes.notes_for(db, profile.id, exercise_ids)
+
+
+@router.put("/exercises/{exercise_id}/note", response_model=ExerciseNoteOut)
+def save_exercise_note(
+    exercise_id: int,
+    payload: ExerciseNoteIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> ExerciseNoteOut:
+    """Salva la nota dell'utente su un esercizio; un testo vuoto la toglie."""
+    if db.get(Exercise, exercise_id) is None:
+        raise HTTPException(status_code=404, detail="Esercizio non trovato")
+    testo = exercise_notes.set_note(db, profile.id, exercise_id, payload.text)
+    return ExerciseNoteOut(exercise_id=exercise_id, text=testo)
+
+
 @router.get("/exercises", response_model=list[ExerciseOut])
 def list_exercises(
     muscle: str | None = None,
@@ -858,12 +949,14 @@ def list_exercises(
     )
     if muscle:
         query = query.where(Exercise.primary_muscle == muscle)
-    if q:
-        # Nome italiano e originale: "panca" e "bench" trovano lo stesso
-        # esercizio, anche se non è ancora tradotto.
-        query = query.where(exercise_library.search_condition(q))
-    query = query.order_by(*exercise_library.catalog_order()).limit(max(1, min(limit, 100)))
-    return list(db.scalars(query))
+    limit = max(1, min(limit, 200))
+    query = query.order_by(*exercise_library.catalog_order())
+    if not q:
+        return list(db.scalars(query.limit(limit)))
+    # Nome italiano e originale: "panca" e "bench" trovano lo stesso
+    # esercizio, anche se non è ancora tradotto.
+    query = query.where(exercise_library.search_condition(q, every_word=False))
+    return exercise_library.rank_search(db.scalars(query), q)[:limit]
 
 
 @router.get("/preferences", response_model=list[PreferenceOut])

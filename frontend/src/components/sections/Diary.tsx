@@ -448,6 +448,8 @@ function FoodSearchDialog({
   // I miei prodotti: gli scansionati restano sempre, non scorrono via.
   const [saved, setSaved] = useState<SavedFood[] | null>(null);
   const [list, setList] = useState<"recent" | "saved">("recent");
+  // Ricerca fra i miei prodotti, dentro il loro elenco.
+  const [filtroMiei, setFiltroMiei] = useState("");
   // Previsto: nei giorni futuri sempre (lo decide il server), oggi a scelta.
   const [plannedToday, setPlannedToday] = useState(false);
   const planned = date > today || (date === today && plannedToday);
@@ -576,6 +578,37 @@ function FoodSearchDialog({
   }, [query]);
 
   const nameOf = (r: FoodResult) => r.name_it ?? names[r.ingredient_id] ?? r.name;
+
+  function savedRow(r: SavedFood) {
+    return (
+      <QuickRow
+        key={r.ingredient_id}
+        name={r.name_it ?? r.name}
+        detail={[
+          r.grams ? `${Math.round(r.grams)} g · ${Math.round((r.kcal_100g * r.grams) / 100)} kcal` : `${Math.round(r.kcal_100g)} kcal/100 g`,
+          r.uses ? `usato ${r.uses} ${r.uses === 1 ? "volta" : "volte"}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        saved
+        onStar={() => toggleSaved(r, true)}
+        onPick={() => {
+          setSelected(r);
+          setGrams(r.grams ?? r.portion_g ?? 100);
+          setTimeout(() => gramsRef.current?.focus(), 60);
+        }}
+        onAdd={r.grams ? () => quickAdd(r) : undefined}
+        adding={quickAdding === r.ingredient_id}
+        disabled={quickAdding !== null}
+        addLabel={`Aggiungi ${Math.round(r.grams ?? 0)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
+      />
+    );
+  }
+
+  // Scrivendo nella barra principale, i miei prodotti che corrispondono
+  // compaiono subito in cima; i risultati del database arrivano sotto.
+  const mieiTrovati = query.trim().length >= 2 && saved ? searchSavedFoods(saved, query).slice(0, 5) : [];
+  const giaMostrati = new Set(mieiTrovati.map((r) => r.ingredient_id));
 
   async function add() {
     if (!selected || !grams) return;
@@ -770,31 +803,40 @@ function FoodSearchDialog({
                     Ogni prodotto scansionato resta qui, dal più usato. Con la stella lo togli, o salvi anche un
                     alimento dai recenti.
                   </p>
-                  <div className="space-y-1">
-                    {saved.map((r) => (
-                      <QuickRow
-                        key={r.ingredient_id}
-                        name={r.name_it ?? r.name}
-                        detail={[
-                          r.grams ? `${Math.round(r.grams)} g · ${Math.round((r.kcal_100g * r.grams) / 100)} kcal` : `${Math.round(r.kcal_100g)} kcal/100 g`,
-                          r.uses ? `usato ${r.uses} ${r.uses === 1 ? "volta" : "volte"}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        saved
-                        onStar={() => toggleSaved(r, true)}
-                        onPick={() => {
-                          setSelected(r);
-                          setGrams(r.grams ?? r.portion_g ?? 100);
-                          setTimeout(() => gramsRef.current?.focus(), 60);
-                        }}
-                        onAdd={r.grams ? () => quickAdd(r) : undefined}
-                        adding={quickAdding === r.ingredient_id}
-                        disabled={quickAdding !== null}
-                        addLabel={`Aggiungi ${Math.round(r.grams ?? 0)} g di ${r.name_it ?? r.name} a ${MEAL_LABELS[meal]}`}
-                      />
-                    ))}
+                  <div className="relative mb-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 fill-white/30"
+                    >
+                      <path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z" />
+                    </svg>
+                    <input
+                      className="input h-10 py-0 pl-9 pr-9 text-[13px]"
+                      placeholder="Cerca fra i tuoi prodotti"
+                      aria-label="Cerca fra i tuoi prodotti"
+                      value={filtroMiei}
+                      onChange={(e) => setFiltroMiei(e.target.value)}
+                    />
+                    {filtroMiei && (
+                      <button
+                        onClick={() => setFiltroMiei("")}
+                        aria-label="Cancella la ricerca"
+                        className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-white/40 hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
+                  {(() => {
+                    const trovati = searchSavedFoods(saved, filtroMiei);
+                    return trovati.length ? (
+                      <div className="space-y-1">{trovati.map(savedRow)}</div>
+                    ) : (
+                      <p className="px-1.5 py-2 text-[12.5px] text-white/40">
+                        Nessuno dei tuoi prodotti si chiama così. Prova la barra in alto, cerca in tutto il database.
+                      </p>
+                    );
+                  })()}
                 </>
               ) : (
                 <p className="px-1.5 py-2 text-[12.5px] leading-snug text-white/40">
@@ -844,6 +886,18 @@ function FoodSearchDialog({
           </button>
         )}
 
+        {mode === "search" && !selected && mieiTrovati.length > 0 && (
+          <div className="p-2 pb-1">
+            <p className="mb-1.5 flex items-center gap-1.5 px-1 text-[11.5px] font-semibold uppercase tracking-wide text-lime-200/70">
+              <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden>
+                <path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z" />
+              </svg>
+              Tra i tuoi prodotti
+            </p>
+            <div className="space-y-1">{mieiTrovati.map(savedRow)}</div>
+          </div>
+        )}
+
         {mode === "search" && searching && <Spinner label="Cerco su USDA e Open Food Facts…" />}
 
         {error && (
@@ -852,13 +906,14 @@ function FoodSearchDialog({
           </div>
         )}
 
-        {mode === "search" && !searching && !error && query.trim().length >= 2 && results.length === 0 && (
+        {mode === "search" && !searching && !error && query.trim().length >= 2 && results.length === 0 && mieiTrovati.length === 0 && (
           <Empty title="Nessun risultato" hint="Prova con un nome più semplice, es. «riso» o «yogurt greco», oppure scansiona il codice a barre." />
         )}
 
         {mode === "search" &&
           !searching &&
-          results.map((r) => {
+          // Quelli già in cima fra i miei prodotti non si ripetono.
+          results.filter((r) => !giaMostrati.has(r.ingredient_id)).map((r) => {
             const isSelected = selected?.ingredient_id === r.ingredient_id;
             const nome = nameOf(r);
             return (
@@ -970,6 +1025,28 @@ function FoodSearchDialog({
       </AnimatePresence>
     </Modal>
   );
+}
+
+/** Testo confrontabile: minuscolo e senza accenti ("Caffè" trova "caffe"). */
+function normalizza(t: string): string {
+  return t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * I miei prodotti che corrispondono a quello che si scrive: ogni parola deve
+ * comparire nel nome (italiano o originale) o nella fonte, in qualsiasi
+ * ordine. L'elenco è già tutto sul telefono: il risultato è immediato.
+ */
+export function searchSavedFoods<T extends { name: string; name_it: string | null; source_label: string }>(
+  lista: T[],
+  testo: string
+): T[] {
+  const parole = normalizza(testo).split(/\s+/).filter((p) => p.length > 0);
+  if (!parole.length) return lista;
+  return lista.filter((r) => {
+    const dove = normalizza(`${r.name_it ?? ""} ${r.name} ${r.source_label}`);
+    return parole.every((p) => dove.includes(p));
+  });
 }
 
 /** Una riga di "Recenti" o "I miei prodotti": stella, nome, + per aggiungere al volo. */

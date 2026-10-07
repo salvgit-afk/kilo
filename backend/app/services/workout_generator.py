@@ -44,7 +44,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutPlanExercise,
 )
-from app.services import clock, exercise_library
+from app.services import clock, exercise_library, training_schedule
 
 logger = logging.getLogger("workout_generator")
 
@@ -656,6 +656,14 @@ def generate_plan(
     # carichi già segnati), salvo quelli segnati come da evitare.
     for esercizio_id in _active_plan_exercise_ids(db, profile.id):
         preferences.setdefault(esercizio_id, True)
+    # Un esercizio diventato doppione esce dal catalogo: il gradimento passa
+    # alla versione visibile, che ha lo stesso storico dei carichi.
+    for doppione, principale in db.execute(
+        select(Exercise.id, Exercise.duplicate_of_id).where(
+            Exercise.id.in_(list(preferences)), Exercise.duplicate_of_id.is_not(None)
+        )
+    ).all():
+        preferences.setdefault(principale, preferences[doppione])
     # Se la scheda ha un posto per i deltoidi posteriori, le croci inverse
     # stanno lì e non fra gli esercizi per le spalle.
     posteriori_a_parte = any("Rear delts" in muscoli for _, muscoli in split)
@@ -1098,6 +1106,7 @@ def archive_plan(db: Session, profile: UserProfile, plan_id: int) -> WorkoutPlan
     if plan is None or plan.profile_id != profile.id or not plan.is_active:
         return None
     plan.is_active = False
+    plan.is_current = False  # torna in uso la più recente fra le altre
     plan.ended_at = clock.today()
     db.commit()
     return plan
@@ -1128,6 +1137,7 @@ def persist_plan(
         previous = db.get(WorkoutPlan, replace_plan_id)
         if previous is not None and previous.profile_id == profile.id and previous.is_active:
             previous.is_active = False
+            previous.is_current = False
             previous.ended_at = clock.today()
 
     plan = WorkoutPlan(
@@ -1142,6 +1152,8 @@ def persist_plan(
     )
     db.add(plan)
     db.flush()  # serve l'id per le righe collegate
+    # La scheda appena creata è quella che si apre: diventa quella in uso.
+    training_schedule.set_current_plan(db, plan)
 
     for item in generated.exercises:
         db.add(

@@ -96,3 +96,25 @@ def test_chat_collega_le_domande_ai_nuovi_documenti():
 def test_documento_inesistente_solleva_errore_esplicito():
     with pytest.raises(kb.KnowledgeBaseError):
         kb.load_document("non_esiste.md")
+
+
+def test_stanchezza_porta_a_sonno_e_recupero_anche_al_femminile():
+    """"stanchezza" era nel dizionario due volte: la seconda voce cancellava la
+    prima e la parola non portava più ai documenti su sonno e recupero."""
+    from app.services import chat_agent
+    from app.services.chat_agent import _tags_for
+
+    for domanda in ("Ho molta stanchezza dopo gli allenamenti", "Sono stanca, mi alleno lo stesso?",
+                    "Mi sento stanco da giorni"):
+        tags = _tags_for(domanda)
+        assert {"sonno", "autoregolazione"} <= set(tags), domanda
+        assert "reds" not in tags, domanda
+    assert "reds" in _tags_for("Ho una stanchezza cronica e mangio poco")
+    assert "reds" in _tags_for("Sono sempre stanca")
+    # Nessuna chiave ripetuta: in un dict letterale l'ultima vince in silenzio.
+    import ast, inspect
+    albero = ast.parse(inspect.getsource(chat_agent))
+    for nodo in ast.walk(albero):
+        if isinstance(nodo, ast.Dict):
+            chiavi = [k.value for k in nodo.keys if isinstance(k, ast.Constant)]
+            assert len(chiavi) == len(set(chiavi)), [k for k in chiavi if chiavi.count(k) > 1]

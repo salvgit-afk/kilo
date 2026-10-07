@@ -63,6 +63,7 @@ def find_alternatives(
     limit: int = 5,
     q: str | None = None,
     muscle: str | None = None,
+    equipment: str | None = None,
 ) -> list[Alternative]:
     """Alternative per lo stesso gruppo muscolare primario, o per `muscle`
     quando l'utente vuole cambiare proprio il gruppo allenato.
@@ -93,10 +94,12 @@ def find_alternatives(
         Exercise.primary_muscle == gruppo,
         Exercise.id != exercise.id,
         exercise_library.catalog_condition(db),
+        exercise_library.equipment_condition(equipment),
     )
     if q and q.strip():
-        # Nome italiano e originale: "cavo" e "cable" trovano lo stesso esercizio.
-        query = query.where(exercise_library.search_condition(q))
+        # Nome italiano e originale: "cavo" e "cable" trovano lo stesso
+        # esercizio. Basta una parola: la pertinenza la decide `rank_search`.
+        query = query.where(exercise_library.search_condition(q, every_word=False))
     candidati = db.scalars(query.order_by(*exercise_library.catalog_order()))
 
     alternative = [
@@ -123,7 +126,7 @@ def find_alternatives(
             a.exercise.name,
         )
     )
-    return alternative[:limit]
+    return exercise_library.rank_search(alternative, q, key=lambda a: a.exercise)[:limit]
 
 
 def find_candidates(
@@ -134,6 +137,7 @@ def find_candidates(
     limit: int = 24,
     q: str | None = None,
     exclude_ids: set[int] | None = None,
+    equipment: str | None = None,
 ) -> list[Alternative]:
     """Esercizi da aggiungere alla scheda per un gruppo muscolare.
 
@@ -146,10 +150,12 @@ def find_candidates(
         for p in db.scalars(select(ExercisePreference).where(ExercisePreference.profile_id == profile.id))
     }
     query = select(Exercise).where(
-        Exercise.primary_muscle == muscle, exercise_library.catalog_condition(db)
+        Exercise.primary_muscle == muscle,
+        exercise_library.catalog_condition(db),
+        exercise_library.equipment_condition(equipment),
     )
     if q and q.strip():
-        query = query.where(exercise_library.search_condition(q))
+        query = query.where(exercise_library.search_condition(q, every_word=False))
     esclusi = exclude_ids or set()
     candidati = [
         Alternative(exercise=ex, same_type=False, already_preferred=preferenze.get(ex.id, False))
@@ -159,7 +165,7 @@ def find_candidates(
         and _is_usable(ex, allowed)
     ]
     candidati.sort(key=lambda a: not a.already_preferred)
-    return candidati[:limit]
+    return exercise_library.rank_search(candidati, q, key=lambda a: a.exercise)[:limit]
 
 
 def set_preference(

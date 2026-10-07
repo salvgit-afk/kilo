@@ -300,3 +300,51 @@ def test_niente_promemoria_se_gli_integratori_sono_gia_segnati(db: Session):
     db.add(SupplementIntake(supplement_id=d.id, date=OGGI, doses=1))
     db.commit()
     assert push_notifications.after_session(db, p, now=dt.datetime.combine(OGGI, dt.time(19), tzinfo=ROMA)) is False
+
+
+# --- La scheda in uso decide i giorni di allenamento ----------------------------------
+
+
+def test_promemoria_dalla_scheda_in_uso_non_da_tutte_le_attive(db: Session):
+    """Una scheda da 3 giorni (lun, mer, ven) e una da 4 (lun, mar, gio, ven):
+    con quella da 4 scelta, il mercoledì è riposo."""
+    from app.services import daily_reminders
+
+    _, p = _utente(db)
+    tre = _scheda(db, p, giorni=[0, 2, 4], inizio=OGGI - dt.timedelta(days=30))
+    quattro = _scheda(db, p, giorni=[0, 1, 3, 4], inizio=OGGI - dt.timedelta(days=30))
+    mercoledi = OGGI + dt.timedelta(days=1)
+
+    training_schedule.set_current_plan(db, quattro)
+    db.commit()
+    assert daily_reminders.workouts_due(db, p, mercoledi) == []
+    assert daily_reminders.workouts_due(db, p, OGGI) == [quattro]  # martedì
+
+    training_schedule.set_current_plan(db, tre)
+    db.commit()
+    assert daily_reminders.workouts_due(db, p, mercoledi) == [tre]
+    assert daily_reminders.workouts_due(db, p, OGGI) == []
+    assert not quattro.is_current, "al più una scheda in uso"
+
+
+def test_senza_scelta_vale_la_scheda_piu_recente(db: Session):
+    _, p = _utente(db)
+    _scheda(db, p, giorni=[0, 2, 4], inizio=OGGI - dt.timedelta(days=30))
+    recente = _scheda(db, p, giorni=[1, 3], inizio=OGGI - dt.timedelta(days=3))
+    db.commit()
+    assert training_schedule.current_plan(db, p.id) == recente
+
+
+def test_allenamento_iniziato_con_l_altra_scheda_spegne_il_promemoria(db: Session):
+    from app.services import daily_reminders
+
+    _, p = _utente(db)
+    tre = _scheda(db, p, giorni=[1], inizio=OGGI - dt.timedelta(days=30))
+    quattro = _scheda(db, p, giorni=[1], inizio=OGGI - dt.timedelta(days=30))
+    training_schedule.set_current_plan(db, quattro)
+    db.add(WorkoutSession(
+        profile_id=p.id, workout_plan_id=tre.id, date=OGGI,
+        started_at=dt.datetime.combine(OGGI, dt.time(18), tzinfo=dt.timezone.utc),
+    ))
+    db.commit()
+    assert daily_reminders.workouts_due(db, p, OGGI) == []

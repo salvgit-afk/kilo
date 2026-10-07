@@ -1,5 +1,5 @@
 {
- "_nota": "Doppioni fra i cataloghi esercizi, verificati a mano il 2026-09-15 e il 2026-09-28 (nuove voci RepDB e doppioni sfuggiti). Ogni gruppo e' lo stesso esercizio in fonti diverse, come sorgente:id; a runtime se ne tiene uno solo secondo la precedenza delle fonti (exercise_library.apply_duplicates). Contiene solo identificativi: i dati degli esercizi non sono ridistribuiti.",
+ "_nota": "Doppioni fra i cataloghi esercizi, verificati a mano il 2026-09-15, il 2026-09-28 (nuove voci RepDB e doppioni sfuggiti) e il 2026-10-07 (divisi quattro gruppi che univano esercizi diversi, aggiunti adduttori e sei doppioni sfuggiti). Ogni gruppo e' lo stesso esercizio in fonti diverse, come sorgente:id; a runtime se ne tiene uno solo secondo la precedenza delle fonti (exercise_library.apply_duplicates). Contiene solo identificativi: i dati degli esercizi non sono ridistribuiti.",
  "gruppi": [
   [
    "free_exercise_db:Ab_Crunch_Machine",
@@ -271,7 +271,6 @@
    "free_exercise_db:Calf_Press_On_The_Leg_Press_Machine"
   ],
   [
-   "free_exercise_db:Calf_Raise_On_A_Dumbbell",
    "repdb:dumbbell-calf-raise",
    "free_exercise_db:Standing_Dumbbell_Calf_Raise"
   ],
@@ -483,7 +482,8 @@
   ],
   [
    "everkinetic:0156",
-   "free_exercise_db:Thigh_Abductor"
+   "free_exercise_db:Thigh_Abductor",
+   "repdb:hip-abduction"
   ],
   [
    "free_exercise_db:Ball_Leg_Curl",
@@ -522,10 +522,6 @@
   [
    "free_exercise_db:Close-Grip_Front_Lat_Pulldown",
    "repdb:close-grip-lat-pulldown"
-  ],
-  [
-   "free_exercise_db:Kneeling_High_Pulley_Row",
-   "repdb:kneeling-cable-row"
   ],
   [
    "free_exercise_db:One_Arm_Lat_Pulldown",
@@ -642,7 +638,6 @@
    "free_exercise_db:Narrow_Stance_Squats"
   ],
   [
-   "everkinetic:0132",
    "everkinetic:0147",
    "free_exercise_db:One_Leg_Barbell_Squat"
   ],
@@ -865,12 +860,6 @@
   [
    "everkinetic:0165",
    "free_exercise_db:Cable_Lying_Triceps_Extension"
-  ],
-  [
-   "everkinetic:0166",
-   "everkinetic:0199",
-   "free_exercise_db:Cable_One_Arm_Tricep_Extension",
-   "free_exercise_db:Standing_Low-Pulley_One-Arm_Triceps_Extension"
   ],
   [
    "everkinetic:0189",
@@ -1177,6 +1166,40 @@
   [
    "kilo:low-to-high-cable-fly",
    "free_exercise_db:Low_Cable_Crossover"
+  ],
+  [
+   "everkinetic:0166",
+   "free_exercise_db:Cable_One_Arm_Tricep_Extension"
+  ],
+  [
+   "everkinetic:0199",
+   "free_exercise_db:Standing_Low-Pulley_One-Arm_Triceps_Extension",
+   "kilo:single-arm-overhead-cable-triceps-extension"
+  ],
+  [
+   "everkinetic:0157",
+   "free_exercise_db:Thigh_Adductor",
+   "repdb:hip-adduction"
+  ],
+  [
+   "everkinetic:0135",
+   "free_exercise_db:Cable_Hip_Adduction"
+  ],
+  [
+   "repdb:one-arm-seated-cable-row",
+   "free_exercise_db:Seated_One-arm_Cable_Pulley_Rows"
+  ],
+  [
+   "everkinetic:0041",
+   "repdb:smith-machine-shrug"
+  ],
+  [
+   "repdb:wide-grip-push-ups",
+   "free_exercise_db:Push-Up_Wide"
+  ],
+  [
+   "everkinetic:0044",
+   "free_exercise_db:Bench_Press_-_With_Bands"
   ]
  ]
 }

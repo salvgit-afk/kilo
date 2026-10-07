@@ -168,6 +168,8 @@ export type SessionSet = {
   reps: number;
   weight_kg: number;
   rir: number | null;
+  /** Dato dal telefono alle serie salvate senza rete (vedi `lib/offline.ts`). */
+  client_id?: string | null;
 };
 
 export type WorkoutSessionLog = {
@@ -249,6 +251,8 @@ export type WorkoutPlan = {
   split_type: string | null;
   rationale: string | null;
   is_active: boolean;
+  /** Scelta nel menu della Scheda: i suoi giorni valgono per promemoria e Oggi. */
+  is_current?: boolean;
   started_at: string;
   exercises: PlanExercise[];
 };

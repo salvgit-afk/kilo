@@ -30,9 +30,14 @@ from app.models import (
     SupplementKind,
     TrainingFeedback,
     UserProfile,
-    WorkoutPlan,
 )
-from app.services import food_diary, nutrition_targets, progress_report, supplement_intake
+from app.services import (
+    food_diary,
+    nutrition_targets,
+    progress_report,
+    supplement_intake,
+    training_schedule,
+)
 
 # `creatine.md`: senza carico le scorte salgono in 3-4 settimane; con il
 # carico (~0,3 g/kg, circa 20 g in 4 dosi) in 5-7 giorni.
@@ -193,12 +198,7 @@ def _plan_notes(
     db: Session, profile: UserProfile, today: dt.date, report: progress_report.ProgressReport
 ) -> list[AgentNote]:
     note: list[AgentNote] = []
-    piano = db.scalar(
-        select(WorkoutPlan)
-        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
+    piano = training_schedule.current_plan(db, profile.id)
     if piano is None:
         return note
 

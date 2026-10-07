@@ -25,7 +25,7 @@ class EditError(ValueError):
     """Modifica non possibile (giorno inesistente, ultimo esercizio del giorno)."""
 
 
-def _days(plan: WorkoutPlan) -> list[str]:
+def day_labels(plan: WorkoutPlan) -> list[str]:
     """I giorni nell'ordine della scheda (A, B, C).
 
     Gli esercizi arrivano ordinati per posizione nel giorno, non per giorno:
@@ -46,7 +46,7 @@ def add_exercise(
     Serie, ripetizioni, RIR e recupero sono quelli che il generatore darebbe
     allo stesso tipo di esercizio: l'utente li cambia poi come gli altri.
     """
-    if day_label not in _days(plan):
+    if day_label not in day_labels(plan):
         raise EditError(f"La scheda non ha un giorno «{day_label}».")
     reps_min, reps_max = wg.rep_range(plan.goal, exercise.is_compound)
     riga = WorkoutPlanExercise(
@@ -148,7 +148,7 @@ def plan_volume(plan: WorkoutPlan, profile: UserProfile) -> PlanVolume:
         )
 
     lunghe = []
-    for giorno in _days(plan):
+    for giorno in day_labels(plan):
         serie = sum(e.target_sets for e in plan.exercises if e.day_label == giorno)
         if serie > wg.LONG_SESSION_SETS:
             lunghe.append(f"{giorno} ha {serie} serie")

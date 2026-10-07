@@ -29,7 +29,6 @@ from app.models import (
     SessionSet,
     User,
     UserProfile,
-    WorkoutPlan,
     WorkoutPlanExercise,
     WorkoutSession,
 )
@@ -39,6 +38,7 @@ from app.services import (
     nutrition_targets,
     supplement_intake,
     supplements,
+    training_schedule,
     weekly_summary,
 )
 
@@ -211,11 +211,9 @@ def _progressione(db: Session, profile: UserProfile, today: dt.date) -> list[Not
 
 
 def _scheda_vecchia(db: Session, profile: UserProfile, today: dt.date) -> list[Notification]:
-    piani = db.scalars(
-        select(WorkoutPlan).where(
-            WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True)
-        )
-    ).all()
+    # Solo la scheda in uso: di quella che si tiene da parte non serve parlare.
+    piano_in_uso = training_schedule.current_plan(db, profile.id)
+    piani = [piano_in_uso] if piano_in_uso is not None else []
     note = []
     for piano in piani:
         inizio = piano.started_at or (piano.created_at.date() if piano.created_at else None)

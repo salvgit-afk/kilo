@@ -18,6 +18,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, session, type AuthSession, type Profile } from "@/lib/api";
 import { wakeBackend } from "@/lib/wake";
+import { startOfflineSync } from "@/lib/offline";
 import type { Intent } from "@/lib/coach";
 import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
 import { ChatBubble } from "@/components/ChatBubble";
@@ -51,6 +52,10 @@ export default function Page() {
       dir: Math.sign(SECTION_ORDER.indexOf(section) - SECTION_ORDER.indexOf(shown.section)),
     });
   }
+  // Allenamento senza rete: dopo l'accesso, quello che è rimasto in coda
+  // parte appena c'è la rete (anche da una visita precedente).
+  useEffect(() => (profile ? startOfflineSync(profile.id) : undefined), [profile]);
+
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");

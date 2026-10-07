@@ -10,7 +10,7 @@ senza separarlo dal suo contesto — che è il requisito di
 from __future__ import annotations
 
 import datetime as dt
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -227,6 +227,9 @@ class WorkoutPlanOut(BaseModel):
     split_type: str | None = None
     rationale: str | None
     is_active: bool
+    # La scheda scelta nel menu (al più una); senza scelta nessuna lo è e vale
+    # la più recente.
+    is_current: bool = False
     started_at: dt.date
     exercises: list[PlanExerciseOut] = []
 
@@ -322,12 +325,17 @@ class SwapIn(BaseModel):
     allow_muscle_change: bool = False
 
 
+# Identificativo generato dal telefono (un UUID) per ciò che salva senza rete.
+ClientId = Annotated[str, Field(min_length=8, max_length=36, pattern=r"^[A-Za-z0-9-]+$")]
+
+
 class SessionSetIn(BaseModel):
     exercise_id: int
     set_number: int = Field(ge=1)
     reps: int = Field(ge=1, le=100)
     weight_kg: float = Field(ge=0, le=1000)
     rir: int | None = Field(default=None, ge=0, le=10)
+    client_id: ClientId | None = None
 
 
 class SessionIn(BaseModel):
@@ -341,6 +349,25 @@ class SessionIn(BaseModel):
     sets: list[SessionSetIn] = Field(default_factory=list, max_length=200)
     # Vero quando la sessione è un allenamento avviato ora: parte il cronometro.
     start: bool = False
+    # Avviata senza rete e inviata dopo: l'ora vera dell'avvio e l'identificativo
+    # che rende innocuo un secondo invio.
+    started_at: dt.datetime | None = None
+    client_id: ClientId | None = None
+
+
+class ExerciseNoteIn(BaseModel):
+    # Vuota = cancella la nota.
+    text: str = Field(default="", max_length=500)
+
+
+class ExerciseNoteOut(BaseModel):
+    exercise_id: int
+    text: str | None
+
+
+class SessionFinishIn(BaseModel):
+    # Terminata senza rete: l'ora in cui l'utente ha toccato "Termina".
+    ended_at: dt.datetime | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -358,6 +385,7 @@ class SessionSetOut(BaseModel):
     reps: int
     weight_kg: float
     rir: int | None
+    client_id: str | None = None
 
 
 class SessionSetUpdate(BaseModel):

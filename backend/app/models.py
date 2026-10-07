@@ -57,6 +57,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -539,6 +540,11 @@ class WorkoutPlan(Base):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # La scheda in uso fra quelle attive, scelta nel menu della Scheda: decide
+    # i giorni di allenamento di promemoria, notifiche e pagina Oggi. Al più
+    # una per profilo; senza scelta vale la più recente
+    # (`training_schedule.current_plan`).
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     started_at: Mapped[dt.date] = mapped_column(Date)
     ended_at: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
@@ -615,6 +621,9 @@ class WorkoutSession(Base):
     # registrate prima che l'allenamento avesse un inizio e una fine.
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Identificativo scelto dal telefono quando l'allenamento parte senza rete:
+    # rimandata più volte, la stessa richiesta non crea due sessioni.
+    client_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -649,6 +658,9 @@ class SessionSet(Base):
     reps: Mapped[int] = mapped_column(Integer)
     weight_kg: Mapped[float] = mapped_column(Float)
     rir: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Come per la sessione: una serie salvata senza rete e rimandata più volte
+    # resta una serie sola.
+    client_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
 
     session: Mapped[WorkoutSession] = relationship(back_populates="sets")
     exercise: Mapped[Exercise] = relationship()
@@ -729,6 +741,29 @@ class ExercisePreference(Base):
 
     __table_args__ = (
         Index("ix_preference_profile_exercise", "profile_id", "exercise_id", unique=True),
+    )
+
+
+class ExerciseNote(Base):
+    """Nota dell'utente su un esercizio: regolazioni della macchina, presa,
+    accorgimenti. Segue l'esercizio in tutte le schede e nell'allenamento."""
+
+    __tablename__ = "exercise_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
+    )
+    exercise_id: Mapped[int] = mapped_column(
+        ForeignKey("exercises.id", ondelete="CASCADE"), index=True
+    )
+    text: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_exercise_note_profile_exercise", "profile_id", "exercise_id", unique=True),
     )
 
 

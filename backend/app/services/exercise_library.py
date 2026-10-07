@@ -79,6 +79,15 @@ MUSCLE_MAP = {
     "triceps": "Triceps",
 }
 
+# Dove il muscolo principale del dataset è sbagliato (id del dataset).
+FREE_PRIMARY_OVERRIDE = {
+    # Adduzione al cavo con la cavigliera: il dataset la dà ai quadricipiti.
+    "Cable_Hip_Adduction": "Adductors",
+}
+# Esclusi: il nome dice "adduzioni" ma i passaggi descrivono un'abduzione (la
+# gamba si allontana dal punto d'ancoraggio). Nel dubbio non entra.
+FREE_EXCLUDED = frozenset({"Band_Hip_Adductions"})
+
 # Muscoli che compaiono solo come secondari: si mostrano, ma non sono gruppi
 # per cui il generatore programma esercizi dedicati.
 SECONDARY_ONLY = {
@@ -183,6 +192,12 @@ EVERKINETIC_STAPLES: dict[str, list[str]] = {
 
 # Gruppi per cui il generatore programma esercizi.
 _PLAN_GROUPS = frozenset(MUSCLE_MAP.values())
+# Gruppi che stanno nel catalogo ma che il generatore non programma mai: si
+# aggiungono a mano dalla scheda ("Aggiungi esercizio"). Gli adduttori
+# lavorano già in squat, affondi e stacchi; le macchine dedicate sono un
+# complemento facoltativo, non un muscolo da coprire in ogni scheda.
+CATALOG_ONLY_GROUPS = frozenset({"Adductors"})
+_CATALOG_GROUPS = _PLAN_GROUPS | CATALOG_ONLY_GROUPS
 
 # Il campo "type" del dataset è inaffidabile (trazioni e distensioni sono
 # marcate "isolation"), e da questa classificazione dipendono recuperi e
@@ -195,7 +210,7 @@ _ISOLATION_WORDS = (
     "fly", "raise", "pullover", "rotation", "extension", "curl", "kickback",
     "shrug", "crossover",
 )
-_SINGLE_JOINT_GROUPS = frozenset({"Biceps", "Calves", "Abs", "Trapezius"})
+_SINGLE_JOINT_GROUPS = frozenset({"Biceps", "Calves", "Abs", "Trapezius", "Adductors"})
 
 
 # --- RepDB: illustrazioni flat a colori --------------------------------------------
@@ -223,6 +238,13 @@ REPDB_SECONDARY_ONLY = {
     "erector_spinae": "Lower back", "quadratus_lumborum": "Lower back",
     "forearm_flexors": "Forearms", "forearm_extensors": "Forearms", "forearms": "Forearms",
     "adductors": "Adductors",
+}
+
+# Dove il muscolo principale del dataset è poco utile alla scheda.
+REPDB_PRIMARY_OVERRIDE = {
+    # Una leg press a piedi larghi: la si cerca fra i quadricipiti; gli
+    # adduttori restano fra i secondari.
+    "wide-stance-leg-press": "Quads",
 }
 
 REPDB_EQUIPMENT = {
@@ -331,7 +353,7 @@ def parse_everkinetic_entry(raw: dict) -> dict | None:
     primario = EVERKINETIC_PRIMARY_OVERRIDE.get(external_id) or (
         EVERKINETIC_MUSCLES.get(primari[0]) if primari else None
     )
-    if primario not in _PLAN_GROUPS:
+    if primario not in _CATALOG_GROUPS:
         return None
 
     secondari: list[str] = []
@@ -374,7 +396,7 @@ def parse_repdb_entry(raw: dict) -> dict | None:
 
     Restituisce `None` per ciò che non serve in una scheda da sala pesi:
     stretching, cardio e olimpici, esercizi a tempo, muscolo primario che non
-    è un gruppo della scheda (avambracci, adduttori).
+    è un gruppo del catalogo (avambracci, lombari).
     """
     if raw.get("category") != "strength":
         return None
@@ -384,12 +406,18 @@ def parse_repdb_entry(raw: dict) -> dict | None:
         return None
 
     primari = [REPDB_MUSCLES[m] for m in raw.get("primary_muscles") or [] if m in REPDB_MUSCLES]
+    # Gli adduttori come primario solo se non ce n'è un altro: la sumo high
+    # pull resta un esercizio per le spalle.
+    if not primari and "adductors" in (raw.get("primary_muscles") or []):
+        primari = ["Adductors"]
+    if external_id in REPDB_PRIMARY_OVERRIDE:
+        primari = [REPDB_PRIMARY_OVERRIDE[external_id]]
     if not primari:
         return None
     primario = primari[0]
 
     secondari: list[str] = []
-    for muscolo in [*(raw.get("primary_muscles") or [])[1:], *(raw.get("secondary_muscles") or [])]:
+    for muscolo in [*(raw.get("primary_muscles") or []), *(raw.get("secondary_muscles") or [])]:
         gruppo = REPDB_MUSCLES.get(muscolo) or REPDB_SECONDARY_ONLY.get(muscolo)
         if gruppo and gruppo != primario and gruppo not in secondari:
             secondari.append(gruppo)
@@ -467,13 +495,19 @@ def parse_entry(raw: dict) -> dict | None:
     immagini = [f"{IMAGE_BASE_URL}{path}" for path in raw.get("images") or []]
     if not immagini:
         return None
+    external_id = str(raw.get("id"))
+    if external_id in FREE_EXCLUDED:
+        return None
     primari = [MUSCLE_MAP[m] for m in raw.get("primaryMuscles") or [] if m in MUSCLE_MAP]
+    if not primari and "adductors" in (raw.get("primaryMuscles") or []):
+        primari = ["Adductors"]
+    if external_id in FREE_PRIMARY_OVERRIDE:
+        primari = [FREE_PRIMARY_OVERRIDE[external_id]]
     if not primari:
         return None
 
     secondari = [m for m in _map_muscles(raw.get("secondaryMuscles")) if m != primari[0]]
     istruzioni = [s.strip() for s in raw.get("instructions") or [] if s and s.strip()]
-    external_id = str(raw.get("id"))
     equipment = raw.get("equipment")
 
     return dict(
@@ -751,7 +785,16 @@ _SEARCH_STEMS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sedut", ("seated",)),
     ("sdraiat", ("lying",)),
     ("bracci", ("arm",)),
-    ("monolateral", ("one-arm", "one arm", "single")),
+    ("gamb", ("leg",)),
+    ("monolateral", ("one-arm", "one arm", "one-leg", "one leg", "single", "unilateral")),
+    ("unilateral", ("one-arm", "one arm", "one-leg", "one leg", "single", "unilateral")),
+    ("singol", ("one-arm", "one arm", "one-leg", "one leg", "single", "unilateral")),
+    ("test", ("overhead", "head")),
+    ("martell", ("hammer",)),
+    ("addutt", ("adduct",)),
+    ("adduzion", ("adduct",)),
+    ("abdutt", ("abduct",)),
+    ("abduzion", ("abduct",)),
     ("elastic", ("band",)),
     ("tricipit", ("tricep",)),
     ("bicipit", ("bicep", "curl")),
@@ -773,13 +816,36 @@ _SEARCH_STOPWORDS = frozenset(
 )
 
 
-def search_condition(q: str):
-    """Filtro per la ricerca per nome, in italiano o nel nome originale.
+# Filtro per attrezzatura nel selettore degli esercizi: chiave -> parole che
+# devono comparire nel campo `equipment` (già normalizzato fra le fonti), e
+# quelle che lo escludono. Il multipower è a parte dalle macchine: in palestra
+# è un attrezzo diverso.
+EQUIPMENT_FILTERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "cavi": (("cable",), ()),
+    "macchine": (("machine",), ("smith",)),
+    "manubri": (("dumbbell",), ()),
+    "bilanciere": (("barbell", "e-z curl bar", "trap bar"), ()),
+    "multipower": (("smith",), ()),
+    "corpo_libero": (("bodyweight", "pull-up bar", "parallel bars", "rings"), ()),
+    "elastici": (("band",), ()),
+}
 
-    Ogni parola deve comparire, in qualsiasi ordine: nel nome italiano, nel
-    nome originale o, tradotta, nel nome originale.
-    """
-    condizioni = []
+
+def equipment_condition(chiave: str | None):
+    """Filtro SQL per una chiave di `EQUIPMENT_FILTERS`; nessun filtro se sconosciuta."""
+    regola = EQUIPMENT_FILTERS.get(chiave or "")
+    if regola is None:
+        return true()
+    dentro, fuori = regola
+    return and_(
+        or_(*(Exercise.equipment.ilike(f"%{p}%") for p in dentro)),
+        *(~Exercise.equipment.ilike(f"%{p}%") for p in fuori),
+    )
+
+
+def _search_words(q: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Le parole utili della ricerca, ciascuna con i termini inglesi che la traducono."""
+    parole = []
     for parola in re.findall(r"[a-zàèéìòù0-9'-]+", q.lower()):
         if parola in _SEARCH_STOPWORDS or len(parola) < 2:
             continue
@@ -787,13 +853,63 @@ def search_condition(q: str):
         for radice, inglesi in _SEARCH_STEMS:
             if parola.startswith(radice):
                 termini.update(inglesi)
-        condizioni.append(
-            or_(
-                Exercise.name_it.ilike(f"%{parola}%"),
-                *(Exercise.name.ilike(f"%{t}%") for t in sorted(termini)),
-            )
-        )
-    return and_(*condizioni) if condizioni else true()
+        parole.append((parola, tuple(sorted(termini))))
+    return parole
+
+
+def _word_condition(parola: str, termini: tuple[str, ...]):
+    # Anche l'attrezzatura: "adductor machine" ha "macchina" solo lì.
+    return or_(
+        Exercise.name_it.ilike(f"%{parola}%"),
+        *(Exercise.name.ilike(f"%{t}%") for t in termini),
+        *(Exercise.equipment.ilike(f"%{t}%") for t in termini),
+    )
+
+
+def search_condition(q: str, *, every_word: bool = True):
+    """Filtro per la ricerca per nome, in italiano o nel nome originale.
+
+    Una parola trova un esercizio se compare nel nome italiano, nel nome
+    originale o, tradotta, nel nome originale o nell'attrezzatura. Con `every_word` devono
+    comparire tutte, in qualsiasi ordine; senza, ne basta una e il resto lo
+    decide `search_score` (vedi `rank_search`).
+    """
+    condizioni = [_word_condition(p, t) for p, t in _search_words(q)]
+    if not condizioni:
+        return true()
+    return and_(*condizioni) if every_word else or_(*condizioni)
+
+
+def search_score(exercise: Exercise, q: str) -> int:
+    """Quante parole della ricerca trovano l'esercizio (stesse regole del filtro)."""
+    nome_it = (exercise.name_it or "").lower()
+    nome = (exercise.name or "").lower()
+    attrezzi = (exercise.equipment or "").lower()
+    return sum(
+        1
+        for parola, termini in _search_words(q)
+        if parola in nome_it or any(t in nome or t in attrezzi for t in termini)
+    )
+
+
+def rank_search(exercises, q: str | None, key=lambda e: e):
+    """Filtra e ordina per pertinenza i risultati di una ricerca.
+
+    Ogni parola che manca nel nome escludeva l'esercizio: "estensioni sopra
+    la testa al cavo a braccio singolo" non trovava niente perché "testa" e
+    "singolo" non compaiono in nessun nome. Ora, con tre parole o più, ne può
+    mancare una; prima vengono gli esercizi che le hanno tutte. L'ordine di
+    partenza resta a parità di pertinenza.
+    """
+    elementi = list(exercises)
+    parole = len(_search_words(q or ""))
+    if not parole:
+        return elementi
+    minimo = parole - 1 if parole >= 3 else parole
+    punteggi = [(search_score(key(e), q), e) for e in elementi]
+    tenuti = [(p, e) for p, e in punteggi if p >= minimo]
+    tenuti.sort(key=lambda pe: -pe[0])
+    return [e for _, e in tenuti]
 
 
 def has_library(db: Session, source: str = SOURCE) -> bool:

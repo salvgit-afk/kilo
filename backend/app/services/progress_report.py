@@ -34,11 +34,10 @@ from app.models import (
     SessionSet,
     UserProfile,
     WeightLog,
-    WorkoutPlan,
     WorkoutPlanExercise,
     WorkoutSession,
 )
-from app.services import clock
+from app.services import clock, training_schedule
 
 logger = logging.getLogger("progress_report")
 
@@ -289,12 +288,7 @@ def build_report(
         (max(p.date for p in pesate) - min(p.date for p in pesate)).days if pesate else 0
     )
 
-    piano_attivo = db.scalar(
-        select(WorkoutPlan)
-        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
+    piano_attivo = training_schedule.current_plan(db, profile.id)
 
     settimane = max((until - since).days / 7, 1e-9)
     report = ProgressReport(
@@ -405,12 +399,7 @@ def explain_plateau(db: Session, profile: UserProfile, report: ProgressReport) -
             "feedback e te lo dico con precisione."
         )
 
-    piano = db.scalar(
-        select(WorkoutPlan)
-        .where(WorkoutPlan.profile_id == profile.id, WorkoutPlan.is_active.is_(True))
-        .order_by(WorkoutPlan.started_at.desc(), WorkoutPlan.id.desc())
-        .limit(1)
-    )
+    piano = training_schedule.current_plan(db, profile.id)
     raccomandazione = autoregulation.evaluate_feedback(db, profile, recente, plan=piano)
     return f"Sei fermo su {nomi}. {raccomandazione.reason}"
 
