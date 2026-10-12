@@ -452,3 +452,26 @@ def test_sostituzione_registra_la_preferenza_e_il_log(scenario):
         )
     ).one()
     assert "scelta_esercizi" in log.knowledge_source_tags
+
+
+def test_variazione_di_volume_per_gruppo_non_per_esercizio(scenario):
+    """-20% su un gruppo di 2 esercizi da 3 serie: 6 -> 5 serie (una tolta a
+    un esercizio), non 4 (ognuno da 3 a 2, arrotondando riga per riga: -33%)."""
+    from app.models import VolumeAdjustment
+
+    db, _profilo, plan = scenario
+    righe = list(db.scalars(select(WorkoutPlanExercise).where(WorkoutPlanExercise.workout_plan_id == plan.id)))
+    for r in righe:
+        r.target_sets = 3
+    db.commit()
+    gruppi: dict[str, int] = {}
+    for r in righe:
+        gruppi[r.exercise.primary_muscle] = gruppi.get(r.exercise.primary_muscle, 0) + 3
+
+    meno = ar.VolumeRecommendation(VolumeAdjustment.DECREASE, current_weekly_sets=10, suggested_weekly_sets=8, reason="")
+    ar.apply_volume_change(db, plan, meno)
+    dopo: dict[str, int] = {}
+    for r in righe:
+        assert r.target_sets in (2, 3), "mai più di una serie tolta allo stesso esercizio"
+        dopo[r.exercise.primary_muscle] = dopo.get(r.exercise.primary_muscle, 0) + r.target_sets
+    assert dopo == {m: round(s * 0.8) for m, s in gruppi.items()}

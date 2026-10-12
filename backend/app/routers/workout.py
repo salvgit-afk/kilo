@@ -35,6 +35,7 @@ from app.schemas import (
     ExerciseHistoryOut,
     ExerciseOut,
     ExerciseSessionOut,
+    ProgressionOut,
     FeedbackIn,
     ManualSetsIn,
     PlanExerciseAddIn,
@@ -69,6 +70,7 @@ from app.services import (
     exercise_notes,
     exercise_swap,
     plan_editing,
+    progression,
     push_notifications,
     rate_limit,
     training_log,
@@ -839,14 +841,38 @@ def exercise_history(
 def last_performance(
     exercise_ids: list[int] = Query(default=[], max_length=40),
     exclude_session_id: int | None = None,
+    plan_id: int | None = None,
     db: Session = Depends(get_db),
     profile: UserProfile = Depends(owned_profile),
 ) -> dict[int, ExerciseSessionOut]:
-    """L'ultima volta di ciascun esercizio: il riferimento durante la sessione."""
+    """L'ultima volta di ciascun esercizio: il riferimento durante la sessione.
+
+    Con `plan_id`, per gli esercizi di quella scheda anche il passo
+    successivo (salire, una ripetizione in più, restare, scendi), calcolato
+    sul range e sul RIR previsti dalla scheda.
+    """
     ultime = training_log.last_performance(
         db, profile.id, exercise_ids, exclude_session_id=exclude_session_id
     )
-    return {k: _history_out(v) for k, v in ultime.items()}
+    righe = {}
+    if plan_id is not None:
+        righe = {e.exercise_id: e for e in _plan_for(db, profile.id, plan_id).exercises}
+    risultato = {}
+    for exercise_id, voce in ultime.items():
+        out = _history_out(voce)
+        riga = righe.get(exercise_id)
+        if riga is not None:
+            consiglio = progression.suggest(
+                voce.sets,
+                reps_min=riga.target_reps_min,
+                reps_max=riga.target_reps_max,
+                target_rir=riga.target_rir,
+                is_compound=riga.exercise.is_compound,
+            )
+            if consiglio is not None:
+                out.suggestion = ProgressionOut(**vars(consiglio))
+        risultato[exercise_id] = out
+    return risultato
 
 
 @router.get("/sessions", response_model=list[SessionOut])

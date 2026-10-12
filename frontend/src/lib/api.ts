@@ -272,6 +272,15 @@ export type SessionSummary = {
 };
 
 /** Le serie di un esercizio in una sessione dello storico. */
+/** Il passo successivo dopo l'ultima volta (doppia progressione con il RIR). */
+export type Progression = {
+  kind: "carico" | "ripetizioni" | "mantieni" | "scendi";
+  weight_kg: number | null;
+  reps: number;
+  text: string;
+  reason: string;
+};
+
 export type ExerciseSession = {
   session_id: number;
   date: string;
@@ -280,6 +289,8 @@ export type ExerciseSession = {
   top_weight_kg: number;
   best_e1rm: number;
   volume_kg: number;
+  /** Solo nell'"ultima volta" chiesta con la scheda. */
+  suggestion?: Progression | null;
 };
 
 export type ExerciseHistory = {

@@ -440,6 +440,16 @@ class PlanExerciseUpdate(BaseModel):
     rest_seconds: int | None = Field(default=None, ge=15, le=600)
 
 
+class ProgressionOut(BaseModel):
+    """Cosa fare la prossima volta (`services/progression.py`)."""
+
+    kind: str
+    weight_kg: float | None
+    reps: int
+    text: str
+    reason: str
+
+
 class ExerciseSessionOut(BaseModel):
     """Le serie di un esercizio in una sessione dello storico."""
 
@@ -450,6 +460,8 @@ class ExerciseSessionOut(BaseModel):
     top_weight_kg: float
     best_e1rm: float
     volume_kg: float
+    # Solo nell'"ultima volta" di una scheda: il passo successivo.
+    suggestion: ProgressionOut | None = None
 
 
 class ManualSetIn(BaseModel):
@@ -997,9 +1009,10 @@ class SyncResultOut(BaseModel):
 
 class MuscleVolumeOut(BaseModel):
     muscle: str
-    sets_per_week: list[int]
+    # Mezze serie possibili: le indirette contano la metà, come nella scheda.
+    sets_per_week: list[float]
     average: float
-    last: int
+    last: float
     range_min: int
     range_max: int
     status: Literal["sotto", "dentro", "sopra"]

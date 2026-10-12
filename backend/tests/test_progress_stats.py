@@ -161,6 +161,27 @@ def test_volume_una_riga_per_settimana_anche_senza_allenamenti(ambiente):
     assert chest["status"] == "sotto"
 
 
+def test_volume_conta_le_indirette_a_meta_come_la_scheda(ambiente):
+    """Stesso metodo della scheda: in una Push/Pull i tricipiti allenati dalle
+    spinte non devono risultare "sotto il range" solo in Progressi."""
+    from app.models import Exercise
+
+    client, db = ambiente
+    h, pid = _account(client, "a@example.com")
+    spinte = Exercise(name="Chest Press", primary_muscle="Chest", secondary_muscles="Triceps, Shoulders",
+                      is_compound=True)
+    pushdown = Exercise(name="Triceps Pushdown", primary_muscle="Triceps", is_compound=False)
+    db.add_all([spinte, pushdown])
+    db.flush()
+    _sessione(db, pid, LUNEDI, esercizio=spinte, serie=6)
+    _sessione(db, pid, LUNEDI, esercizio=pushdown, serie=3)
+
+    per_muscolo = {m["muscle"]: m for m in client.get(f"/progress/volume?profile_id={pid}&weeks=1", headers=h).json()["muscles"]}
+    assert per_muscolo["Chest"]["sets_per_week"] == [6]
+    assert per_muscolo["Triceps"]["sets_per_week"] == [6]  # 3 dirette + 6 a metà
+    assert per_muscolo["Shoulders"]["sets_per_week"] == [3]
+
+
 def test_volume_senza_dati(ambiente):
     client, _ = ambiente
     h, pid = _account(client, "a@example.com")

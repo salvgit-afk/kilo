@@ -850,23 +850,37 @@ def direct_weekly_sets(exercises: list[PlannedExercise]) -> dict[str, int]:
     return totali
 
 
+def set_weights(primary: str | None, secondary_muscles: str | None, direct: str | None = None) -> dict[str, float]:
+    """Quanto conta una serie per ogni gruppo: 1 per quello allenato, mezza
+    per i secondari che contano. La stessa regola per la scheda (serie
+    previste), per Progressi e per l'autoregolazione (serie svolte)."""
+    primario = primary or "?"
+    diretto = direct or primario
+    pesi = {diretto: 1.0}
+    for secondario in (secondary_muscles or "").split(","):
+        secondario = secondario.strip()
+        if (
+            secondario in _TRACKED_MUSCLES
+            and secondario not in (diretto, primario)
+            and (primario, secondario) not in _NO_INDIRECT_FROM
+        ):
+            pesi[secondario] = INDIRECT_SET_WEIGHT
+    return pesi
+
+
+def round_half(value: float) -> float:
+    # Mezze serie: più precisione sarebbe finta, il metodo stesso è un'approssimazione.
+    return round(value * 2) / 2
+
+
 def equivalent_weekly_sets(exercises: list[PlannedExercise]) -> dict[str, float]:
     """Serie settimanali per gruppo: dirette intere più indirette a metà."""
     totali: dict[str, float] = {}
     for item in exercises:
-        primario = item.exercise.primary_muscle or "?"
-        diretto = item.target_muscle or primario
-        totali[diretto] = totali.get(diretto, 0) + item.sets
-        for secondario in (item.exercise.secondary_muscles or "").split(","):
-            secondario = secondario.strip()
-            if (
-                secondario in _TRACKED_MUSCLES
-                and secondario not in (diretto, primario)
-                and (primario, secondario) not in _NO_INDIRECT_FROM
-            ):
-                totali[secondario] = totali.get(secondario, 0) + item.sets * INDIRECT_SET_WEIGHT
-    # Mezze serie: più precisione sarebbe finta, il metodo stesso è un'approssimazione.
-    return {m: round(v * 2) / 2 for m, v in totali.items()}
+        pesi = set_weights(item.exercise.primary_muscle, item.exercise.secondary_muscles, item.target_muscle)
+        for muscolo, peso in pesi.items():
+            totali[muscolo] = totali.get(muscolo, 0) + item.sets * peso
+    return {m: round_half(v) for m, v in totali.items()}
 
 
 def _allocate_exercise_slots(needs: list[int], budget: int) -> list[int]:

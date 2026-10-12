@@ -380,6 +380,8 @@ def _user_context(db: Session, profile: UserProfile) -> str:
     else:
         righe.append("- Nessun integratore dichiarato (e non gliene vanno proposti)")
 
+    righe.extend(_training_context(db, profile, in_uso))
+
     # Le note che l'app gli sta mostrando: se l'utente chiede "perché mi hai
     # scritto questo?", la risposta deve essere coerente con la nota.
     from app.services import agent_notes
@@ -392,6 +394,104 @@ def _user_context(db: Session, profile: UserProfile) -> str:
         )
 
     return "\n".join(righe)
+
+
+def _kg(valore: float) -> str:
+    return f"{valore:g}".replace(".", ",")
+
+
+def _training_context(db: Session, profile: UserProfile, piano: WorkoutPlan | None) -> list[str]:
+    """Scheda, carichi, volume, peso e costanza, in poche righe.
+
+    Senza, "Analizza i miei progressi" o "perché la mia scheda è fatta
+    così?" ricevevano solo il nome della scheda e il numero di esercizi, e il
+    modello doveva indovinare. Ogni parte è facoltativa: un errore qui non
+    deve mai fermare la chat. Righe brevi: il piano gratuito di Gemini conta
+    i token.
+    """
+    from app.services import progress_stats, progression, training_log
+    from app.services.workout_generator import muscle_name_it
+
+    righe: list[str] = []
+    oggi = clock.today()
+    try:
+        if piano is not None:
+            for giorno in plan_editing.day_labels(piano):
+                esercizi = sorted((e for e in piano.exercises if e.day_label == giorno), key=lambda e: e.order_index)
+                righe.append(
+                    f"- {giorno}: "
+                    + "; ".join(
+                        f"{(e.exercise.name_it or e.exercise.name)[:40]} {e.target_sets}×"
+                        f"{e.target_reps_min}-{e.target_reps_max} RIR {e.target_rir}, recupero {e.rest_seconds}s"
+                        for e in esercizi
+                    )
+                )
+            # Il passo successivo esercizio per esercizio, come lo mostra l'app.
+            passi: dict[str, list[str]] = {}
+            for e in piano.exercises:
+                storia = training_log.exercise_history(
+                    db, profile.id, e.exercise_id, since=oggi - dt.timedelta(weeks=6), limit=1
+                )
+                if not storia:
+                    continue
+                c = progression.suggest(
+                    storia[0].sets, reps_min=e.target_reps_min, reps_max=e.target_reps_max,
+                    target_rir=e.target_rir, is_compound=e.exercise.is_compound,
+                )
+                if c is not None:
+                    passi.setdefault(c.kind, []).append(
+                        f"{(e.exercise.name_it or e.exercise.name)[:30]} ({c.text.lower()})"
+                    )
+            etichette = {"carico": "pronti a salire", "ripetizioni": "una ripetizione in più",
+                         "mantieni": "restare (serie al cedimento)", "scendi": "carico troppo alto"}
+            for tipo, nomi in passi.items():
+                righe.append(f"- Ultima sessione, {etichette[tipo]}: " + ", ".join(nomi[:6]))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Contesto scheda per la chat non disponibile: %s", e)
+
+    try:
+        # Massimale stimato dei 3 esercizi più frequenti nelle ultime 8 settimane.
+        frequenti = training_log.logged_exercises(db, profile.id, since=oggi - dt.timedelta(weeks=8))[:3]
+        tendenze = []
+        for voce in frequenti:
+            t = progress_stats.one_rm_trend(db, profile, voce.exercise.id, weeks=8, today=oggi)
+            if t is not None and t.points:
+                tendenze.append(
+                    f"{t.exercise_name[:30]} {_kg(round(t.points[-1].one_rm, 1))} kg "
+                    f"({t.delta_pct * 100:+.0f}% in {len(t.points)} sessioni)"
+                )
+        if tendenze:
+            righe.append("- Massimale stimato (8 settimane): " + "; ".join(tendenze))
+
+        volume = progress_stats.volume_by_muscle(db, profile, weeks=4, today=oggi)
+        if volume.muscles:
+            righe.append(
+                "- Serie nell'ultima settimana conclusa (indirette a metà), range consigliato "
+                f"{volume.muscles[0].range_min}-{volume.muscles[0].range_max}: "
+                + ", ".join(f"{muscle_name_it(m.muscle)} {_kg(m.last)} ({m.status})" for m in volume.muscles)
+            )
+
+        costanza = progress_stats.consistency(db, profile, weeks=4, today=oggi)
+        if costanza.planned_total:
+            righe.append(
+                f"- Allenamenti nelle ultime 4 settimane: {costanza.done_total} su {costanza.planned_total} previsti"
+            )
+
+        peso = progress_stats.weight_trend(db, profile, weeks=4, today=oggi)
+        if peso.points:
+            ritmo = (
+                f", {peso.weekly_rate_kg:+.2f} kg a settimana".replace(".", ",")
+                if peso.weekly_rate_kg is not None else ""
+            )
+            righe.append(
+                f"- Peso: media mobile {_kg(round(peso.points[-1].average_kg, 1))} kg "
+                f"({len(peso.points)} pesate in 4 settimane{ritmo})"
+            )
+        else:
+            righe.append("- Nessuna pesata nelle ultime 4 settimane")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Progressi per la chat non disponibili: %s", e)
+    return righe
 
 
 def _intake_note(db: Session, declaration: SupplementDeclaration) -> str:
