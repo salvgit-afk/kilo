@@ -370,3 +370,34 @@ def test_allenamento_iniziato_con_l_altra_scheda_spegne_il_promemoria(db: Sessio
     ))
     db.commit()
     assert daily_reminders.workouts_due(db, p, OGGI) == []
+
+
+def test_un_utente_in_errore_non_ferma_gli_altri(db: Session, monkeypatch):
+    """Ogni persona a sé: un errore su una non blocca le altre, e quello già
+    mandato resta registrato (il giro dopo non lo rimanda)."""
+    from app.models import NotificationLog
+
+    u1, p1 = _utente(db)
+    u2 = User(email="b@example.com", password_hash="x")
+    db.add(u2)
+    db.flush()
+    p2 = UserProfile(user_id=u2.id, display_name="Bea", birth_date=dt.date(1996, 1, 1), sex="female",
+                     height_cm=165, weight_kg=60, goal="hypertrophy", training_days_per_week=3)
+    db.add(p2)
+    db.add(PushSubscription(user_id=u2.id, endpoint="https://push.example/b", p256dh="k", auth="a"))
+    db.flush()
+    db.add(SupplementDeclaration(profile_id=p2.id, kind="creatine", dose_amount=5, dose_unit="g", doses_per_day=1))
+    db.commit()
+    originale = notification_rules.build
+
+    def build(db_, utente, **kw):
+        if utente.id == u1.id:
+            raise RuntimeError("dati strani")
+        return originale(db_, utente, **kw)
+
+    monkeypatch.setattr(notification_rules, "build", build)
+    inviate, r = _invia(db, ora=20)
+    assert inviate and r.failed == 1
+    registrate = {k for (k,) in db.query(NotificationLog.key).filter(NotificationLog.user_id == u2.id)}
+    assert registrate
+    assert _invia(db, ora=20)[0] == [], "il giro dopo non rimanda le stesse"

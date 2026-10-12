@@ -45,3 +45,13 @@ def _email_spenta(monkeypatch):
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "brevo_api_key", "")
+
+
+@pytest.fixture(autouse=True)
+def _gemini_senza_pausa():
+    """La pausa dopo un 429 vale per tutto il processo: ogni test parte senza."""
+    from app.services import llm_client
+
+    llm_client._pausa_fino = 0.0
+    yield
+    llm_client._pausa_fino = 0.0

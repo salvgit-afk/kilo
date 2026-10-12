@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import PushSubscription, User, UserProfile
 from app.routers.auth import current_user
-from app.services import notification_rules, push_notifications, rate_limit
+from app.services import locks, notification_rules, push_notifications, rate_limit
 
 router = APIRouter(prefix="/push", tags=["notifiche"])
 
@@ -208,5 +208,10 @@ def dispatch(
         raise HTTPException(status_code=503, detail="Invio dei promemoria non configurato.")
     if not x_cron_secret or not hmac.compare_digest(x_cron_secret, s.push_cron_secret):
         raise HTTPException(status_code=403, detail="Non autorizzato.")
-    r = push_notifications.dispatch(db)
+    # Un giro alla volta: se il job ritenta mentre il primo è ancora in corso
+    # (Render lento a rispondere), il secondo non manda le stesse notifiche.
+    with locks.exclusive("push-dispatch", bind=db.get_bind()) as mio:
+        if not mio:
+            return DispatchOut(due=0, sent=0, removed=0, failed=0)
+        r = push_notifications.dispatch(db)
     return DispatchOut(due=r.due, sent=r.sent, removed=r.removed, failed=r.failed)

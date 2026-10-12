@@ -278,6 +278,7 @@ def catalog_status(db: Session = Depends(get_db)) -> CatalogStatusOut:
         ) or 0,
         ingredients_cached=db.scalar(select(func.count()).select_from(Ingredient)) or 0,
         muscles=list(muscoli),
+        untranslated=translation.pending_count(db),
     )
 
 

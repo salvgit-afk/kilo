@@ -24,6 +24,8 @@ from app.services import auth, email_verification, mailer, rate_limit
 
 router = APIRouter(prefix="/auth", tags=["account"])
 
+NON_INVITATO = "Kilo è su invito: chiedi all'amministratore di aggiungere la tua email."
+
 
 def client_ip(request: Request) -> str:
     """Indirizzo di chi si collega.
@@ -119,6 +121,8 @@ def request_email_code(payload: EmailCodeIn, request: Request, db: Session = Dep
     motivo = email_verification.address_problem(payload.email)
     if motivo:
         raise HTTPException(status_code=422, detail=motivo)
+    if payload.purpose == email_verification.REGISTER and not impostazioni.registration_allowed(payload.email):
+        raise HTTPException(status_code=403, detail=NON_INVITATO)
     esiste = auth.email_taken(db, payload.email)
     if payload.purpose == email_verification.REGISTER and esiste:
         raise HTTPException(status_code=409, detail="Esiste già un account con questa email: accedi.")
@@ -164,6 +168,8 @@ def register(payload: CredentialsIn, request: Request, db: Session = Depends(get
     except rate_limit.RateLimited as e:
         raise _too_many(e) from e
     rate_limit.REGISTER_PER_IP.hit(ip)
+    if not get_settings().registration_allowed(payload.email):
+        raise HTTPException(status_code=403, detail=NON_INVITATO)
     verificata = get_settings().email_configured
     if verificata:
         if auth.email_taken(db, payload.email):

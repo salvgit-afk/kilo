@@ -18,7 +18,7 @@ import threading
 import time
 from collections import defaultdict, deque
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -91,6 +91,10 @@ DAILY_LIMITS = {
     # Foto di etichette e piatti: una chiamata al modello ciascuna, e le
     # immagini costano più token del testo.
     "photo_scan": 40,
+    # Suggerimenti di ricette: una ricerca nuova può tradurre la domanda e le
+    # dosi delle ricette con il modello. Largo per chi sfoglia, stretto per
+    # chi volesse svuotare la quota di tutti.
+    "recipe_suggest": 120,
 }
 
 
@@ -114,7 +118,15 @@ def consume_daily(db: Session, user_id: int, kind: str, *, today: dt.date | None
                     ApiUsage.user_id == user_id, ApiUsage.day == oggi, ApiUsage.kind == kind
                 )
             )
-    if riga.count >= limite:
+    # Incremento atomico e condizionato nel database: con "riga.count += 1"
+    # due richieste insieme leggevano lo stesso valore e ne contavano una sola.
+    contate = db.execute(
+        update(ApiUsage)
+        .where(ApiUsage.id == riga.id, ApiUsage.count < limite)
+        .values(count=ApiUsage.count + 1)
+    ).rowcount
+    db.commit()
+    if not contate:
         secondi_a_mezzanotte = int(
             (dt.datetime.combine(oggi + dt.timedelta(days=1), dt.time(), tzinfo=clock.FUSO) - clock.now()).total_seconds()
         )
@@ -122,5 +134,3 @@ def consume_daily(db: Session, user_id: int, kind: str, *, today: dt.date | None
             "Hai raggiunto il limite giornaliero per questa funzione: riprova domani.",
             max(secondi_a_mezzanotte, 60),
         )
-    riga.count += 1
-    db.commit()

@@ -207,9 +207,10 @@ def test_risposta_parziale_mentre_arriva(grezzo, atteso):
 class _FintoStream:
     """Risposta SSE finta, nella forma in cui la manda Gemini."""
 
-    def __init__(self, righe, status_code=200):
+    def __init__(self, righe, status_code=200, text=""):
         self.righe = righe
         self.status_code = status_code
+        self.text = text
 
     def __enter__(self):
         return self
@@ -351,3 +352,32 @@ def test_la_chat_normale_e_quella_in_streaming_usano_lo_stesso_prompt(db, monkey
     chat_agent.answer(db, p, "quante serie a settimana?")
     list(chat_agent.answer_stream(db, p, "quante serie a settimana?"))
     assert visti["normale"] == visti["stream"]
+
+
+def test_dopo_un_429_nessuno_richiama_gemini_per_un_po(monkeypatch):
+    """La quota esaurita vale per tutta l'app: le altre funzioni non insistono."""
+    chiamate = []
+    corpo = '{"error": {"details": [{"retryDelay": "34s"}]}}'
+    monkeypatch.setattr(llm_client, "_post", lambda *a: chiamate.append(1) or httpx.Response(429, text=corpo, request=_REQ))
+    with pytest.raises(llm_client.LLMQuotaExceeded):
+        llm_client.generate_structured("x", {})
+    with pytest.raises(llm_client.LLMQuotaExceeded):
+        llm_client.generate_structured("y", {})
+    with pytest.raises(llm_client.LLMQuotaExceeded):
+        list(llm_client.stream_structured("z", {"type": "object"}))
+    assert chiamate == [1], "la seconda e la terza non arrivano a Gemini"
+    import time
+    assert 30 < llm_client._pausa_fino - time.monotonic() <= 34, "aspetta quanto dice Gemini"
+
+
+def test_streaming_usa_il_modello_di_riserva_se_quello_fissato_e_ritirato(monkeypatch):
+    usati = []
+    righe = ['data: {"candidates":[{"content":{"parts":[{"text":"{}"}]}}]}']
+
+    def stream(_metodo, url, **_k):
+        usati.append(url.split("/models/")[1].split(":")[0])
+        return _FintoStream([], status_code=404) if len(usati) == 1 else _FintoStream(righe)
+
+    monkeypatch.setattr(llm_client.httpx, "stream", stream)
+    assert "".join(llm_client.stream_structured("x", {"type": "object"}, model="gemini-3.5-flash-lite")) == "{}"
+    assert usati == ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]

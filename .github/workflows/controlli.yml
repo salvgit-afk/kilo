@@ -1,0 +1,82 @@
+# Controlli automatici su ogni pull request (e su ogni push su premain).
+#
+# Le stesse verifiche fatte a mano prima di ogni commit, gratuite su GitHub
+# Actions: se qualcosa non va la PR mostra la croce rossa prima del merge,
+# invece di accorgersene quando Render o Vercel non partono.
+#
+# - backend: le migrazioni applicate su un Postgres vero (i test usano
+#   SQLite, che non le esegue tutte) e confrontate con i modelli
+#   (`alembic check`), poi tutti i test;
+# - frontend: tipi, lint e build di produzione.
+
+name: Controlli
+
+on:
+  pull_request:
+  push:
+    branches: [premain]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        # La stessa major di Neon.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: kilo
+          POSTGRES_DB: kilo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt pyflakes
+      - name: Migrazioni su Postgres e confronto con i modelli
+        env:
+          DATABASE_URL: postgresql://postgres:kilo@localhost:5432/kilo
+        run: |
+          alembic upgrade head
+          alembic check
+          # Anche all'indietro di un passo e di nuovo avanti: la migrazione
+          # nuova deve poter essere annullata.
+          alembic downgrade -1
+          alembic upgrade head
+      - name: Errori evidenti nel codice
+        run: python -m pyflakes app | grep -v "imported but unused" | (! grep .)
+      - name: Test
+        run: python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint src
+      - run: npx next build

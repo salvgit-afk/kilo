@@ -252,9 +252,18 @@ export function ProfileSection({
               {/* Riservato all'amministratore: scarica le fonti e avvia la
                   traduzione di tutto il catalogo. */}
               {isAdmin && (
-                <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
-                  {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
-                </button>
+                <>
+                  <button className="btn-ghost w-full" disabled={syncing} onClick={syncCatalog}>
+                    {syncing ? "Sincronizzo…" : "Aggiorna catalogo"}
+                  </button>
+                  {catalog && (
+                    <p className="text-[11.5px] leading-relaxed text-white/45">
+                      {catalog.untranslated
+                        ? `${catalog.untranslated} esercizi da tradurre: Kilo li traduce in automatico, subito dopo l'aggiornamento e poi a ogni ora finché non ha finito.`
+                        : "Catalogo tutto in italiano."}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </Card>

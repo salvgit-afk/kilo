@@ -232,7 +232,7 @@ def _check_translation(voce: dict) -> tuple[dict, list[str]]:
     return dati, problemi
 
 
-def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
+def translate_exercises(db: Session, exercises: list[Exercise], *, timeout: float = 150.0) -> int:
     """Traduce gli esercizi ancora senza nome italiano. Restituisce quanti.
 
     Ogni blocco ha due tentativi: il secondo solo per le voci che non passano
@@ -269,7 +269,7 @@ def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
                     ),
                     _EXERCISE_SCHEMA,
                     temperature=0.2,
-                    timeout=150.0,
+                    timeout=timeout,
                     model=modello,
                     purpose="translate_exercises",
                 )
@@ -307,37 +307,67 @@ def translate_exercises(db: Session, exercises: list[Exercise]) -> int:
     return tradotti
 
 
+def _catalog_pending_filter(source: str | None = None):
+    from app.services.exercise_library import CATALOG_SOURCES
+
+    if source:
+        return Exercise.source == source
+    return (
+        Exercise.source.in_(CATALOG_SOURCES)
+        & Exercise.duplicate_of_id.is_(None)
+        & Exercise.in_catalog.is_(True)
+    )
+
+
+def pending_count(db: Session) -> int:
+    """Esercizi del catalogo visibile ancora senza nome italiano."""
+    from sqlalchemy import func
+
+    return db.scalar(
+        select(func.count(Exercise.id)).where(
+            _catalog_pending_filter(), Exercise.name_it.is_(None), Exercise.instructions.is_not(None)
+        )
+    ) or 0
+
+
 def translate_library(
-    *, source: str | None = None, max_failures: int = 4, pause_seconds: float = 4.0
+    *,
+    source: str | None = None,
+    max_failures: int = 4,
+    pause_seconds: float = 4.0,
+    budget_seconds: float | None = None,
 ) -> int:
     """Traduce la libreria esercizi, un blocco alla volta.
 
     Senza `source` traduce tutto il catalogo visibile (fonti del catalogo,
-    senza doppioni), prima gli esercizi di base. Pensata per girare in
-    background o da riga di comando: apre una propria sessione, fa una pausa
-    fra i blocchi per restare nei limiti del piano gratuito di Gemini e si
-    ferma dopo alcuni errori consecutivi (quota esaurita): rieseguendola
-    riprende da dove si era interrotta.
+    senza doppioni), prima gli esercizi di base. Apre una propria sessione,
+    fa una pausa fra i blocchi per restare nei limiti del piano gratuito di
+    Gemini e si ferma dopo alcuni errori consecutivi (quota esaurita) o
+    finito `budget_seconds`: rieseguendola riprende da dove si era
+    interrotta. Un solo giro alla volta (`locks.exclusive`): il pulsante
+    "Aggiorna catalogo" e il job orario non traducono due volte gli stessi.
+
+    Così il catalogo resta tutto in italiano: dopo una sincronizzazione parte
+    subito, e se un deploy o lo spegnimento di Render la interrompe la
+    riprende il job orario (`/maintenance/run`).
     """
     import time
 
     from app.database import SessionLocal
-    from app.services.exercise_library import CATALOG_SOURCES
+    from app.services import locks
 
-    filtro_fonte = (
-        Exercise.source == source
-        if source
-        else Exercise.source.in_(CATALOG_SOURCES)
-        & Exercise.duplicate_of_id.is_(None)
-        & Exercise.in_catalog.is_(True)
-    )
+    filtro_fonte = _catalog_pending_filter(source)
+    inizio = time.monotonic()
     totale = fallimenti = 0
-    with SessionLocal() as db:
-        while True:
+    with SessionLocal() as db, locks.exclusive("translate-library", bind=db.get_bind()) as mio:
+        if not mio:
+            logger.info("Traduzione del catalogo già in corso: salto questo giro")
+            return 0
+        while budget_seconds is None or time.monotonic() - inizio < budget_seconds:
             blocco = list(
                 db.scalars(
                     select(Exercise)
-                    .where(filtro_fonte, Exercise.name_it.is_(None))
+                    .where(filtro_fonte, Exercise.name_it.is_(None), Exercise.instructions.is_not(None))
                     .order_by(Exercise.priority, Exercise.id)
                     .limit(EXERCISE_BATCH_SIZE)
                 )
@@ -359,13 +389,22 @@ def translate_library(
     return totale
 
 
+# Traduzione al volo durante una richiesta: solo quanto si vede (un paio di
+# blocchi) e con un limite di tempo. Il resto lo fa il lavoro di fondo: una
+# pagina non deve restare appesa minuti per tradurre 200 esercizi.
+INLINE_MAX_EXERCISES = 2 * EXERCISE_BATCH_SIZE
+INLINE_TIMEOUT_SECONDS = 40.0
+
+
 def ensure_translated(db: Session, exercises: list[Exercise]) -> None:
-    """Traduce al volo ciò che manca, senza mai far fallire la richiesta."""
+    """Traduce al volo ciò che manca fra gli esercizi mostrati, senza mai far
+    fallire la richiesta. Di norma non c'è niente da fare: il catalogo lo
+    tiene tradotto il lavoro di fondo."""
     mancanti = [ex for ex in exercises if ex is not None and not ex.name_it and ex.instructions]
     if not mancanti:
         return
     try:
-        translate_exercises(db, mancanti)
+        translate_exercises(db, mancanti[:INLINE_MAX_EXERCISES], timeout=INLINE_TIMEOUT_SECONDS)
     except Exception as e:  # la traduzione non deve mai bloccare la scheda
         logger.warning("Traduzione esercizi non riuscita: %s", e)
         db.rollback()
