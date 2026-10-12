@@ -33,7 +33,7 @@ import {
   type WeightTrendVerdict,
 } from "@/components/progress/common";
 
-export type WeightPoint = { date: string; weight_kg: number };
+export type WeightPoint = { id: number; date: string; weight_kg: number };
 
 const VERDICTS: Record<WeightTrendVerdict, { label: string; tone: string; dot: string }> = {
   in_linea: {
@@ -183,8 +183,133 @@ export function WeightCard({
             </AreaChart>
           </ResponsiveContainer>
         )}
+        {weights.length > 0 && <RecentWeights profileId={profileId} weights={weights} onChanged={onLogged} />}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Le ultime pesate, correggibili: un 87 scritto al posto di 78 resterebbe nel
+ * grafico e negli obiettivi (il peso del profilo segue l'ultima pesata).
+ */
+function RecentWeights({
+  profileId,
+  weights,
+  onChanged,
+}: {
+  profileId: number;
+  weights: WeightPoint[];
+  onChanged: () => void | Promise<void>;
+}) {
+  const [aperte, setAperte] = useState(false);
+  const [modifica, setModifica] = useState<{ id: number; kg: number | null } | null>(null);
+  const [daCancellare, setDaCancellare] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [errore, setErrore] = useState<string | null>(null);
+  const ultime = [...weights].reverse().slice(0, 10);
+
+  async function esegui(azione: () => Promise<unknown>) {
+    setBusy(true);
+    setErrore(null);
+    try {
+      await azione();
+      setModifica(null);
+      setDaCancellare(null);
+      await onChanged();
+    } catch (e) {
+      setErrore(e instanceof Error ? e.message : "Non sono riuscito a salvare.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-white/[0.06] pt-2">
+      <button
+        onClick={() => setAperte(!aperte)}
+        aria-expanded={aperte}
+        className="flex min-h-[44px] w-full items-center gap-2 text-left text-[12.5px] text-white/55 transition hover:text-white/85"
+      >
+        <span className="flex-1">Ultime pesate · correggi o cancella</span>
+        <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 transition-transform ${aperte ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.4}>
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {aperte && (
+        <ul className="space-y-1">
+          {ultime.map((w) => {
+            const data = new Date(w.date).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" });
+            if (modifica?.id === w.id) {
+              return (
+                <li key={w.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                  <span className="w-full text-[12.5px] text-white/55">Correggi la pesata di {data}</span>
+                  <NumberField
+                    value={modifica.kg}
+                    onChange={(kg) => setModifica({ id: w.id, kg })}
+                    min={30}
+                    max={300}
+                    decimals={1}
+                    suffix="kg"
+                    size="sm"
+                    ariaLabel={`Peso corretto del ${data}`}
+                    className="w-40"
+                  />
+                  <button
+                    className="btn-primary h-10 px-3 text-[12.5px]"
+                    disabled={busy || !modifica.kg}
+                    onClick={() => esegui(() => api.patch(`/profile/${profileId}/weight/${w.id}`, { weight_kg: modifica.kg }))}
+                  >
+                    Salva
+                  </button>
+                  <button className="btn-ghost h-10 px-3 text-[12.5px]" onClick={() => setModifica(null)} disabled={busy}>
+                    Annulla
+                  </button>
+                </li>
+              );
+            }
+            return (
+              <li key={w.id} className="flex items-center gap-2 py-0.5">
+                <span className="w-24 shrink-0 text-[12.5px] text-white/55">{data}</span>
+                <span className="flex-1 font-mono text-[13px] tabular-nums text-white/85">{num(w.weight_kg)} kg</span>
+                {daCancellare === w.id ? (
+                  <>
+                    <button
+                      className="h-10 rounded-lg bg-rose-500/90 px-3 text-[12.5px] font-semibold text-white"
+                      disabled={busy}
+                      onClick={() => esegui(() => api.del(`/profile/${profileId}/weight/${w.id}`))}
+                    >
+                      Cancella
+                    </button>
+                    <button className="btn-ghost h-10 px-3 text-[12.5px]" onClick={() => setDaCancellare(null)} disabled={busy}>
+                      No
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="h-10 rounded-lg px-3 text-[12.5px] text-white/60 transition hover:bg-white/[0.06] hover:text-white"
+                      onClick={() => setModifica({ id: w.id, kg: w.weight_kg })}
+                      aria-label={`Correggi la pesata del ${data}`}
+                    >
+                      Correggi
+                    </button>
+                    <button
+                      className="h-10 rounded-lg px-3 text-[12.5px] text-rose-200/70 transition hover:bg-rose-400/[0.08] hover:text-rose-100"
+                      onClick={() => setDaCancellare(w.id)}
+                      aria-label={`Cancella la pesata del ${data}`}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {errore && <p className="mt-1 text-[12px] text-rose-200/90">{errore}</p>}
+    </div>
   );
 }
 

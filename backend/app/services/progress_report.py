@@ -142,6 +142,10 @@ class ProgressReport:
     weight: WeightTrend
     adherence: AdherenceStats
     notes: list[str] = field(default_factory=list)
+    # Di che cosa parla ogni nota, nello stesso ordine: "periodo", "peso",
+    # "stima", "aderenza", "stallo". La pagina Progressi tiene solo quelle che
+    # non hanno già un riquadro dedicato.
+    note_kinds: list[str] = field(default_factory=list)
     knowledge_tags: list[str] = field(default_factory=list)
 
     @property
@@ -311,59 +315,67 @@ def build_report(
         knowledge_tags=["1rm", "autoregolazione"],
     )
 
-    report.notes = _build_notes(report, profile)
+    con_tipo = _build_notes(report, profile)
+    report.notes = [testo for _, testo in con_tipo]
+    report.note_kinds = [tipo for tipo, _ in con_tipo]
     return report
 
 
-def _build_notes(report: ProgressReport, profile: UserProfile) -> list[str]:
+def _build_notes(report: ProgressReport, profile: UserProfile) -> list[tuple[str, str]]:
     """Avvertenze metodologiche: servono a non far leggere come segnale ciò
     che è rumore."""
-    note: list[str] = []
+    note: list[tuple[str, str]] = []
 
     if report.too_early:
-        note.append(
+        note.append((
+            "periodo",
             f"Il periodo analizzato è di {report.weeks:.0f} settimane. Le "
             "variazioni di massa muscolare richiedono più tempo: leggi questi "
             "numeri come una fotografia, non come un verdetto sul programma."
-        )
+        ))
 
     peso = report.weight
     if peso.measurements == 0:
-        note.append(
+        note.append((
+            "peso",
             "Nessuna pesata registrata nel periodo: senza quel dato non posso "
             "dirti se il peso sta andando nella direzione del tuo obiettivo."
-        )
+        ))
     elif not peso.smoothed:
-        note.append(
+        note.append((
+            "peso",
             f"Solo {peso.measurements} pesate nel periodo. Il peso oscilla di "
             "1-2 kg al giorno per acqua e glicogeno, quindi con poche misurazioni "
             "la differenza che vedi può essere rumore. Pesarsi 3-4 volte a "
             "settimana rende la tendenza leggibile."
-        )
+        ))
 
     if any(e.high_rep_estimate for e in report.exercises):
-        note.append(
+        note.append((
+            "stima",
             "Su alcuni esercizi il massimale è stimato da serie sopra le 12 "
             "ripetizioni: in quel range la formula perde precisione, quindi la "
             "variazione va presa con più margine."
-        )
+        ))
 
     aderenza = report.adherence
     if aderenza.ratio is not None and aderenza.ratio < 0.7:
-        note.append(
+        note.append((
+            "aderenza",
             f"Hai svolto in media {aderenza.actual_per_week:.1f} sessioni a "
             f"settimana contro le {aderenza.planned_per_week} previste. Prima di "
             "cambiare la scheda, considera che il volume effettivo è stato "
             "inferiore a quello programmato."
-        )
+        ))
 
     if report.plateaued and not report.too_early:
         nomi = ", ".join(e.exercise_name for e in report.plateaued[:3])
-        note.append(
+        note.append((
+            "stallo",
             f"Fermi da tempo su: {nomi}. Se il recupero è buono si può alzare il "
             "volume; se invece i dolori durano a lungo e le sessioni ne "
             "risentono, la risposta corretta è ridurlo."
-        )
+        ))
 
     return note
 

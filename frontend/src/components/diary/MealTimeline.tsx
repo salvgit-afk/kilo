@@ -94,6 +94,7 @@ export function MealTimeline({
   canConfirm = true,
   onAdd,
   onAddRecipe,
+  onCopyPrevious,
   onChanged,
 }: {
   meals: Meal[];
@@ -103,6 +104,8 @@ export function MealTimeline({
   canConfirm?: boolean;
   onAdd: (mealType: string) => void;
   onAddRecipe: (mealType: string) => void;
+  /** "Copia da ieri": quante voci ha copiato (0 se ieri non c'era niente). */
+  onCopyPrevious?: (mealType: string) => Promise<number>;
   onChanged: () => void | Promise<void>;
 }) {
   // I pasti con qualcosa di previsto partono aperti: è lì che c'è da fare.
@@ -133,6 +136,7 @@ export function MealTimeline({
             onToggle={() => toggle(type)}
             onAdd={() => onAdd(type)}
             onAddRecipe={() => onAddRecipe(type)}
+            onCopyPrevious={onCopyPrevious ? () => onCopyPrevious(type) : undefined}
             onChanged={onChanged}
           />
         ))}
@@ -150,6 +154,7 @@ function MealStop({
   onToggle,
   onAdd,
   onAddRecipe,
+  onCopyPrevious,
   onChanged,
 }: {
   type: string;
@@ -160,9 +165,21 @@ function MealStop({
   onToggle: () => void;
   onAdd: () => void;
   onAddRecipe: () => void;
+  onCopyPrevious?: () => Promise<number>;
   onChanged: () => void | Promise<void>;
 }) {
   const t = MEAL_THEME[type];
+  const [copia, setCopia] = useState<"busy" | "vuoto" | "errore" | null>(null);
+
+  async function copiaDaIeri() {
+    if (!onCopyPrevious) return;
+    setCopia("busy");
+    try {
+      setCopia((await onCopyPrevious()) > 0 ? null : "vuoto");
+    } catch {
+      setCopia("errore");
+    }
+  }
   const items = meal?.items ?? [];
   const pieno = items.length > 0;
   const previsti = planned?.items ?? [];
@@ -259,12 +276,32 @@ function MealStop({
                   + Aggiungi {WITH_ARTICLE[type] ?? MEAL_LABELS[type].toLowerCase()}
                 </button>
               )}
-              <button
-                onClick={onAddRecipe}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] text-white/55 transition hover:border-iris-400/40 hover:text-iris-200"
-              >
-                <Icon d={BOOK} className="h-3.5 w-3.5" /> Da una ricetta salvata
-              </button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  onClick={onAddRecipe}
+                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] text-white/55 transition hover:border-iris-400/40 hover:text-iris-200"
+                >
+                  <Icon d={BOOK} className="h-3.5 w-3.5" /> Da una ricetta salvata
+                </button>
+                {/* Colazione e pranzo spesso si ripetono: lo stesso di ieri in un tocco. */}
+                {onCopyPrevious && !pieno && !previsti.length && (
+                  <button
+                    onClick={copiaDaIeri}
+                    disabled={copia === "busy"}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] text-white/55 transition hover:border-lime-400/40 hover:text-lime-200"
+                  >
+                    {copia === "busy" ? "Copio…" : "↺ Come ieri"}
+                  </button>
+                )}
+              </div>
+              {copia === "vuoto" && (
+                <p className="mt-1.5 text-[12px] text-white/45">
+                  Ieri non c&apos;era niente da copiare per {WITH_ARTICLE[type] ?? MEAL_LABELS[type].toLowerCase()}.
+                </p>
+              )}
+              {copia === "errore" && (
+                <p className="mt-1.5 text-[12px] text-rose-200/80">Non sono riuscito a copiare: riprova.</p>
+              )}
             </div>
           </motion.div>
         )}

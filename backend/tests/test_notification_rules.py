@@ -32,6 +32,7 @@ from app.services import notification_rules, push_notifications, training_schedu
 
 ROMA = push_notifications.FUSO
 OGGI = dt.date(2026, 9, 22)  # martedì
+SERA = dt.datetime.combine(OGGI, dt.time(19), tzinfo=ROMA)
 
 
 @pytest.fixture
@@ -190,7 +191,9 @@ def test_integratori_giorno_di_riposo_e_di_allenamento(db: Session):
     _scheda(db, p, giorni=[OGGI.weekday()], inizio=OGGI)
     db.commit()
     allenamento = next(n for n in _note(db, u) if n.key.startswith("integratori:"))
-    assert "mezz'ora" in allenamento.body and "250-300 ml" in allenamento.body
+    # Consigli solo per ciò che è dichiarato: qui solo creatina, niente proteine.
+    assert "creatina con un pasto" in allenamento.body
+    assert "proteine" not in allenamento.body and "mezz'ora" not in allenamento.body
 
 
 def test_tappa_della_creatina_al_ventottesimo_giorno(db: Session):
@@ -225,8 +228,12 @@ def test_proteine_basse_propone_una_ricetta(db: Session):
     u, p = _utente(db)
     db.add(MealLog(profile_id=p.id, date=OGGI, meal_type="lunch", kcal=500, protein_g=20))
     db.commit()
+    # Prima di cena mancano quasi sempre: non si dice niente.
+    assert not [n for n in _note(db, u) if n.key.startswith("proteine-basse:")]
+    db.add(MealLog(profile_id=p.id, date=OGGI, meal_type="dinner", kcal=600, protein_g=25))
+    db.commit()
     nota = next(n for n in _note(db, u) if n.key.startswith("proteine-basse:"))
-    assert nota.section == "ricette"
+    assert nota.section == "ricette" and nota.hours == (20, 22)
 
 
 def test_ricetta_salvata_e_mai_provata(db: Session):
@@ -286,10 +293,25 @@ def test_promemoria_integratori_a_fine_allenamento(db: Session):
     db.add(SupplementDeclaration(profile_id=p.id, kind="protein_powder", dose_amount=30, dose_unit="g", doses_per_day=1))
     db.commit()
     inviate = []
-    assert push_notifications.after_session(db, p, sender=lambda sub, m: inviate.append(m)) is True
-    assert "mezz'ora" in inviate[0].body
+    assert push_notifications.after_session(db, p, now=SERA, sender=lambda sub, m: inviate.append(m)) is True
+    # Le fonti dicono fino a 2 ore dopo, non "entro mezz'ora".
+    assert "un paio d'ore" in inviate[0].body and "mezz'ora" not in inviate[0].body
     # Una sola volta, anche chiudendo due sessioni nello stesso giorno.
-    assert push_notifications.after_session(db, p, sender=lambda sub, m: inviate.append(m)) is False
+    assert push_notifications.after_session(db, p, now=SERA, sender=lambda sub, m: inviate.append(m)) is False
+    # E una volta in tutta la giornata: niente "Integratori di oggi" né nel promemoria della sera.
+    assert not [n for n in _note(db, u) if n.key.startswith("integratori:")]
+    sera = notification_rules.evening_summary(db, p, OGGI, 20)
+    assert not sera or "proteine in polvere" not in sera[0].body
+
+
+def test_integratori_gia_ricordati_a_meta_giornata_non_si_ripetono(db: Session):
+    from app.models import NotificationLog
+
+    u, p = _utente(db)
+    db.add(SupplementDeclaration(profile_id=p.id, kind="creatine", dose_amount=5, dose_unit="g", doses_per_day=1))
+    db.add(NotificationLog(user_id=u.id, key=f"integratori:{OGGI}", sent_on=OGGI))
+    db.commit()
+    assert push_notifications.after_session(db, p, now=SERA, sender=lambda sub, m: None) is False
 
 
 def test_niente_promemoria_se_gli_integratori_sono_gia_segnati(db: Session):

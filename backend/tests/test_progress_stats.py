@@ -479,3 +479,30 @@ def test_massimale_di_un_altro_profilo_non_si_legge(ambiente):
     # Stesso esercizio, ma nessuna serie registrata dall'altro profilo.
     r = client.get(f"/progress/one-rm/{panca.id}?profile_id={mio}", headers=h)
     assert r.status_code == 200 and r.json()["points"]
+
+
+def test_pesate_correggibili_e_cancellabili(ambiente):
+    """Un 87 scritto al posto di 78 non deve restare nel grafico né negli obiettivi."""
+    client, _ = ambiente
+    h, pid = _account(client, "a@example.com")
+    _h2, pid2 = _account(client, "b@example.com")
+    ieri = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    oggi = dt.date.today().isoformat()
+    vecchia = client.post(f"/profile/{pid}/weight", headers=h, json={"weight_kg": 78.2, "date": ieri}).json()
+    errata = client.post(f"/profile/{pid}/weight", headers=h, json={"weight_kg": 87.0, "date": oggi}).json()
+    peso = lambda: client.get("/auth/me", headers=h).json()["profile"]["weight_kg"]  # noqa: E731
+    assert peso() == 87.0
+
+    r = client.patch(f"/profile/{pid}/weight/{errata['id']}", headers=h, json={"weight_kg": 78.0})
+    assert r.status_code == 200 and r.json()["weight_kg"] == 78.0
+    assert peso() == 78.0, "gli obiettivi seguono la correzione"
+
+    # Una pesata di un giorno passato non sostituisce quella di oggi.
+    client.post(f"/profile/{pid}/weight", headers=h, json={"weight_kg": 70.0, "date": "2026-01-01"})
+    assert peso() == 78.0
+
+    assert client.delete(f"/profile/{pid}/weight/{errata['id']}", headers=h).status_code == 204
+    assert peso() == 78.2, "torna all'ultima rimasta"
+    # Le pesate di un altro profilo non si toccano.
+    assert client.delete(f"/profile/{pid2}/weight/{vecchia['id']}", headers=h).status_code == 404
+    assert client.patch(f"/profile/{pid}/weight/999", headers=h, json={"weight_kg": 70}).status_code == 404

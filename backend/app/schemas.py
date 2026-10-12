@@ -141,7 +141,15 @@ class WeightLogIn(BaseModel):
     weight_kg: float = Field(gt=20, lt=400)
     date: dt.date | None = None
     body_fat_pct: float | None = Field(default=None, ge=1, le=70)
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=300)
+
+
+class WeightLogUpdate(BaseModel):
+    """Correzione di una pesata: solo i campi mandati cambiano."""
+
+    weight_kg: float | None = Field(default=None, gt=20, lt=400)
+    date: dt.date | None = None
+    body_fat_pct: float | None = Field(default=None, ge=1, le=70)
 
 
 class ResetIn(BaseModel):
@@ -538,6 +546,16 @@ class NutritionTargetsOut(BaseModel):
     rationale: str
     warnings: list[str]
     knowledge_tags: list[str]
+
+
+class CopyMealsIn(BaseModel):
+    """Copia quello che si è mangiato in un giorno su un altro (di solito ieri su oggi)."""
+
+    from_date: dt.date
+    to_date: dt.date | None = None
+    # Un pasto solo ("breakfast", "lunch"...) o, senza, tutta la giornata.
+    meal_type: str | None = Field(default=None, pattern="^(breakfast|lunch|dinner|snack)$")
+    planned: bool = False
 
 
 class FoodNamesIn(BaseModel):

@@ -53,6 +53,10 @@ export function KiloNote({
   const { forSection, dismiss } = useNotes();
   const notes = forSection(section);
   const note = notes[0];
+  // In Oggi una nota di un'altra sezione è un rimando: titolo, due righe e
+  // "Apri …". Per intero (fonti comprese) la si legge nella sua sezione, e
+  // così non compare due volte uguale.
+  const rimando = !!note && section === "oggi" && note.section !== "oggi";
 
   return (
     <AnimatePresence mode="wait" initial={false}>
@@ -88,16 +92,18 @@ export function KiloNote({
               )}
             </div>
             <p className="text-[14px] font-semibold leading-snug text-white">{note.title}</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-white/65">{note.text}</p>
+            <p className={`mt-1 text-[13px] leading-relaxed text-white/65 ${rimando ? "line-clamp-2" : ""}`}>{note.text}</p>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => askCoach(note.question, `Nota di Kilo: ${note.title}`)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-iris-400/30 bg-iris-400/[0.1] px-2.5 py-1.5 text-[12px] font-medium text-iris-100 transition hover:border-iris-400/50 hover:bg-iris-400/[0.18]"
-              >
-                <Mascot size={15} />
-                Approfondisci
-              </button>
+              {!rimando && (
+                <button
+                  onClick={() => askCoach(note.question, `Nota di Kilo: ${note.title}`)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-iris-400/30 bg-iris-400/[0.1] px-2.5 py-1.5 text-[12px] font-medium text-iris-100 transition hover:border-iris-400/50 hover:bg-iris-400/[0.18]"
+                >
+                  <Mascot size={15} />
+                  Approfondisci
+                </button>
+              )}
               {note.action && onAction && ACTION_LABELS[note.action] && (
                 <button
                   onClick={() => onAction(note.action!)}
@@ -122,7 +128,7 @@ export function KiloNote({
               </button>
             </div>
 
-            {note.knowledge_tags.length > 0 && (
+            {!rimando && note.knowledge_tags.length > 0 && (
               <div className="mt-2.5 border-t border-white/[0.06] pt-2.5">
                 <SourceTags tags={note.knowledge_tags} />
               </div>

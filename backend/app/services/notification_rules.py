@@ -24,8 +24,10 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     MealLog,
+    NotificationLog,
     NotificationSettings,
     SavedRecipe,
+    TrainingFeedback,
     User,
     UserProfile,
     WorkoutSession,
@@ -193,14 +195,24 @@ def _scheda_vecchia(db: Session, profile: UserProfile, today: dt.date) -> list[N
         settimane = (today - inizio).days // 7
         if settimane < PLAN_AGE_WEEKS:
             continue
+        # Se il punto l'hai appena fatto ("Come sta andando?"), la scheda è già
+        # stata valutata: niente notifica che chiede di rifarlo.
+        recente = db.scalar(
+            select(func.count(TrainingFeedback.id)).where(
+                TrainingFeedback.workout_plan_id == piano.id,
+                TrainingFeedback.date >= today - dt.timedelta(weeks=4),
+            )
+        )
+        if recente:
+            continue
         note.append(
             Notification(
                 key=f"scheda-vecchia:{piano.id}",
-                title="Cambiamo qualcosa?",
+                title="Facciamo il punto sulla scheda?",
                 body=(
-                    f"Sono {settimane} settimane con {piano.name}. È il momento buono per "
-                    "variare gli esercizi o farne generare una nuova: dimmi come vanno "
-                    "progressi e recupero e la aggiorno."
+                    f"Sono {settimane} settimane con {piano.name}. Dimmi da «Come sta "
+                    "andando?» come vanno progressi e recupero: ti dico se mantenere, "
+                    "aumentare o ridurre il volume, o se è il momento di cambiare esercizi."
                 ),
                 section="scheda",
                 category="training",
@@ -214,15 +226,53 @@ def _scheda_vecchia(db: Session, profile: UserProfile, today: dt.date) -> list[N
 # --- Integratori -----------------------------------------------------------
 
 
+def supplement_text(declarations, *, after_workout: bool) -> str:
+    """L'elenco di cosa prendere e un consiglio solo per ciò che è dichiarato.
+
+    Le proteine dopo l'allenamento: "da subito fino a 2 ore dopo"
+    (`nutrient_timing.md`), non entro mezz'ora come diceva il testo di prima.
+    """
+    elenco = ", ".join(_nome(d) for d in declarations)
+    tipi = {d.kind for d in declarations}
+    consigli = []
+    if "protein_powder" in tipi:
+        consigli.append(
+            "le proteine entro un paio d'ore dalla fine, quando ti è comodo"
+            if after_workout
+            else "le proteine vanno bene a merenda o con un pasto"
+        )
+    if "creatine" in tipi:
+        consigli.append("la creatina con un pasto, a qualsiasi ora")
+    frase = f" {'; '.join(consigli).capitalize()}." if consigli else ""
+    inizio = "Dopo l'allenamento" if after_workout else "Giorno di riposo"
+    return f"{inizio}: {elenco}.{frase}"
+
+
+def _already_sent_today(db: Session, user_id: int | None, keys: list[str], today: dt.date) -> bool:
+    if user_id is None:
+        return False
+    return db.scalar(
+        select(func.count(NotificationLog.id)).where(
+            NotificationLog.user_id == user_id,
+            NotificationLog.sent_on == today,
+            NotificationLog.key.in_(keys),
+        )
+    ) > 0
+
+
+def supplements_already_pushed(db: Session, profile: UserProfile, today: dt.date) -> bool:
+    """Oggi gli integratori sono già stati ricordati (a fine allenamento o a
+    metà giornata): non si ripetono, neanche nel promemoria della sera."""
+    return _already_sent_today(
+        db, profile.user_id, [f"integratori:{today}", f"post-allenamento:{profile.id}:{today}"], today
+    )
+
+
 def _supplements(db: Session, profile: UserProfile, today: dt.date, allenamento_oggi: bool) -> list[Notification]:
     da_prendere = supplement_intake.pending(db, profile, today=today)
     note: list[Notification] = []
-    if da_prendere:
-        elenco = ", ".join(_nome(d) for d, _ in da_prendere)
-        if allenamento_oggi:
-            corpo = f"Dopo l'allenamento: {elenco}. Le proteine entro mezz'ora dalla fine, con 250-300 ml d'acqua (o come indica la confezione)."
-        else:
-            corpo = f"Giorno di riposo: {elenco}. La creatina con un pasto si assorbe meglio, le proteine vanno bene a merenda."
+    if da_prendere and not supplements_already_pushed(db, profile, today):
+        corpo = supplement_text([d for d, _ in da_prendere], after_workout=allenamento_oggi)
         note.append(
             Notification(
                 key=f"integratori:{today}",
@@ -319,17 +369,18 @@ def _diary(db: Session, profile: UserProfile, today: dt.date) -> list[Notificati
                 hours=(21, 22),
             )
         )
-    elif target.protein_g and proteine < target.protein_g * PROTEIN_LOW_RATIO:
+    elif target.protein_g and proteine < target.protein_g * PROTEIN_LOW_RATIO and _dinner_logged(db, profile, today):
+        # Solo a cena segnata: alle 19 mancano quasi sempre le proteine della cena.
         mancano = target.protein_g - proteine
         note.append(
             Notification(
                 key=f"proteine-basse:{today}",
                 title=f"Ti mancano {mancano:.0f} g di proteine",
-                body="Cerco una ricetta che ci sta nel resto della giornata?",
+                body="Anche con la cena sei sotto: uno spuntino proteico chiude il conto. Ti cerco cosa?",
                 section="ricette",
                 category="recipes",
                 priority=6,
-                hours=(19, 21),
+                hours=(20, 22),
             )
         )
     return note
@@ -421,9 +472,10 @@ def evening_summary(db: Session, profile: UserProfile, today: dt.date, hour: int
     """Il promemoria di quello che oggi non è ancora segnato."""
     from app.services.push_notifications import build_message
 
-    messaggio = build_message(
-        daily_reminders.build(db, profile, today=today), name=profile.display_name
-    )
+    promemoria = daily_reminders.build(db, profile, today=today)
+    if supplements_already_pushed(db, profile, today):
+        promemoria.supplements = []
+    messaggio = build_message(promemoria, name=profile.display_name)
     if messaggio is None:
         return []
     return [
@@ -466,3 +518,16 @@ def build(
         note += evening_summary(db, profile, today, evening_hour)
     note.sort(key=lambda n: n.priority)
     return note
+
+
+def _dinner_logged(db: Session, profile: UserProfile, today: dt.date) -> bool:
+    return bool(
+        db.scalar(
+            select(func.count(MealLog.id)).where(
+                MealLog.profile_id == profile.id,
+                MealLog.date == today,
+                MealLog.meal_type == "dinner",
+                MealLog.is_planned.is_(False),
+            )
+        )
+    )

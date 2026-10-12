@@ -96,6 +96,22 @@ export function ChatBubble({
   onIntent: (intent: Omit<Intent, "nonce">) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Scorrendo verso il basso la mascotte si sposta di lato: altrimenti copre
+  // il testo delle schede. Torna appena si risale o si arriva in fondo.
+  const [scansata, setScansata] = useState(false);
+  useEffect(() => {
+    let ultimo = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const inFondo = window.innerHeight + y >= document.documentElement.scrollHeight - 40;
+      // Su schermi larghi c'è spazio: resta dov'è.
+      if (window.innerWidth >= 1024 || inFondo || y < 120 || y < ultimo - 6) setScansata(false);
+      else if (y > ultimo + 6) setScansata(true);
+      ultimo = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -275,7 +291,11 @@ export function ChatBubble({
         }}
         whileTap={{ scale: 0.93 }}
         whileHover={{ scale: 1.07 }}
-        className="chat-fab group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6"
+        animate={scansata && !open ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }}
+        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+        className={`chat-fab group fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-[100] grid h-[62px] w-[62px] place-items-center rounded-full border border-lime-400/30 bg-gradient-to-b from-ink-600 to-ink-800 shadow-lift ring-4 ring-lime-400/[0.07] lg:bottom-6 lg:right-6 ${
+          scansata && !open ? "pointer-events-none" : ""
+        }`}
         aria-label={open ? "Chiudi la chat con Kilo" : "Apri la chat con Kilo"}
         // Un tocco con un minimo movimento del dito non deve diventare uno
         // swipe fra le sezioni, che annullerebbe il click.

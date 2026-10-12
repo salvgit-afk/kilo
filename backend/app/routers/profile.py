@@ -26,6 +26,7 @@ from app.schemas import (
     ScreeningIn,
     ScreeningOut,
     WeightLogIn,
+    WeightLogUpdate,
     WeightLogOut,
 )
 from app.services import (
@@ -170,14 +171,70 @@ def log_weight(
         note=payload.note,
     )
     db.add(log)
-
-    # Il peso del profilo segue l'ultima misurazione: da lì dipendono TDEE e
-    # target proteico, che altrimenti resterebbero fermi al dato iniziale.
-    profile.weight_kg = payload.weight_kg
-
+    db.flush()
+    _sync_profile_weight(db, profile)
     db.commit()
     db.refresh(log)
     return log
+
+
+def _sync_profile_weight(db: Session, profile: UserProfile) -> None:
+    """Il peso del profilo segue la misurazione più recente per data: da lì
+    dipendono TDEE e target proteico. Una pesata di un giorno passato, o
+    corretta, non deve sostituire quella di oggi. Senza pesate resta il peso
+    dato nel profilo."""
+    ultima = db.scalar(
+        select(WeightLog)
+        .where(WeightLog.profile_id == profile.id)
+        .order_by(WeightLog.date.desc(), WeightLog.id.desc())
+        .limit(1)
+    )
+    if ultima is not None:
+        profile.weight_kg = ultima.weight_kg
+
+
+def _weight_log(db: Session, profile: UserProfile, log_id: int) -> WeightLog:
+    log = db.get(WeightLog, log_id)
+    if log is None or log.profile_id != profile.id:
+        raise HTTPException(status_code=404, detail="Pesata non trovata")
+    return log
+
+
+@router.patch("/{profile_id}/weight/{log_id}", response_model=WeightLogOut)
+def update_weight(
+    profile_id: int,
+    log_id: int,
+    payload: WeightLogUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> WeightLog:
+    """Corregge una pesata (un 87 al posto di 78 resterebbe nel grafico e negli obiettivi)."""
+    profile = get_profile(profile_id, db, user)
+    log = _weight_log(db, profile, log_id)
+    cambi = payload.model_dump(exclude_unset=True)
+    # Peso e data non si possono togliere, solo correggere; la massa grassa sì.
+    cambi = {k: v for k, v in cambi.items() if v is not None or k == "body_fat_pct"}
+    for campo, valore in cambi.items():
+        setattr(log, campo, valore)
+    db.flush()
+    _sync_profile_weight(db, profile)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+@router.delete("/{profile_id}/weight/{log_id}", status_code=204, response_model=None)
+def delete_weight(
+    profile_id: int,
+    log_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> None:
+    profile = get_profile(profile_id, db, user)
+    db.delete(_weight_log(db, profile, log_id))
+    db.flush()
+    _sync_profile_weight(db, profile)
+    db.commit()
 
 
 @router.get("/{profile_id}/weight", response_model=list[WeightLogOut])

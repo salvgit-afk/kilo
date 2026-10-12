@@ -444,7 +444,10 @@ export function Workout({
                     aria-haspopup="menu"
                     className="flex h-12 w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] pl-4 pr-3.5 text-left transition hover:border-white/20"
                   >
-                    <span className="min-w-0 truncate text-[15px] font-semibold text-white">{plan.name}</span>
+                    {/* "Push/Pull — 4 giorni · 4 giorni": il numero di giorni lo dice già la riga. */}
+                    <span className="min-w-0 truncate text-[15px] font-semibold text-white">
+                      {plan.name.replace(/\s*—\s*\d+\s+giorni?$/i, "")}
+                    </span>
                     <span className="shrink-0 text-[12.5px] text-white/45">
                       · {plan.training_weekdays.length} {plan.training_weekdays.length === 1 ? "giorno" : "giorni"}
                     </span>
