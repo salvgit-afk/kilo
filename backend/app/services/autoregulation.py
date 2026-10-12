@@ -33,7 +33,7 @@ from app.models import (
     WorkoutPlan,
     WorkoutPlanExercise,
 )
-from app.services.workout_generator import safety_ceiling_sets, weekly_sets_range
+from app.services.workout_generator import safety_ceiling_sets, set_weights, weekly_sets_range
 from app.services import clock
 
 logger = logging.getLogger("autoregulation")
@@ -111,7 +111,9 @@ def _current_weekly_sets(db: Session, plan: WorkoutPlan) -> int:
     """Volume settimanale per gruppo muscolare della scheda attiva.
 
     Si prende il massimo fra i gruppi: è quello che determina il carico di
-    recupero percepito.
+    recupero percepito. Contato come nella scheda e in Progressi
+    (`workout_generator.set_weights`: indirette a metà), arrotondato alla
+    serie: la raccomandazione parla di serie intere.
     """
     righe = db.scalars(
         select(WorkoutPlanExercise).where(
@@ -119,12 +121,12 @@ def _current_weekly_sets(db: Session, plan: WorkoutPlan) -> int:
         )
     ).all()
 
-    per_muscolo: dict[str, int] = {}
+    per_muscolo: dict[str, float] = {}
     for riga in righe:
-        muscolo = riga.exercise.primary_muscle or "?"
-        per_muscolo[muscolo] = per_muscolo.get(muscolo, 0) + riga.target_sets
+        for muscolo, peso in set_weights(riga.exercise.primary_muscle, riga.exercise.secondary_muscles).items():
+            per_muscolo[muscolo] = per_muscolo.get(muscolo, 0) + riga.target_sets * peso
 
-    return max(per_muscolo.values(), default=0)
+    return round(max(per_muscolo.values(), default=0))
 
 
 def evaluate_feedback(
@@ -285,29 +287,48 @@ def evaluate_feedback(
 def apply_volume_change(
     db: Session, plan: WorkoutPlan, recommendation: VolumeRecommendation
 ) -> int:
-    """Riscala le serie della scheda attiva secondo la raccomandazione.
+    """Porta le serie della scheda attiva verso la raccomandazione.
 
-    Restituisce il numero di righe modificate. Le serie non scendono mai
-    sotto 1: un esercizio con zero serie andrebbe rimosso, non azzerato.
+    La variazione si calcola per gruppo muscolare (le serie dirette del
+    gruppo per il rapporto suggerito/attuale) e si distribuisce una serie
+    alla volta fra i suoi esercizi: arrotondare esercizio per esercizio
+    faceva passare un 3 serie a 2 o a 4, un -33% o +33% contro il 20% delle
+    fonti. Si toglie da chi ne ha di più, si aggiunge a chi ne ha di meno;
+    mai sotto 1 serie (un esercizio con zero serie va rimosso, non azzerato).
+
+    Restituisce il numero di righe modificate.
     """
     if not recommendation.changes_volume or recommendation.current_weekly_sets <= 0:
         return 0
 
     fattore = recommendation.suggested_weekly_sets / recommendation.current_weekly_sets
-    modificate = 0
-
-    for riga in db.scalars(
-        select(WorkoutPlanExercise).where(
-            WorkoutPlanExercise.workout_plan_id == plan.id
+    righe = list(
+        db.scalars(
+            select(WorkoutPlanExercise)
+            .where(WorkoutPlanExercise.workout_plan_id == plan.id)
+            .order_by(WorkoutPlanExercise.id)
         )
-    ):
-        nuove = max(1, round(riga.target_sets * fattore))
-        if nuove != riga.target_sets:
-            riga.target_sets = nuove
-            modificate += 1
+    )
+    prima = {r.id: r.target_sets for r in righe}
+
+    gruppi: dict[str, list[WorkoutPlanExercise]] = {}
+    for riga in righe:
+        gruppi.setdefault(riga.exercise.primary_muscle or "?", []).append(riga)
+    for esercizi in gruppi.values():
+        attuali = sum(r.target_sets for r in esercizi)
+        delta = round(attuali * fattore) - attuali
+        for _ in range(abs(delta)):
+            if delta < 0:
+                riga = max((r for r in esercizi if r.target_sets > 1), key=lambda r: r.target_sets, default=None)
+                if riga is None:
+                    break
+                riga.target_sets -= 1
+            else:
+                riga = min(esercizi, key=lambda r: r.target_sets)
+                riga.target_sets += 1
 
     db.commit()
-    return modificate
+    return sum(1 for r in righe if r.target_sets != prima[r.id])
 
 
 def record_recommendation(

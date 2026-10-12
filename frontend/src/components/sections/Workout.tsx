@@ -1089,13 +1089,13 @@ function DayExerciseList({
   // L'ultima volta di ogni esercizio del giorno, con una richiesta sola.
   const caricaCarichi = useCallback(() => {
     if (!esercizi) return;
-    const params = new URLSearchParams({ profile_id: String(profileId) });
+    const params = new URLSearchParams({ profile_id: String(profileId), plan_id: String(planId) });
     esercizi.split(",").forEach((id) => params.append("exercise_ids", id));
     api
       .get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`)
       .then(setCarichi)
       .catch(() => setCarichi({}));
-  }, [esercizi, profileId]);
+  }, [esercizi, profileId, planId]);
   useEffect(caricaCarichi, [caricaCarichi]);
 
   // Le note sugli esercizi (regolazioni, presa), tenute anche sul telefono.
@@ -1512,6 +1512,15 @@ function ExerciseRow({
               <span className="min-w-0 flex-1 truncate font-mono tabular-nums text-white/75">
                 {last.sets.map((s) => `${kg(s.weight_kg)}×${s.reps}`).join(" · ")}
               </span>
+              {/* Pronto a salire: il prossimo carico, lo stesso che propone l'allenamento. */}
+              {last.suggestion?.kind === "carico" && last.suggestion.weight_kg !== null && (
+                <span
+                  className="shrink-0 rounded-md bg-lime-400/[0.12] px-1.5 py-0.5 font-mono text-[11.5px] font-semibold tabular-nums text-lime-200"
+                  title={last.suggestion.reason}
+                >
+                  ↑ {kg(last.suggestion.weight_kg)}
+                </span>
+              )}
               <svg
                 viewBox="0 0 24 24"
                 className={`h-3.5 w-3.5 shrink-0 text-white/35 transition-transform ${carichiAperti ? "rotate-180" : ""}`}

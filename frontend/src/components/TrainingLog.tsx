@@ -36,6 +36,7 @@ import {
   type ExerciseSession,
   type PlanExercise,
   type PlanExerciseParams,
+  type Progression,
   type SessionSet,
   type SessionSummary,
   type WorkoutPlan,
@@ -398,20 +399,48 @@ function rowsFor(target: PlanExerciseParams, logged: LoggedSet[]): Row[] {
 
 type Hint = { kg: number | null; reps: number; rir: number };
 
-/** Il suggerimento di ogni riga: la serie prima, o quella dell'ultima volta. */
+/**
+ * Il suggerimento di ogni riga: la serie prima, o il passo successivo dopo
+ * l'ultima volta (salire, una ripetizione in più…), o la serie dell'ultima volta.
+ */
 function hintsFor(rows: Row[], target: PlanExerciseParams, last?: ExerciseSession): Hint[] {
   const out: Hint[] = [];
+  const passo = last?.suggestion;
   rows.forEach((r, i) => {
     const volta = last?.sets[i] ?? last?.sets[last.sets.length - 1];
     const prima = i > 0 ? out[i - 1] : null;
     const primaRiga = i > 0 ? rows[i - 1] : null;
     out.push({
-      kg: primaRiga?.kg ?? prima?.kg ?? volta?.weight_kg ?? null,
-      reps: primaRiga?.reps ?? prima?.reps ?? volta?.reps ?? target.target_reps_max,
+      kg: primaRiga?.kg ?? prima?.kg ?? (passo ? passo.weight_kg ?? volta?.weight_kg : volta?.weight_kg) ?? null,
+      reps: primaRiga?.reps ?? prima?.reps ?? passo?.reps ?? volta?.reps ?? target.target_reps_max,
       rir: primaRiga?.rir ?? prima?.rir ?? target.target_rir,
     });
   });
   return out;
+}
+
+const PASSO_STILE: Record<Progression["kind"], string> = {
+  carico: "border-lime-400/30 bg-lime-400/[0.08] text-lime-100",
+  ripetizioni: "border-iris-400/30 bg-iris-400/[0.08] text-iris-100",
+  mantieni: "border-white/15 bg-white/[0.04] text-white/80",
+  scendi: "border-amber-300/30 bg-amber-300/[0.07] text-amber-100",
+};
+
+/** "Prova 62,5 kg" e perché: il passo di oggi, già nei valori in grigio. */
+function ProgressionLine({ passo }: { passo: Progression }) {
+  return (
+    <div className={`mt-2 rounded-xl border px-3 py-2 ${PASSO_STILE[passo.kind]}`}>
+      <p className="text-[13px] font-semibold">
+        {passo.kind === "carico" && "↑ "}
+        {passo.kind === "scendi" && "↓ "}
+        {passo.text}
+        {passo.kind !== "mantieni" && passo.kind !== "ripetizioni" && (
+          <span className="font-normal opacity-80"> × {passo.reps}</span>
+        )}
+      </p>
+      <p className="mt-0.5 text-[11.5px] leading-snug opacity-75">{passo.reason}</p>
+    </div>
+  );
 }
 
 /** Com'è andata la serie rispetto alla stessa serie dell'ultima volta. */
@@ -585,6 +614,8 @@ export function SessionDialog({
         ids.forEach((id) => params.append("exercise_ids", String(id)));
         const perNote = new URLSearchParams(params);
         if (corrente) params.set("exclude_session_id", String(corrente.id));
+        // Con la scheda arriva anche il passo successivo per ogni esercizio.
+        params.set("plan_id", String(plan.id));
         ultime = await api.get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`);
         rememberLast(ultime);
         note = await api.get<Record<number, string>>(`/workout/exercise-notes?${perNote}`).catch(() => recallNotes(ids));
@@ -1005,6 +1036,7 @@ export function SessionDialog({
                             "Prima volta: scegli un carico con cui arrivi al RIR indicato"
                           )}
                         </button>
+                        {volta?.suggestion && !iniziato && <ProgressionLine passo={volta.suggestion} />}
                         <div className="mt-1.5">
                           <ExerciseNoteLine
                             exerciseId={item.exercise.id}

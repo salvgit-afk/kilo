@@ -26,18 +26,18 @@ from app.models import (
     MealLog,
     NotificationSettings,
     SavedRecipe,
-    SessionSet,
     User,
     UserProfile,
-    WorkoutPlanExercise,
     WorkoutSession,
 )
 from app.services import (
     daily_reminders,
     food_diary,
     nutrition_targets,
+    progression,
     supplement_intake,
     supplements,
+    training_log,
     training_schedule,
     weekly_summary,
 )
@@ -144,63 +144,34 @@ def _training(db: Session, profile: UserProfile, today: dt.date, ora_palestra: i
 
 
 def _progressione(db: Session, profile: UserProfile, today: dt.date) -> list[Notification]:
-    """Esercizi chiusi due volte di fila al massimo del range con lo stesso
-    carico: le fonti (ACSM) indicano di salire del 2-10% quando si superano
-    le ripetizioni previste."""
-    righe = db.execute(
-        select(SessionSet, WorkoutPlanExercise, WorkoutSession)
-        .join(WorkoutSession, SessionSet.workout_session_id == WorkoutSession.id)
-        .join(
-            WorkoutPlanExercise,
-            (WorkoutPlanExercise.workout_plan_id == WorkoutSession.workout_plan_id)
-            & (WorkoutPlanExercise.exercise_id == SessionSet.exercise_id),
-        )
-        .where(
-            WorkoutSession.profile_id == profile.id,
-            WorkoutSession.date >= today - dt.timedelta(days=21),
-            SessionSet.weight_kg.is_not(None),
-            SessionSet.reps.is_not(None),
-        )
-        .order_by(WorkoutSession.date)
-    ).all()
-
-    per_esercizio: dict[int, dict[dt.date, list[tuple[float, int, WorkoutPlanExercise]]]] = {}
-    for serie, riga, sessione in righe:
-        per_esercizio.setdefault(serie.exercise_id, {}).setdefault(sessione.date, []).append(
-            (serie.weight_kg, serie.reps, riga)
-        )
-
+    """Esercizi della scheda in uso pronti a salire di carico, con la stessa
+    regola che l'app mostra durante l'allenamento (`progression.suggest`):
+    tutte le serie dell'ultima volta al massimo del range, con il RIR previsto."""
+    piano = training_schedule.current_plan(db, profile.id)
+    if piano is None:
+        return []
     note: list[Notification] = []
-    for exercise_id, per_giorno in per_esercizio.items():
-        giorni = sorted(per_giorno)[-2:]
-        if len(giorni) < 2:
+    for riga in piano.exercises:
+        storia = training_log.exercise_history(
+            db, profile.id, riga.exercise_id, since=today - dt.timedelta(days=21), limit=1
+        )
+        if not storia:
             continue
-        carichi = set()
-        pronto = True
-        riga = None
-        for giorno in giorni:
-            serie = per_giorno[giorno]
-            riga = serie[0][2]
-            carichi.add(round(serie[0][0], 1))
-            # Tutte le serie del giorno al massimo del range previsto.
-            if not all(reps >= riga.target_reps_max for _, reps, _ in serie):
-                pronto = False
-        if not pronto or len(carichi) != 1 or riga is None:
+        consiglio = progression.suggest(
+            storia[0].sets,
+            reps_min=riga.target_reps_min,
+            reps_max=riga.target_reps_max,
+            target_rir=riga.target_rir,
+            is_compound=riga.exercise.is_compound,
+        )
+        if consiglio is None or consiglio.kind != "carico" or consiglio.weight_kg is None:
             continue
-        carico = carichi.pop()
-        # ACSM indica +2-10% quando si superano le ripetizioni previste; il
-        # passo pratico è il disco più piccolo, quindi 2,5 kg per volta.
-        passo = max(2.5, round(carico * 0.05 / 2.5) * 2.5)
-        nuovo = carico + passo
-        nome = riga.exercise.name_it or riga.exercise.name if riga.exercise else "questo esercizio"
+        nome = riga.exercise.name_it or riga.exercise.name
         note.append(
             Notification(
-                key=f"carichi:{exercise_id}:{_settimana(today)}",
+                key=f"carichi:{riga.exercise_id}:{_settimana(today)}",
                 title="Sei pronto a salire",
-                body=(
-                    f"{nome}: due volte di fila hai chiuso tutte le serie a {riga.target_reps_max} "
-                    f"ripetizioni con {_kg(carico)} kg. Prova {_kg(nuovo)} kg."
-                ),
+                body=f"{nome}: prova {_kg(consiglio.weight_kg)} kg. {consiglio.reason}",
                 section="scheda",
                 category="training",
                 priority=2,

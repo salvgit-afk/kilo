@@ -112,7 +112,7 @@ function MuscleRow({ muscle, index }: { muscle: VolumeMuscle; index: number }) {
         </p>
         <div className="flex shrink-0 items-baseline gap-1.5">
           <span className="font-mono text-[15px] font-semibold tabular-nums text-white">
-            {muscle.last}
+            {num(muscle.last, Number.isInteger(muscle.last) ? 0 : 1)}
           </span>
           <span className="text-[11px] text-white/35">serie · ultima settimana</span>
         </div>
@@ -135,7 +135,8 @@ function MuscleRow({ muscle, index }: { muscle: VolumeMuscle; index: number }) {
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className={`pill border ${stato.pill}`}>{stato.label}</span>
         <span className="font-mono text-[11px] tabular-nums text-white/35">
-          consigliate {muscle.range_min}–{muscle.range_max} · media {num(muscle.average, 1)} a settimana
+          consigliate {muscle.range_min}–{muscle.range_max} · media {num(muscle.average, 1)} a settimana ·
+          indirette a metà
         </span>
       </div>
     </motion.div>

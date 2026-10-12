@@ -57,7 +57,7 @@ from app.services.progress_report import (
     estimate_1rm,
 )
 from app.services.weekly_summary import MIN_WEIGH_INS, PROTEIN_OK
-from app.services.workout_generator import weekly_sets_range
+from app.services.workout_generator import round_half, set_weights, weekly_sets_range
 
 # `calorie_and_1rm_formulas.md`: la formula di Epley resta attendibile entro
 # le ~10-12 ripetizioni. Sopra questa soglia l'andamento del massimale va
@@ -103,7 +103,7 @@ def _kg(valore: float) -> str:
 @dataclass
 class MuscleVolume:
     muscle: str
-    sets_per_week: list[int]
+    sets_per_week: list[float]
     range_min: int
     range_max: int
 
@@ -116,7 +116,7 @@ class MuscleVolume:
     complete_weeks: int = 0
 
     @property
-    def last(self) -> int:
+    def last(self) -> float:
         """Serie dell'ultima settimana **conclusa**."""
         conclusi = self.sets_per_week[: self.complete_weeks] or self.sets_per_week
         return conclusi[-1] if conclusi else 0
@@ -144,10 +144,11 @@ def volume_by_muscle(
 
     Si contano le serie **realmente registrate**, non quelle previste dalla
     scheda: è la differenza fra il volume programmato e quello allenato, ed è
-    il secondo a produrre gli adattamenti. Il muscolo è quello primario
-    dell'esercizio, come nel generatore di schede: il metodo "frazionario"
-    di `training_volume.md` (mezza serie ai secondari) alzerebbe il conteggio
-    rispetto ai range con cui la scheda è stata costruita.
+    il secondo a produrre gli adattamenti. Con lo stesso metodo della scheda
+    (`workout_generator.set_weights`): serie intere al muscolo primario e
+    mezze ai secondari che contano. Prima qui si contava solo il primario, e
+    in una Push/Pull tricipiti e bicipiti risultavano "sotto il range" in
+    Progressi mentre la scheda li dava a posto.
     """
     today = today or clock.today()
     lunedi = _week_starts(weeks, today)
@@ -161,6 +162,7 @@ def volume_by_muscle(
         select(
             WorkoutSession.date,
             Exercise.primary_muscle,
+            Exercise.secondary_muscles,
             func.count(SessionSet.id),
         )
         .join(SessionSet, SessionSet.workout_session_id == WorkoutSession.id)
@@ -171,16 +173,18 @@ def volume_by_muscle(
             WorkoutSession.date <= today,
             Exercise.primary_muscle.is_not(None),
         )
-        .group_by(WorkoutSession.date, Exercise.primary_muscle)
+        .group_by(WorkoutSession.date, Exercise.primary_muscle, Exercise.secondary_muscles)
     ).all()
 
-    per_muscolo: dict[str, list[int]] = {}
-    for data, muscolo, serie in righe:
+    per_muscolo: dict[str, list[float]] = {}
+    for data, primario, secondari, serie in righe:
         settimana = indice.get(week_start(data))
         if settimana is None:
             continue
-        conteggi = per_muscolo.setdefault(muscolo, [0] * len(lunedi))
-        conteggi[settimana] += serie
+        for muscolo, peso in set_weights(primario, secondari).items():
+            conteggi = per_muscolo.setdefault(muscolo, [0.0] * len(lunedi))
+            conteggi[settimana] += serie * peso
+    per_muscolo = {m: [round_half(v) for v in c] for m, c in per_muscolo.items()}
 
     minimo, _, massimo = weekly_sets_range(profile)
     # Settimane già chiuse: l'ultima lo è solo se oggi è dopo la domenica.
