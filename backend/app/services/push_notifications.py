@@ -280,14 +280,13 @@ def after_session(db: Session, profile: UserProfile, *, now: dt.datetime | None 
         return False
     if _sent_today(db, profile.user_id, oggi) >= MAX_PER_DAY:
         return False
-    elenco = ", ".join(notification_rules._nome(d) for d, _ in da_prendere)
+    # Se a metà giornata erano già stati ricordati, non si ripetono.
+    if notification_rules.supplements_already_pushed(db, profile, oggi):
+        return False
     nota = notification_rules.Notification(
         key=chiave,
         title="Allenamento chiuso",
-        body=(
-            f"Entro mezz'ora: {elenco}. Le proteine in 250-300 ml d'acqua, o come "
-            "indica la confezione."
-        ),
+        body=notification_rules.supplement_text([d for d, _ in da_prendere], after_workout=True),
         section="integratori",
         category="supplements",
         priority=1,

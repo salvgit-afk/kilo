@@ -516,6 +516,73 @@ def update_quantity(db: Session, item: MealItem, grams: float) -> MealItem:
     return item
 
 
+def copy_meals(
+    db: Session,
+    profile: UserProfile,
+    *,
+    from_date: dt.date,
+    to_date: dt.date,
+    meal_type: str | None = None,
+    planned: bool = False,
+) -> int:
+    """"Copia da ieri": quello che si è mangiato in un giorno (un pasto o
+    tutti) aggiunto a un altro giorno. Restituisce quante voci ha copiato.
+
+    Si copia ciò che è stato mangiato, non il previsto. I valori restano
+    quelli salvati nelle righe (come in `add_food`): copiare non ricalcola
+    dal catalogo. Nel futuro la copia è prevista, da confermare.
+    """
+    sorgenti = db.scalars(
+        select(MealLog)
+        .where(
+            MealLog.profile_id == profile.id,
+            MealLog.date == from_date,
+            MealLog.is_planned.is_(False),
+            *([MealLog.meal_type == meal_type] if meal_type else []),
+        )
+        .order_by(MealLog.id)
+    ).all()
+    copiate = 0
+    for sorgente in sorgenti:
+        if sorgente.items:
+            destinazione = get_or_create_meal(
+                db, profile, date=to_date, meal_type=sorgente.meal_type, planned=planned
+            )
+            for voce in sorgente.items:
+                db.add(MealItem(
+                    meal_log_id=destinazione.id,
+                    ingredient_id=voce.ingredient_id,
+                    name=voce.name,
+                    quantity_g=voce.quantity_g,
+                    kcal=voce.kcal,
+                    protein_g=voce.protein_g,
+                    carbs_g=voce.carbs_g,
+                    fat_g=voce.fat_g,
+                    fiber_g=voce.fiber_g,
+                    sugars_g=voce.sugars_g,
+                ))
+                copiate += 1
+        elif sorgente.kcal is not None or sorgente.description:
+            # Un pasto senza alimenti (ricetta, descrizione con i suoi totali):
+            # una copia del pasto intero.
+            db.add(MealLog(
+                profile_id=profile.id,
+                date=to_date,
+                meal_type=sorgente.meal_type,
+                recipe_id=sorgente.recipe_id,
+                description=sorgente.description,
+                servings=sorgente.servings,
+                kcal=sorgente.kcal,
+                protein_g=sorgente.protein_g,
+                carbs_g=sorgente.carbs_g,
+                fat_g=sorgente.fat_g,
+                is_planned=planned,
+            ))
+            copiate += 1
+    db.commit()
+    return copiate
+
+
 def remove_food(db: Session, item: MealItem) -> None:
     pasto = item.meal_log
     db.delete(item)

@@ -35,6 +35,7 @@ from app.schemas import (
     DiaryDayOut,
     DiaryDaysOut,
     DiaryOut,
+    CopyMealsIn,
     FoodNamesIn,
     FoodSearchOut,
     GapFoodOut,
@@ -359,6 +360,26 @@ def add_food(
         db.commit()
         db.refresh(voce)
     return voce
+
+
+@router.post("/diary/copy", status_code=201)
+def copy_meals(
+    payload: CopyMealsIn,
+    db: Session = Depends(get_db),
+    profile: UserProfile = Depends(owned_profile),
+) -> dict[str, int]:
+    """"Copia da ieri": un pasto o la giornata, su un altro giorno."""
+    verso = payload.to_date or clock.today()
+    if verso == payload.from_date:
+        raise HTTPException(status_code=422, detail="Scegli un giorno diverso da quello da copiare.")
+    copiate = food_diary.copy_meals(
+        db, profile,
+        from_date=payload.from_date,
+        to_date=verso,
+        meal_type=payload.meal_type,
+        planned=_planned(verso, payload.planned),
+    )
+    return {"copied": copiate}
 
 
 @router.post("/diary/recipe", response_model=list[MealItemOut], status_code=201)

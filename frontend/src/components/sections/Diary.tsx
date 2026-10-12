@@ -19,6 +19,7 @@ import {
   MEAL_LABELS,
   api,
   localDate,
+  shiftDate,
   type Diary as DiaryData,
   type FoodResult,
   type GapSuggestions,
@@ -179,6 +180,15 @@ export function Diary({
             canConfirm={day <= today}
             onAdd={(meal) => setAdding({ meal })}
             onAddRecipe={(meal) => setAddingRecipe(meal)}
+            onCopyPrevious={async (meal) => {
+              const r = await api.post<{ copied: number }>(`/nutrition/diary/copy?profile_id=${profileId}`, {
+                from_date: shiftDate(day, -1),
+                to_date: day,
+                meal_type: meal,
+              });
+              if (r.copied > 0) await load();
+              return r.copied;
+            }}
             onChanged={load}
           />
         </div>

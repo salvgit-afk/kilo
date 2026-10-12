@@ -64,6 +64,7 @@ export function Today({
   const [errore, setErrore] = useState<string | null>(null);
   const [schedaIgnota, setSchedaIgnota] = useState(false);
   const [tentativo, setTentativo] = useState(0);
+  const [perche, setPerche] = useState(false);
 
   useEffect(() => {
     let annullato = false;
@@ -329,14 +330,34 @@ export function Today({
         </div>
       )}
 
+      {/* Chiuso di default: è la spiegazione, non il dato di oggi. */}
       <Card className="mt-4" delay={0.15}>
-        <CardHeader
-          title="Perché questi numeri"
-          subtitle="Calcolati dai parametri delle fonti, non dalla memoria di un modello"
-        />
-        <p className="px-5 py-4 text-[13px] leading-relaxed text-white/60">
-          {diary?.targets.rationale}
-        </p>
+        <button
+          onClick={() => setPerche((v) => !v)}
+          aria-expanded={perche}
+          className="flex w-full items-center gap-3 px-5 py-4 text-left"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold text-white">Perché questi numeri</span>
+            <span className="block text-[12.5px] text-white/50">
+              Calcolati dai parametri delle fonti, non dalla memoria di un modello
+            </span>
+          </span>
+          <svg
+            viewBox="0 0 24 24"
+            className={`h-4 w-4 shrink-0 text-white/45 transition-transform ${perche ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.4}
+          >
+            <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {perche && (
+          <p className="border-t border-white/[0.06] px-5 py-4 text-[13px] leading-relaxed text-white/60">
+            {diary?.targets.rationale}
+          </p>
+        )}
       </Card>
     </>
   );

@@ -39,6 +39,9 @@ from app.services import (
     translation,
 )
 
+# Note del resoconto che nella pagina Progressi hanno già un riquadro proprio.
+NOTE_CON_RIQUADRO = {"periodo", "peso", "stima", "stallo"}
+
 router = APIRouter(tags=["progressione"], dependencies=[Depends(current_user)])
 
 
@@ -104,7 +107,9 @@ def read_report(
             )
             for e in report.exercises
         ],
-        notes=report.notes,
+        # Solo le note senza un riquadro loro nella pagina: periodo breve,
+        # pesate, stima del massimale e stallo hanno già il proprio posto.
+        notes=[t for k, t in zip(report.note_kinds, report.notes) if k not in NOTE_CON_RIQUADRO],
         plateau_advice=progress_report.explain_plateau(db, profile, report),
     )
 
