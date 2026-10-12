@@ -5,11 +5,20 @@
  * (vedi `next.config.mjs`): niente CORS e niente URL assoluti nei componenti.
  */
 
+import { forgetAccount } from "@/lib/account";
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
   }
 }
+
+/**
+ * Rete assente o server che non risponde in tempo. È un `TypeError` come
+ * l'errore di `fetch` senza rete, così chi già lo riconosce (la coda degli
+ * allenamenti, le note) lo tratta allo stesso modo: si riprova.
+ */
+export class NetworkError extends TypeError {}
 
 const TOKEN_KEY = "sessione";
 
@@ -19,45 +28,111 @@ export const session = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Senza un limite una richiesta a un server che non risponde resta appesa
+// per minuti, e la sezione con lei. Le letture hanno margine per il
+// risveglio di Render (20-40 s); il resto (analisi di foto e ricette con
+// l'LLM) può durare di più.
+const TIMEOUT_GET_MS = 45_000;
+const TIMEOUT_ALTRO_MS = 120_000;
+// Una lettura fallita per rete o per server in ripartenza si ritenta una
+// volta: capita durante un deploy o appena Render si sveglia.
+const RIPROVA_DOPO_MS = 1_500;
+const DA_RIPROVARE = [502, 503, 504];
+
+/** Il messaggio da mostrare per una risposta d'errore. */
+function messaggio(status: number, detail: unknown): string {
+  if (typeof detail === "string" && detail.trim() && !detail.trimStart().startsWith("<")) return detail;
+  // Errori di validazione di Pydantic: una lista; basta il primo, leggibile.
+  if (Array.isArray(detail) && detail[0] && typeof detail[0].msg === "string") {
+    return `Dati non validi: ${detail[0].msg}`;
+  }
+  if (DA_RIPROVARE.includes(status)) return "Kilo si sta svegliando o aggiornando: riprova fra qualche secondo.";
+  if (status === 429) return "Troppe richieste ravvicinate: aspetta un attimo e riprova.";
+  if (status === 404) return "Non trovato: forse è stato cancellato.";
+  if (status >= 500) return "Errore del server: riprova. Se succede ancora, segnalamelo.";
+  return `Richiesta non riuscita (errore ${status}).`;
+}
+
+async function raw(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<Response> {
   const token = session.get();
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const metodo = (init?.method ?? "GET").toUpperCase();
+  const timeout = init?.timeoutMs ?? (metodo === "GET" ? TIMEOUT_GET_MS : TIMEOUT_ALTRO_MS);
+  const tentativi = metodo === "GET" ? 2 : 1;
 
-  // Sessione scaduta o non valida: si esce, invece di lasciare l'interfaccia
-  // bloccata su errori incomprensibili a ogni chiamata successiva.
-  if (res.status === 401) {
-    session.clear();
-    if (typeof window !== "undefined" && !path.startsWith("/auth/")) {
-      window.location.reload();
-    }
-    throw new ApiError(401, "Sessione scaduta: accedi di nuovo.");
-  }
-
-  if (!res.ok) {
-    // FastAPI risponde con {detail: ...}; il detail può essere una stringa
-    // o la lista di errori di validazione di Pydantic.
-    let detail = res.statusText;
+  for (let tentativo = 1; ; tentativo++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    let res: Response;
     try {
-      const body = await res.json();
-      detail =
-        typeof body.detail === "string"
-          ? body.detail
-          : JSON.stringify(body.detail ?? body);
+      res = await fetch(`/api${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init?.headers ?? {}),
+        },
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
     } catch {
-      /* risposta senza corpo JSON */
+      // Scaduta per lentezza non si ritenta: il server ci sta lavorando.
+      if (tentativo < tentativi && !ctrl.signal.aborted) {
+        await new Promise((r) => setTimeout(r, RIPROVA_DOPO_MS));
+        continue;
+      }
+      throw new NetworkError(
+        ctrl.signal.aborted
+          ? "Kilo non ha risposto in tempo: riprova fra poco."
+          : "Nessuna connessione con Kilo: controlla la rete e riprova."
+      );
+    } finally {
+      clearTimeout(timer);
     }
-    throw new ApiError(res.status, detail);
-  }
 
+    if (DA_RIPROVARE.includes(res.status) && tentativo < tentativi) {
+      await new Promise((r) => setTimeout(r, RIPROVA_DOPO_MS));
+      continue;
+    }
+
+    // Sessione scaduta o non valida: si esce, invece di lasciare l'interfaccia
+    // bloccata su errori incomprensibili a ogni chiamata successiva.
+    if (res.status === 401) {
+      session.clear();
+      forgetAccount();
+      if (typeof window !== "undefined" && !path.startsWith("/auth/")) {
+        window.location.reload();
+      }
+      throw new ApiError(401, "Sessione scaduta: accedi di nuovo.");
+    }
+
+    if (!res.ok) {
+      // FastAPI risponde con {detail: ...}; il detail può essere una stringa
+      // o la lista di errori di validazione di Pydantic. Un proxy in errore
+      // risponde invece con una pagina HTML.
+      let detail: unknown = null;
+      try {
+        const body = await res.json();
+        detail = body.detail ?? null;
+      } catch {
+        /* risposta senza corpo JSON */
+      }
+      throw new ApiError(res.status, messaggio(res.status, detail));
+    }
+    return res;
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const res = await raw(path, init);
   return res.status === 204 ? (undefined as T) : res.json();
+}
+
+/** Un file da scaricare (l'esportazione dei dati), con il nome scelto dal server. */
+async function download(path: string): Promise<File> {
+  const res = await raw(path, { timeoutMs: TIMEOUT_ALTRO_MS });
+  const nome = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "kilo";
+  const blob = await res.blob();
+  return new File([blob], nome, { type: blob.type });
 }
 
 export const api = {
@@ -69,6 +144,7 @@ export const api = {
   patch: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T = void,>(path: string) => request<T>(path, { method: "DELETE" }),
+  download,
 };
 
 // --- Tipi condivisi con gli schemi Pydantic del backend ---------------------

@@ -28,7 +28,7 @@ import {
   type Supplement,
   type SupplementInfo,
 } from "@/lib/api";
-import { Card, EvidenceBadge, Notice, SourceTags, Spinner } from "@/components/ui";
+import { Card, EvidenceBadge, LoadError, Notice, SourceTags, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import {
   AskCoachButton,
@@ -66,12 +66,19 @@ export function Supplements({ profileId }: { profileId: number }) {
   const [coffee, setCoffee] = useState<number | null>(0);
   const [removing, setRemoving] = useState<number | null>(null);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
-    setItems(
-      await api.get<Supplement[]>(
-        `/supplements?profile_id=${profileId}&other_caffeine_mg=${coffee ?? 0}`
-      )
-    );
+    try {
+      setItems(
+        await api.get<Supplement[]>(
+          `/supplements?profile_id=${profileId}&other_caffeine_mg=${coffee ?? 0}`
+        )
+      );
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Integratori non disponibili.");
+    }
   }, [profileId, coffee]);
 
   useEffect(() => {
@@ -123,6 +130,15 @@ export function Supplements({ profileId }: { profileId: number }) {
 
       {tab === "explore" ? (
         <Explorer profileId={profileId} onDeclare={(kind) => setAdding(kind)} />
+      ) : !items && loadError ? (
+        <LoadError
+          title="Non riesco a caricare i tuoi integratori"
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            load();
+          }}
+        />
       ) : !items ? (
         <Spinner label="Carico…" />
       ) : items.length === 0 ? (
@@ -460,7 +476,10 @@ function AddDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<string[]>("/supplements/kinds").then(setKinds);
+    api
+      .get<string[]>("/supplements/kinds")
+      .then(setKinds)
+      .catch((e) => setError(e instanceof Error ? e.message : "Elenco degli integratori non disponibile."));
   }, []);
 
   useEffect(() => {

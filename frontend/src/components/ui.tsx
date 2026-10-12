@@ -260,6 +260,40 @@ export function Empty({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
+/**
+ * Un caricamento non riuscito: cosa non è arrivato, perché, e "Riprova".
+ * Mai uno stato vuoto al posto di un errore: "nessuna scheda" quando la
+ * scheda c'è ma la rete no porta a generarne un'altra.
+ */
+export function LoadError({ title, message, onRetry }: { title: string; message?: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="grid place-items-center px-6 py-12 text-center">
+      <div className="mb-3 grid h-12 w-12 place-items-center rounded-2xl border border-amber-300/25 bg-amber-300/[0.06]">
+        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-amber-200/80">
+          <path d="M12 2 1 21h22L12 2Zm0 6 6.5 11h-13L12 8Zm-1 3v4h2v-4h-2Zm0 5v2h2v-2h-2Z" />
+        </svg>
+      </div>
+      <p className="text-sm text-white/75">{title}</p>
+      {message && <p className="mt-1 max-w-sm text-[12.5px] leading-relaxed text-white/50">{message}</p>}
+      <button className="btn-ghost mt-4 min-h-[44px] px-5" onClick={onRetry}>
+        Riprova
+      </button>
+    </div>
+  );
+}
+
+/** Una parte non caricata dentro una pagina che si vede lo stesso: una riga e "Riprova". */
+export function RetryBar({ children, onRetry }: { children: ReactNode; onRetry: () => void }) {
+  return (
+    <div role="alert" className="mb-4 flex items-center gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] px-4 py-3">
+      <p className="flex-1 text-[12.5px] leading-snug text-amber-100/85">{children}</p>
+      <button className="btn-ghost h-11 shrink-0 px-3.5 text-[12.5px]" onClick={onRetry}>
+        Riprova
+      </button>
+    </div>
+  );
+}
+
 export function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2.5 px-6 py-10 text-white/45">

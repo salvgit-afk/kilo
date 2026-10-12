@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from app.services import (
     agent_notes,
     clock,
     daily_reminders,
+    data_export,
     data_reset,
     supplement_intake,
     weekly_summary,
@@ -281,6 +282,28 @@ def weekly(
         protein_target_g=r.protein_target_g,
         supplements=[SupplementWeekOut(**vars(i)) for i in r.supplements],
         focus=r.focus,
+    )
+
+
+@router.get("/{profile_id}/export", response_class=Response)
+def export_data(
+    profile_id: int,
+    formato: str = Query(default="csv", pattern="^(csv|json)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> Response:
+    """Tutti i dati dell'utente da scaricare: CSV per un foglio di calcolo
+    (in uno ZIP, con dentro anche il JSON completo) o solo il JSON."""
+    get_profile(profile_id, db, user)
+    giorno = clock.today().isoformat()
+    if formato == "json":
+        contenuto, tipo, nome = data_export.export_json(db, user), "application/json", f"kilo-{giorno}.json"
+    else:
+        contenuto, tipo, nome = data_export.export_csv_zip(db, user), "application/zip", f"kilo-{giorno}.zip"
+    return Response(
+        content=contenuto,
+        media_type=tipo,
+        headers={"Content-Disposition": f'attachment; filename="{nome}"', "Cache-Control": "no-store"},
     )
 
 

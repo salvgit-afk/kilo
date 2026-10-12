@@ -19,9 +19,9 @@
  */
 
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ProgressReport } from "@/lib/api";
-import { Card, CardHeader, Empty, Notice, Spinner } from "@/components/ui";
+import { Card, CardHeader, Empty, LoadError, Notice, RetryBar, Spinner } from "@/components/ui";
 import { AskCoachButton } from "@/components/controls";
 import { PageHeader } from "@/components/Shell";
 import { KiloNote } from "@/components/KiloNote";
@@ -42,20 +42,45 @@ export function Progress({ profileId }: { profileId: number }) {
   // stessa domanda ("come va la panca?") vista da due angoli.
   const { exercises, selected, setSelected } = useLoggedExercises(profileId, weeks);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Cambiando periodo in fretta vale l'ultima richiesta.
+  const richiesta = useRef(0);
+
   const load = useCallback(async () => {
-    const [r, w] = await Promise.all([
-      api.get<ProgressReport>(`/progress/report?profile_id=${profileId}&weeks=${weeks}`),
-      api.get<WeightPoint[]>(`/profile/${profileId}/weight?limit=120`),
-    ]);
-    setReport(r);
-    setWeights([...w].reverse());
-    setLoading(false);
+    const mia = ++richiesta.current;
+    try {
+      const [r, w] = await Promise.all([
+        api.get<ProgressReport>(`/progress/report?profile_id=${profileId}&weeks=${weeks}`),
+        api.get<WeightPoint[]>(`/profile/${profileId}/weight?limit=120`),
+      ]);
+      if (mia !== richiesta.current) return;
+      setReport(r);
+      setWeights([...w].reverse());
+      setLoadError(null);
+    } catch (e) {
+      if (mia === richiesta.current) setLoadError(e instanceof Error ? e.message : "Report non disponibile.");
+    } finally {
+      if (mia === richiesta.current) setLoading(false);
+    }
   }, [profileId, weeks]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  if (!report && loadError) {
+    return (
+      <LoadError
+        title="Non riesco a costruire il report"
+        message={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          setLoading(true);
+          load();
+        }}
+      />
+    );
+  }
   if (loading || !report) return <Spinner label="Costruisco il report…" />;
 
   return (
@@ -90,6 +115,12 @@ export function Progress({ profileId }: { profileId: number }) {
           </div>
         }
       />
+
+      {loadError && (
+        <RetryBar onRetry={() => load()}>
+          Non riesco ad aggiornare il report ({loadError}). I numeri qui sotto potrebbero non essere aggiornati.
+        </RetryBar>
+      )}
 
       <KiloNote section="progressi" />
 

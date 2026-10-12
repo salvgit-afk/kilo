@@ -38,7 +38,7 @@ import {
   notifyLogged,
 } from "@/lib/api";
 import type { Intent } from "@/lib/coach";
-import { Card, CardHeader, Notice, SourceTags, Spinner } from "@/components/ui";
+import { Card, CardHeader, LoadError, Notice, RetryBar, SourceTags, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import { ExerciseDetailHost } from "@/components/ExerciseDetail";
 import { AlternativesDialog, thumbnails } from "@/components/ExercisePicker";
@@ -58,6 +58,7 @@ import {
   Toggle,
 } from "@/components/controls";
 import { Mascot } from "@/components/Mascot";
+import { recallPlans, rememberPlans } from "@/lib/localData";
 import { KiloNote } from "@/components/KiloNote";
 import {
   CheckIcon,
@@ -111,6 +112,13 @@ export function Workout({
   onIntentHandled?: () => void;
 }) {
   const [plans, setPlans] = useState<WorkoutPlan[] | null>(null);
+  // Schede non caricate: il motivo e, se c'era, la copia salvata sul telefono.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [daTelefono, setDaTelefono] = useState(false);
+  const [tentativo, setTentativo] = useState(0);
+  const daTelefonoRef = useRef(false);
+  const plansRef = useRef<WorkoutPlan[] | null>(null);
+  const selectedIdRef = useRef<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [metaById, setMetaById] = useState<Record<number, PlanMeta>>({});
   const [generating, setGenerating] = useState(false);
@@ -144,20 +152,52 @@ export function Workout({
   }, []);
 
   useEffect(() => {
+    let annullato = false;
     api
       .get<WorkoutPlan[]>(`/workout/plans?profile_id=${profile.id}&active_only=true`)
       .then((lista) => {
+        if (annullato) return;
         // Se nel frattempo è arrivata una scheda appena generata, vince quella.
         // Altrimenti si apre la scheda in uso; senza scelta la più recente,
-        // come fa il server per promemoria e pagina Oggi.
+        // come fa il server per promemoria e pagina Oggi. La copia del
+        // telefono, se si stava guardando quella, lascia il posto a questa.
         setPlans((correnti) => {
-          if (correnti) return correnti;
-          selectPlan(lista.find((p) => p.is_current) ?? lista[0] ?? null);
+          if (correnti && !daTelefonoRef.current) return correnti;
+          if (!correnti || !lista.some((p) => p.id === selectedIdRef.current)) {
+            selectPlan(lista.find((p) => p.is_current) ?? lista[0] ?? null);
+          }
           return lista;
         });
+        daTelefonoRef.current = false;
+        setDaTelefono(false);
+        setLoadError(null);
       })
-      .catch(() => setPlans((correnti) => correnti ?? []));
-  }, [profile.id, selectPlan]);
+      .catch((e) => {
+        if (annullato) return;
+        // Mai "nessuna scheda" per un errore di rete: porterebbe a generarne
+        // un'altra. Si mostra l'ultima copia salvata, o l'errore con Riprova.
+        setLoadError(e instanceof Error ? e.message : "Schede non disponibili.");
+        const salvate = recallPlans(profile.id);
+        if (salvate && plansRef.current === null) {
+          selectPlan(salvate.find((p) => p.is_current) ?? salvate[0] ?? null);
+          daTelefonoRef.current = true;
+          setDaTelefono(true);
+          setPlans(salvate);
+        }
+      });
+    return () => {
+      annullato = true;
+    };
+  }, [profile.id, selectPlan, tentativo]);
+
+  // L'ultima versione delle schede resta sul telefono: senza rete si allena lo stesso.
+  useEffect(() => {
+    plansRef.current = plans;
+    if (plans && !daTelefono) rememberPlans(profile.id, plans);
+  }, [plans, daTelefono, profile.id]);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   const generate = useCallback(
     async (opts: PlanOptions) => {
@@ -270,7 +310,20 @@ export function Workout({
     return () => window.removeEventListener(QUEUE_EVENT, onQueue);
   }, [profile.id]);
 
-  if (plans === null) return <Spinner label="Carico le schede…" />;
+  if (plans === null) {
+    return loadError ? (
+      <LoadError
+        title="Non riesco a caricare le tue schede"
+        message={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          setTentativo((t) => t + 1);
+        }}
+      />
+    ) : (
+      <Spinner label="Carico le schede…" />
+    );
+  }
 
   const plan = plans.find((p) => p.id === selectedId) ?? null;
   const meta = plan ? metaById[plan.id] : undefined;
@@ -335,6 +388,13 @@ export function Workout({
         <div className="mb-4">
           <Notice>{error}</Notice>
         </div>
+      )}
+
+      {daTelefono && (
+        <RetryBar onRetry={() => setTentativo((t) => t + 1)}>
+          Kilo non risponde: questa è la scheda salvata sul telefono. Le serie che segni
+          partono appena torna la rete.
+        </RetryBar>
       )}
 
       {generating && (

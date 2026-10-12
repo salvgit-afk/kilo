@@ -48,6 +48,10 @@ services:
         sync: false
       - key: PUSH_CRON_SECRET
         sync: false
+      # Stesso valore su Vercel: il proxy di Next dice al backend l'indirizzo
+      # vero di chi si collega (limiti contro i tentativi di accesso). Vedi DEPLOY.md.
+      - key: PROXY_SECRET
+        sync: false
       # Email di verifica e password dimenticata (Brevo, gratuito). Senza,
       # la registrazione non chiede il codice. Vedi DEPLOY.md.
       - key: BREVO_API_KEY
