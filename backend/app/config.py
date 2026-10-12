@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:admin@example.com"
     # Segreto con cui il job orario (GitHub Actions) chiama /push/dispatch.
     push_cron_secret: str = ""
+    # Segreto condiviso con il frontend (Vercel, variabile PROXY_SECRET anche
+    # lì): con questo il proxy di Next dice al backend l'indirizzo vero di chi
+    # si collega, per i limiti contro i tentativi di accesso. Vuoto: si usa
+    # l'ultimo X-Forwarded-For, come prima.
+    proxy_secret: str = ""
 
     # --- CORS ---------------------------------------------------------------
     frontend_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -108,7 +113,7 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://" + v[len("postgres://") :]
         return v
 
-    @field_validator("vapid_public_key", "vapid_private_key", "push_cron_secret")
+    @field_validator("vapid_public_key", "vapid_private_key", "push_cron_secret", "proxy_secret")
     @classmethod
     def _strip_secret(cls, v: str) -> str:
         """Toglie spazi, a capo e virgolette incollati per sbaglio nel pannello."""

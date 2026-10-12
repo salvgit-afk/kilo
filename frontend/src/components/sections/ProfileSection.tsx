@@ -312,9 +312,13 @@ export function ProfileSection({
                 Esci dall'account
               </button>
               <p className="text-[11px] leading-relaxed text-white/25">
-                I tuoi dati restano salvati nel database e li ritrovi al prossimo
-                accesso: esci solo dalla sessione su questo browser.
+                I tuoi dati restano salvati e li ritrovi al prossimo accesso. Da questo
+                telefono spariscono le copie locali e si spengono le notifiche: le
+                riaccendi qui dopo essere rientrato.
               </p>
+              <div className="border-t border-white/[0.06] pt-3">
+                <ExportData profileId={profile.id} />
+              </div>
               <div className="border-t border-white/[0.06] pt-3">
                 <button
                   onClick={() => setResetting(true)}
@@ -344,6 +348,76 @@ export function ProfileSection({
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * "Scarica i miei dati": allenamenti, pesate e diario in CSV (si aprono in un
+ * foglio di calcolo) più la copia completa in JSON, in un unico ZIP.
+ *
+ * In due tocchi: il primo prepara il file, il secondo lo salva. Su iPhone il
+ * foglio di condivisione ("Salva su File") va aperto dentro un tocco, e la
+ * preparazione può durare troppo per restare nello stesso.
+ */
+function ExportData({ profileId, compact = false }: { profileId: number; compact?: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function prepara() {
+    setBusy(true);
+    setError(null);
+    try {
+      setFile(await api.download(`/profile/${profileId}/export`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Non sono riuscito a preparare il file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function salva(f: File) {
+    try {
+      if (navigator.canShare?.({ files: [f] })) {
+        await navigator.share({ files: [f], title: "I miei dati di Kilo" });
+        return;
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // condivisione annullata
+    }
+    const url = URL.createObjectURL(f);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = f.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  return (
+    <div className="space-y-2">
+      {file ? (
+        <button className="btn-primary min-h-[44px] w-full justify-center" onClick={() => salva(file)}>
+          Salva {file.name}
+        </button>
+      ) : (
+        <button
+          className="btn-ghost min-h-[44px] w-full justify-center text-[13px]"
+          onClick={prepara}
+          disabled={busy}
+        >
+          {busy ? "Preparo il file…" : "Scarica i miei dati"}
+        </button>
+      )}
+      {error && <Notice>{error}</Notice>}
+      {!compact && (
+        <p className="text-[11px] leading-relaxed text-white/40">
+          Allenamenti con tutte le serie, pesate e diario in file CSV che apri con Excel o Numbers,
+          più la copia completa in JSON. Tienila tu: è anche un backup.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -393,6 +467,12 @@ function ResetDialog({ profileId, onClose, onDone }: { profileId: number; onClos
           Restano l&apos;account (email e password), i dispositivi con le notifiche attive e i
           prodotti che hai inserito a mano. Subito dopo ricominci dall&apos;onboarding.
         </p>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
+          <p className="mb-2.5 text-[12.5px] leading-relaxed text-white/60">
+            Prima di azzerare puoi tenerti una copia di tutto:
+          </p>
+          <ExportData profileId={profileId} compact />
+        </div>
         <Field title="Per confermare scrivi AZZERA">
           <input
             className="input font-mono uppercase tracking-wider"

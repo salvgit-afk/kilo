@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,9 +28,22 @@ router = APIRouter(prefix="/auth", tags=["account"])
 def client_ip(request: Request) -> str:
     """Indirizzo di chi si collega.
 
-    Si usa l'**ultimo** valore di `X-Forwarded-For`, quello aggiunto dal
-    proxy di Render: i precedenti li scrive il client e si possono inventare.
+    Le chiamate dell'app passano dal proxy di Next su Vercel: per Render chi
+    si collega è Vercel, e tutti finirebbero sotto pochi indirizzi condivisi
+    (40 tentativi sbagliati di uno sconosciuto bloccherebbero l'accesso a
+    tutti). Se la richiesta porta il segreto del proxy (`PROXY_SECRET`), vale
+    l'indirizzo che il proxy ha visto.
+
+    Altrimenti si usa l'**ultimo** valore di `X-Forwarded-For`, quello
+    aggiunto dal proxy di Render: i precedenti li scrive il client e si
+    possono inventare.
     """
+    segreto = get_settings().proxy_secret
+    dal_proxy = request.headers.get("x-kilo-proxy-secret", "")
+    if segreto and dal_proxy and hmac.compare_digest(dal_proxy.encode(), segreto.encode()):
+        vero = request.headers.get("x-kilo-client-ip", "").strip()
+        if vero:
+            return vero[:64]
     inoltro = request.headers.get("x-forwarded-for", "")
     if inoltro:
         return inoltro.split(",")[-1].strip()

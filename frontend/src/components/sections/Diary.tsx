@@ -26,7 +26,7 @@ import {
   type SavedFood,
 } from "@/lib/api";
 import { mealForNow, type Intent } from "@/lib/coach";
-import { Card, Empty, Notice, Spinner } from "@/components/ui";
+import { Card, Empty, LoadError, Notice, RetryBar, Spinner } from "@/components/ui";
 import { PageHeader } from "@/components/Shell";
 import {
   AskCoachButton,
@@ -76,9 +76,25 @@ export function Diary({
       .catch(() => setGap(null));
   }, [profileId]);
 
+  // Solo l'ultima richiesta conta: cambiando giorno in fretta, la risposta
+  // di un giorno precedente non deve sovrascrivere quella del giorno scelto.
+  const richiesta = useRef(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
-    setData(await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}&date=${day}`));
-    setLoading(false);
+    const mia = ++richiesta.current;
+    try {
+      const nuovi = await api.get<DiaryData>(`/nutrition/diary?profile_id=${profileId}&date=${day}`);
+      if (mia !== richiesta.current) return;
+      setData(nuovi);
+      setLoadError(null);
+    } catch (e) {
+      if (mia !== richiesta.current) return;
+      setLoadError(e instanceof Error ? e.message : "Diario non disponibile.");
+      return;
+    } finally {
+      if (mia === richiesta.current) setLoading(false);
+    }
     setRefreshKey((k) => k + 1);
     loadGap();
     // Banner e pallino del menu: il pasto di oggi potrebbe essere appena segnato.
@@ -111,6 +127,19 @@ export function Diary({
     }
   }, [intent, onIntentHandled]);
 
+  if (!data && loadError) {
+    return (
+      <LoadError
+        title="Non riesco a caricare il diario"
+        message={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          setLoading(true);
+          load();
+        }}
+      />
+    );
+  }
   if (loading || !data) return <Spinner label="Carico il diario…" />;
 
   const { targets } = data;
@@ -122,6 +151,12 @@ export function Diary({
         title="Diario"
         description="Cerchi l'alimento, scegli tu quale e indichi i grammi: qui non c'è niente di stimato."
       />
+
+      {loadError && (
+        <RetryBar onRetry={() => load()}>
+          Non riesco ad aggiornare il diario ({loadError}). Quello che vedi potrebbe non essere aggiornato.
+        </RetryBar>
+      )}
 
       <KiloNote section="diario" />
 

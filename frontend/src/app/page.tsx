@@ -17,7 +17,11 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, session, type AuthSession, type Profile } from "@/lib/api";
-import { wakeBackend } from "@/lib/wake";
+import { useBackendWake, waitForBackend } from "@/lib/wake";
+import { forgetAccount, recallAccount, rememberAccount } from "@/lib/account";
+import { claimLocalData, forgetLocalData } from "@/lib/localData";
+import { disablePush } from "@/lib/push";
+import { restTimer } from "@/lib/restTimer";
 import { startOfflineSync } from "@/lib/offline";
 import type { Intent } from "@/lib/coach";
 import { SECTION_ORDER, Shell, type SectionId } from "@/components/Shell";
@@ -97,20 +101,39 @@ export default function Page() {
     // aspetta il backend e si riprova.
     let annullato = false;
     (async () => {
+      let entrato = false;
+      // Senza rete non si aspetta il backend all'infinito: al massimo 30
+      // secondi in tutto (Render si sveglia in 20-40), poi si apre con
+      // l'account salvato sul telefono (vedi sotto).
+      await waitForBackend(navigator.onLine ? 30_000 : 0);
       for (let tentativo = 0; tentativo < 3 && !annullato; tentativo++) {
         try {
-          await wakeBackend();
           const s = await api.get<AuthSession>("/auth/me");
           if (annullato) return;
+          claimLocalData(s.user.id);
           setAccount(s.user);
           setProfile(s.profile);
+          entrato = true;
           break;
         } catch (e) {
           if (e instanceof ApiError && e.status === 401) {
             session.clear();
+            forgetAccount();
+            entrato = true; // si torna all'accesso
             break;
           }
+          if (!navigator.onLine) break;
           await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      // Backend irraggiungibile ma sessione valida sul telefono: si entra con
+      // l'ultimo account visto, e le sezioni dicono cosa non riescono a caricare
+      // (l'allenamento in corso intanto si segna nella coda).
+      if (!entrato && !annullato) {
+        const salvato = recallAccount();
+        if (salvato) {
+          setAccount(salvato.user);
+          setProfile(salvato.profile);
         }
       }
       if (!annullato) setLoading(false);
@@ -121,13 +144,25 @@ export default function Page() {
   }, []);
 
   function onAuthenticated(s: AuthSession) {
+    claimLocalData(s.user.id);
     setAccount(s.user);
     setProfile(s.profile);
     setSection("oggi");
   }
 
-  function logout() {
+  // L'account e il profilo restano sul telefono per aprire l'app senza rete.
+  useEffect(() => {
+    if (account) rememberAccount({ user: account, profile });
+  }, [account, profile]);
+
+  async function logout() {
+    // Prima che il token sparisca: il server smette di mandare a questo
+    // telefono i promemoria di chi esce. Senza rete si esce lo stesso.
+    await Promise.race([disablePush().catch(() => undefined), new Promise((r) => setTimeout(r, 4000))]);
+    restTimer.clear();
+    forgetLocalData();
     session.clear();
+    forgetAccount();
     setAccount(null);
     setProfile(null);
   }
@@ -180,6 +215,7 @@ export default function Page() {
           </motion.div>
       </ShellWithBadges>
 
+      <WakeToast />
       <ChatBubble
         profileId={profile.id}
         section={section}
@@ -198,4 +234,31 @@ function ShellWithBadges({
 }: { profileId: number } & Omit<React.ComponentProps<typeof Shell>, "badges">) {
   const badges = useSectionBadges(profileId);
   return <Shell {...props} badges={badges} />;
+}
+
+/** Il backend si sta svegliando (dopo una pausa lunga), o manca la rete: lo si dice, una riga. */
+function WakeToast() {
+  const wake = useBackendWake();
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    const aggiorna = () => setOnline(navigator.onLine);
+    aggiorna();
+    window.addEventListener("online", aggiorna);
+    window.addEventListener("offline", aggiorna);
+    return () => {
+      window.removeEventListener("online", aggiorna);
+      window.removeEventListener("offline", aggiorna);
+    };
+  }, []);
+  if (online && wake !== "waking") return null;
+  return (
+    <div
+      role="status"
+      className="pointer-events-none fixed inset-x-0 top-[max(env(safe-area-inset-top),0.5rem)] z-[80] flex justify-center px-4"
+    >
+      <span className="rounded-full border border-white/10 bg-ink-900/90 px-3.5 py-1.5 text-[12.5px] text-white/80 shadow-lg backdrop-blur-md">
+        {online ? "Kilo si sta svegliando… qualche secondo" : "Senza rete: vedi quello che è salvato sul telefono"}
+      </span>
+    </div>
+  );
 }

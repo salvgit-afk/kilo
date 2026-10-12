@@ -1,0 +1,75 @@
+# Copia di sicurezza settimanale del database di Kilo.
+#
+# Neon gratuito conserva la storia per pochi giorni: se un errore, un
+# "Azzera dati" partito per sbaglio o un problema del servizio cancellano i
+# dati, servono una copia più vecchia e una che non stia su Neon. Questo job,
+# gratuito su GitHub Actions, ogni domenica notte fa un pg_dump completo, lo
+# cifra con una passphrase che conosci solo tu e lo tiene come artifact per
+# 90 giorni (circa 13 copie). Cifrato perché dentro ci sono dati sulla
+# salute: senza la passphrase il file è illeggibile, anche per chi può
+# scaricare gli artifact del repository.
+#
+# Secrets del repository (Settings → Secrets and variables → Actions):
+#   NEON_BACKUP_URL     la connection string di Neon, host SENZA "-pooler"
+#   BACKUP_PASSPHRASE   una frase lunga a scelta: conservala fuori da GitHub,
+#                       senza non si ripristina niente
+# Ripristino e prova manuale: DEPLOY.md, sezione «Copie di sicurezza».
+
+name: Backup del database
+
+on:
+  schedule:
+    # Domenica alle 03:17 UTC: nessuno usa l'app, e al minuto 17 GitHub è meno carico.
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Copia cifrata
+        id: copia
+        env:
+          DB_URL: ${{ secrets.NEON_BACKUP_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "Secrets NEON_BACKUP_URL e BACKUP_PASSPHRASE non configurati: nessuna copia."
+            echo "fatto=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p copia
+          # pg_dump deve essere almeno della versione del server: l'immagine
+          # più recente legge anche i Postgres precedenti di Neon. Neon può
+          # essere sospeso: il primo collegamento lo risveglia in pochi secondi.
+          docker run --rm -e DB_URL postgres:18 \
+            sh -c 'pg_dump --format=custom --no-owner --no-privileges "$DB_URL"' > copia/kilo.dump
+          # Una copia vuota o illeggibile non deve passare per buona.
+          tabelle=$(docker run --rm -v "$PWD/copia:/copia" postgres:18 \
+            pg_restore --list /copia/kilo.dump | grep -c " TABLE DATA " || true)
+          echo "Tabelle con dati nella copia: $tabelle"
+          if [ "$tabelle" -lt 10 ]; then
+            echo "::error::La copia contiene solo $tabelle tabelle: qualcosa non va."
+            exit 1
+          fi
+          nome="kilo-$(date -u +%Y-%m-%d).dump.gpg"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "copia/$nome" copia/kilo.dump <<< "$PASSPHRASE"
+          rm copia/kilo.dump
+          ls -lh copia
+          echo "nome=$nome" >> "$GITHUB_OUTPUT"
+          echo "fatto=si" >> "$GITHUB_OUTPUT"
+
+      - name: Conserva la copia
+        if: steps.copia.outputs.fatto == 'si'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.copia.outputs.nome }}
+          path: copia/${{ steps.copia.outputs.nome }}
+          retention-days: 90
+          if-no-files-found: error

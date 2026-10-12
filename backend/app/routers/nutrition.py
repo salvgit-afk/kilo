@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.data import kilo_recipes
@@ -279,8 +279,12 @@ def translate_food_names(
         raise HTTPException(
             status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
         ) from e
+    # Come altrove: i prodotti inseriti a mano sono visibili solo a chi li ha inseriti.
     ingredienti = db.scalars(
-        select(Ingredient).where(Ingredient.id.in_(payload.ids[:25]))
+        select(Ingredient).where(
+            Ingredient.id.in_(payload.ids[:25]),
+            or_(Ingredient.created_by_user_id.is_(None), Ingredient.created_by_user_id == user.id),
+        )
     ).all()
     return translation.translate_food_names(db, list(ingredienti))
 

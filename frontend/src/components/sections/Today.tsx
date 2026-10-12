@@ -14,7 +14,8 @@ import { useEffect, useState } from "react";
 import { GOAL_LABELS, api, type Diary, type Profile, type WorkoutPlan } from "@/lib/api";
 import { WeekLine, dayTitle, planDayLabels, scheduledToday } from "@/components/WeekSchedule";
 import { askCoach } from "@/lib/coach";
-import { Card, CardHeader, Notice, ProgressRing, StatBar, Spinner } from "@/components/ui";
+import { Card, CardHeader, LoadError, Notice, ProgressRing, RetryBar, StatBar, Spinner } from "@/components/ui";
+import { recallPlans } from "@/lib/localData";
 import { PageHeader } from "@/components/Shell";
 import type { SectionId } from "@/components/Shell";
 import { Mascot } from "@/components/Mascot";
@@ -55,23 +56,56 @@ export function Today({
   const [diary, setDiary] = useState<Diary | null>(null);
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [lastWeight, setLastWeight] = useState<WeightPoint | null>(null);
+  // Le pesate non arrivate non sono "nessuna pesata".
+  const [pesateNote, setPesateNote] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Cosa non è arrivato: senza la scheda dal server non si dice "nessuna
+  // scheda" (si usa la copia del telefono, se c'è), senza diario lo si dice.
+  const [errore, setErrore] = useState<string | null>(null);
+  const [schedaIgnota, setSchedaIgnota] = useState(false);
+  const [tentativo, setTentativo] = useState(0);
 
   useEffect(() => {
-    Promise.all([
+    let annullato = false;
+    Promise.allSettled([
       api.get<Diary>(`/nutrition/diary?profile_id=${profile.id}`),
       api.get<WorkoutPlan | null>(`/workout/plans/active?profile_id=${profile.id}`),
-      api.get<WeightPoint[]>(`/profile/${profile.id}/weight?limit=1`).catch(() => []),
+      api.get<WeightPoint[]>(`/profile/${profile.id}/weight?limit=1`),
     ])
       .then(([d, p, w]) => {
-        setDiary(d);
-        setPlan(p);
-        setLastWeight(w[0] ?? null);
+        if (annullato) return;
+        if (d.status === "fulfilled") setDiary(d.value);
+        if (w.status === "fulfilled") setLastWeight(w.value[0] ?? null);
+        setPesateNote(w.status === "fulfilled");
+        if (p.status === "fulfilled") {
+          setPlan(p.value);
+          setSchedaIgnota(false);
+        } else {
+          const salvate = recallPlans(profile.id);
+          const salvata = salvate?.find((x) => x.is_current) ?? salvate?.[0] ?? null;
+          if (salvata) setPlan(salvata);
+          setSchedaIgnota(!salvata);
+        }
+        const fallita = [d, p].find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        setErrore(
+          fallita ? (fallita.reason instanceof Error ? fallita.reason.message : "Dati non disponibili.") : null
+        );
       })
-      .finally(() => setLoading(false));
-  }, [profile.id]);
+      .finally(() => !annullato && setLoading(false));
+    return () => {
+      annullato = true;
+    };
+  }, [profile.id, tentativo]);
+
+  const riprova = () => {
+    setErrore(null);
+    setTentativo((t) => t + 1);
+  };
 
   if (loading) return <Spinner label="Carico la giornata…" />;
+  if (errore && !diary && schedaIgnota) {
+    return <LoadError title="Non riesco a caricare la giornata" message={errore} onRetry={riprova} />;
+  }
 
   const ora = new Date().getHours();
   const saluto = ora < 12 ? "Buongiorno" : ora < 18 ? "Buon pomeriggio" : "Buonasera";
@@ -117,7 +151,8 @@ export function Today({
   }
 
   if (!plan) {
-    briefing.push({
+    // Senza risposta dal server non si sa se la scheda c'è: niente "Generala".
+    if (!schedaIgnota) briefing.push({
       key: "scheda",
       tone: "amber",
       title: "Nessuna scheda attiva",
@@ -139,7 +174,7 @@ export function Today({
   const giorniDallaPesata = lastWeight
     ? Math.floor((Date.now() - new Date(lastWeight.date).getTime()) / GIORNO_MS)
     : null;
-  if (!lastWeight || (giorniDallaPesata ?? 0) >= 4) {
+  if (pesateNote && (!lastWeight || (giorniDallaPesata ?? 0) >= 4)) {
     briefing.push({
       key: "peso",
       tone: "amber",
@@ -162,6 +197,12 @@ export function Today({
           profile.training_days_per_week
         } allenamenti a settimana`}
       />
+
+      {errore && (
+        <RetryBar onRetry={riprova}>
+          Non riesco a caricare tutto: {errore}
+        </RetryBar>
+      )}
 
       <KiloNote section="oggi" onNavigate={onNavigate} />
 
@@ -265,6 +306,10 @@ export function Today({
               <p className="mb-3 text-[13px] text-white/55">{plan.name}</p>
               <WeekLine plan={plan} profileId={profile.id} onOpenDay={() => onNavigate("scheda")} />
             </div>
+          ) : schedaIgnota ? (
+            <p className="px-5 py-8 text-center text-[13px] text-white/50">
+              Scheda non disponibile adesso: riprova fra poco.
+            </p>
           ) : (
             <div className="px-5 py-8 text-center">
               <p className="mb-3 text-[13px] text-white/45">Non hai ancora una scheda</p>

@@ -170,6 +170,53 @@ log di Render c'è il motivo che dà Brevo (chiave sbagliata, mittente non
 confermato, quota del giorno finita). Con un mittente Gmail qualche email può
 finire nello spam: la schermata del codice lo ricorda.
 
+## 6) Copie di sicurezza (consigliato, gratuito)
+
+Neon gratuito conserva la storia del database solo per pochi giorni. Il
+workflow `.github/workflows/backup.yml` ogni domenica notte fa una copia
+completa del database, la **cifra** con una frase che conosci solo tu e la
+tiene fra gli artifact di GitHub per 90 giorni (circa 13 copie).
+
+1. Su Neon → *Connection Details*: copia la connection string **senza**
+   `-pooler` nell'host (il pooler non va bene per `pg_dump`).
+2. Su GitHub → *Settings → Secrets and variables → Actions*:
+   - `NEON_BACKUP_URL`: la connection string del passo 1;
+   - `BACKUP_PASSPHRASE`: una frase lunga a scelta. **Conservala anche fuori
+     da GitHub** (per esempio nel gestore delle password): senza, le copie
+     non si aprono, e GitHub non te la fa rileggere.
+3. *Actions → «Backup del database» → Run workflow* per la prima copia. Nel
+   log compare quante tabelle contiene; la copia è fra gli *Artifacts* della
+   pagina del job.
+
+**Ripristino** (meglio su un *branch* nuovo di Neon, per controllare prima di
+toccare quello vero). Servono `gpg` e `pg_restore` almeno della versione di
+Neon:
+
+```bash
+gpg -d kilo-AAAA-MM-GG.dump.gpg > kilo.dump        # chiede la passphrase
+pg_restore --no-owner --clean --if-exists -d "CONNECTION_STRING" kilo.dump
+```
+
+Oltre a questa copia, ognuno può scaricare i propri dati dall'app:
+*Profilo → Account → Scarica i miei dati* (allenamenti, pesate e diario in CSV
+per Excel o Numbers, più tutto in JSON). La stessa scelta compare prima di
+«Azzera dati».
+
+## 7) Limiti contro i tentativi di accesso (consigliato)
+
+Il browser chiama il backend passando dal proxy di Next su Vercel: per Render
+chi si collega è Vercel, e senza questo passo tutti gli utenti finiscono
+contati insieme sotto pochi indirizzi di Vercel (uno sconosciuto con 40
+password sbagliate bloccherebbe l'accesso a tutti per 15 minuti).
+
+1. Genera un segreto: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+2. Mettilo come `PROXY_SECRET` **sia** su Vercel (*Settings → Environment
+   Variables*, poi *Redeploy*) **sia** su Render (*Environment*).
+
+Il proxy aggiunge l'indirizzo vero di chi si collega, firmato con il segreto,
+e il backend lo usa solo se il segreto corrisponde. Senza la variabile (o con
+valori diversi) tutto funziona come prima.
+
 ---
 
 ## Aggiornamenti

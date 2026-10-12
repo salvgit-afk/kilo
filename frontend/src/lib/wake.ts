@@ -56,6 +56,30 @@ export function wakeBackend(): Promise<void> {
   return ready;
 }
 
+/**
+ * Come `wakeBackend`, ma senza aspettare più di `maxMs`: senza rete (palestra
+ * senza campo) l'app deve aprirsi lo stesso, con quello che ha sul telefono.
+ */
+export function waitForBackend(maxMs: number): Promise<void> {
+  return Promise.race([wakeBackend(), new Promise<void>((r) => setTimeout(r, maxMs))]);
+}
+
+// Dopo più di 10 minuti in background (Render si spegne dopo 15) il backend
+// va risvegliato di nuovo, e chi guarda `useBackendWake` lo deve sapere.
+const RISVEGLIO_DOPO_MS = 10 * 60_000;
+if (typeof document !== "undefined") {
+  let nascostaDa = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      nascostaDa = Date.now();
+    } else if (nascostaDa && Date.now() - nascostaDa > RISVEGLIO_DOPO_MS && state === "ready") {
+      ready = null;
+      set("checking");
+      wakeBackend();
+    }
+  });
+}
+
 export function useBackendWake(): WakeState {
   const [s, setS] = useState<WakeState>(state);
   useEffect(() => {
