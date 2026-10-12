@@ -63,9 +63,10 @@ indirizzo al momento del build.
    `SECRET_KEY` viene generata da Render, `PYTHON_VERSION` e `GEMINI_MODEL`
    sono già impostate.
 
-4. Clicca **Apply**. Il primo deploy impiega qualche minuto. All'avvio esegue
-   `alembic upgrade head`: se lo schema su Neon è già aggiornato, non fa
-   nulla.
+4. Clicca **Apply**. Il primo deploy impiega qualche minuto. Nella build
+   esegue `alembic upgrade head`: se lo schema su Neon è già aggiornato, non
+   fa nulla; se una migrazione fallisce, il deploy si ferma e resta online la
+   versione precedente.
 5. Copia l'indirizzo del servizio, del tipo
    `https://kilo-backend-xxxx.onrender.com`.
 6. **Verifica**: apri `https://kilo-backend-xxxx.onrender.com/health`. Deve
@@ -226,7 +227,42 @@ per `backend/`, Vercel per `frontend/`.
 
 Se modifichi `models.py`, crea la migrazione in locale
 (`alembic revision --autogenerate -m "…"`) e mettila in commit. Render la
-applica al prossimo avvio.
+applica nella build del deploy successivo.
+
+Se il servizio Render è stato creato a mano e non segue il Blueprint
+(`render.yaml`), imposta tu i due comandi in *Settings*:
+
+- **Build Command**: `pip install -r requirements.txt && alembic upgrade head`
+- **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+
+### Controlli automatici sulle pull request
+
+`.github/workflows/controlli.yml` gira su ogni PR (e su ogni push su
+`premain`): applica le migrazioni su un Postgres vero e le confronta con i
+modelli, lancia tutti i test del backend e controlla tipi, lint e build del
+frontend. Se compare la croce rossa, la PR ha un problema: meglio scoprirlo lì
+che con Render o Vercel che non partono. Non serve configurare niente.
+
+### Manutenzione automatica
+
+Il job orario dei promemoria, dopo l'invio, chiama `/maintenance/run` con lo
+stesso `PUSH_CRON_SECRET`:
+
+- completa la **traduzione del catalogo** se si è interrotta (un deploy o lo
+  spegnimento di Render a metà del lavoro partito da «Aggiorna catalogo»).
+  In *Profilo* l'amministratore vede quanti esercizi mancano; lo stato
+  normale è «Catalogo tutto in italiano»;
+- cancella i registri che non servono più (contatori di quota vecchi,
+  notifiche già mandate legate a un giorno passato, codici email scaduti).
+  Mai dati dell'utente.
+
+### Registrazione su invito (facoltativo)
+
+La quota gratuita di Gemini è una sola per tutti gli account. Per evitare che
+uno sconosciuto si registri e la consumi, su Render aggiungi
+`ALLOWED_EMAILS` con gli indirizzi ammessi, separati da virgola (gli
+`ADMIN_EMAILS` sono sempre ammessi). Chi ha già un account continua a
+entrare; gli altri vedono «Kilo è su invito». Vuoto: registrazione aperta.
 
 ---
 

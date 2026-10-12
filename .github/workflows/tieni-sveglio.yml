@@ -35,4 +35,8 @@ jobs:
             echo "Secret KILO_BACKEND_URL non configurato: niente da fare."
             exit 0
           fi
-          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" --max-time 90 "${BACKEND%/}/health" || true
+          # Non fallisce mai (Render che si sveglia è normale), ma un errore
+          # resta visibile come avviso nella pagina del job.
+          esito=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "${BACKEND%/}/health" || echo "000")
+          echo "HTTP $esito"
+          if [ "$esito" != "200" ]; then echo "::warning::Il backend ha risposto $esito"; fi

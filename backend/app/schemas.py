@@ -1013,6 +1013,8 @@ class CatalogStatusOut(BaseModel):
     exercises_cached: int
     ingredients_cached: int
     muscles: list[str]
+    # Esercizi visibili ancora senza italiano: li traduce il lavoro di fondo.
+    untranslated: int = 0
 
 
 class SyncResultOut(BaseModel):

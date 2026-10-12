@@ -224,33 +224,47 @@ def dispatch(db: Session, *, now: dt.datetime | None = None, sender=send) -> Dis
     una volta sola (`NotificationLog`).
     """
     adesso = now or now_local()
-    oggi = adesso.date()
     result = DispatchResult()
     if adesso.hour not in ORE_CONSENTITE:
         return result
 
     for user_id, subs in _subscriptions_by_user(db).items():
-        utente = db.get(User, user_id)
-        if utente is None:
-            continue
-        impostazioni = notification_rules.settings_for(db, user_id)
-        ora_sera = min(s.reminder_hour for s in subs)
-        candidate = notification_rules.build(
-            db, utente, today=oggi, fuso=FUSO, settings=impostazioni, evening_hour=ora_sera
-        )
-        gia_mandate = _already_sent(db, user_id)
-        restanti = MAX_PER_DAY - _sent_today(db, user_id, oggi)
-        for nota in candidate:
-            if restanti <= 0:
-                break
-            if nota.key in gia_mandate or not nota.hours[0] <= adesso.hour <= nota.hours[1]:
-                continue
-            result.due += 1
-            if _deliver(db, subs, nota, result, sender):
-                _record(db, user_id, nota.key, oggi)
-                restanti -= 1
-    db.commit()
+        # Una persona alla volta, salvando subito quello che le è stato
+        # mandato: se il giro si interrompe (errore su un'altra persona,
+        # Render che si riavvia) il giro dopo non rimanda le stesse notifiche.
+        try:
+            _dispatch_user(db, user_id, subs, adesso=adesso, result=result, sender=sender)
+            db.commit()
+        except Exception:  # noqa: BLE001 — un utente con dati strani non ferma gli altri
+            log.exception("Promemoria non preparati per l'utente %s", user_id)
+            db.rollback()
+            result.failed += 1
     return result
+
+
+def _dispatch_user(db: Session, user_id: int, subs, *, adesso: dt.datetime, result: DispatchResult, sender) -> None:
+    oggi = adesso.date()
+    utente = db.get(User, user_id)
+    if utente is None:
+        return
+    impostazioni = notification_rules.settings_for(db, user_id)
+    ora_sera = min(s.reminder_hour for s in subs)
+    candidate = notification_rules.build(
+        db, utente, today=oggi, fuso=FUSO, settings=impostazioni, evening_hour=ora_sera
+    )
+    gia_mandate = _already_sent(db, user_id)
+    restanti = MAX_PER_DAY - _sent_today(db, user_id, oggi)
+    for nota in candidate:
+        if restanti <= 0:
+            break
+        if nota.key in gia_mandate or not nota.hours[0] <= adesso.hour <= nota.hours[1]:
+            continue
+        result.due += 1
+        if _deliver(db, subs, nota, result, sender):
+            _record(db, user_id, nota.key, oggi)
+            # Registrata subito: un errore più avanti non deve farla rimandare.
+            db.commit()
+            restanti -= 1
 
 
 def after_session(db: Session, profile: UserProfile, *, now: dt.datetime | None = None, sender=send) -> bool:

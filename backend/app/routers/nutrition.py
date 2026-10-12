@@ -820,6 +820,12 @@ def suggest_recipes(
     vanno convertite. Il campo `coverage` dice quanti ingredienti sono stati
     riconosciuti; sotto il 75% la ricetta non viene proposta affatto.
     """
+    try:
+        rate_limit.consume_daily(db, profile.user_id, "recipe_suggest")
+    except rate_limit.RateLimited as e:
+        raise HTTPException(
+            status_code=429, detail=str(e), headers={"Retry-After": str(e.retry_after)}
+        ) from e
     profile, targets = _compute_targets(profile)
 
     try:

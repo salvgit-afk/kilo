@@ -2,7 +2,8 @@
 #
 # Render gratuito si addormenta e non può tenere un timer suo: questo job,
 # gratuito su GitHub Actions, ogni ora chiede al backend di mandare le
-# notifiche arrivate alla loro ora. Il backend sceglie a chi scrivere e
+# notifiche arrivate alla loro ora, poi di fare la manutenzione (traduzioni
+# del catalogo rimaste a metà, pulizia dei registri). Il backend sceglie a chi scrivere e
 # non manda niente due volte nello stesso giorno, quindi un giro in ritardo
 # o saltato non fa danni. Guida: DEPLOY.md, sezione «Notifiche».
 #
@@ -22,7 +23,9 @@ on:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Tempo per il risveglio di Render, i tentativi e la manutenzione; prima
+    # erano 5 minuti, meno dei tentativi del curl, e il job veniva annullato.
+    timeout-minutes: 15
     steps:
       - name: Invia i promemoria dovuti
         env:
@@ -34,5 +37,21 @@ jobs:
             exit 0
           fi
           # Il primo tentativo può trovare Render addormentato (fino a ~1 minuto).
-          curl -fsS --retry 3 --retry-delay 20 --retry-all-errors --max-time 90 \
-            -X POST -H "X-Cron-Secret: $SECRET" "$BACKEND/push/dispatch"
+          # Ritentare è sicuro: il backend registra ogni notifica appena mandata
+          # e non fa partire due giri insieme, quindi niente invii doppi.
+          # In tutto al più 4 × 90 s + 3 × 20 s = 7 minuti.
+          curl -fsS --retry 3 --retry-delay 20 --retry-connrefused --max-time 90 \
+            -X POST -H "X-Cron-Secret: $SECRET" "${BACKEND%/}/push/dispatch"
+
+      # Completa la traduzione del catalogo esercizi se si è interrotta (deploy,
+      # Render spento) e pulisce i registri vecchi. Se fallisce non è grave:
+      # ci riprova il giro dopo.
+      - name: Manutenzione (traduzioni del catalogo, pulizia)
+        if: always()
+        env:
+          BACKEND: ${{ secrets.KILO_BACKEND_URL }}
+          SECRET: ${{ secrets.PUSH_CRON_SECRET }}
+        run: |
+          if [ -z "$BACKEND" ] || [ -z "$SECRET" ]; then exit 0; fi
+          curl -fsS --max-time 240 -X POST -H "X-Cron-Secret: $SECRET" "${BACKEND%/}/maintenance/run" \
+            || echo "::warning::Manutenzione non riuscita: ci riprova il prossimo giro."

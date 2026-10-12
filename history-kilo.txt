@@ -1,6 +1,6 @@
 ================================================================================
 KILO — EXPORT DELLA CONVERSAZIONE DI SVILUPPO (per Claude Code sul PC di casa)
-Aggiornato al 21 settembre 2026 · ultimo commit incluso: 80d3c95
+Aggiornato al 12 ottobre 2026 · ultimo merge incluso: PR #5 (34bae22) + pacchetto infrastruttura
 ================================================================================
 
 COME USARE QUESTO FILE
@@ -25,8 +25,10 @@ backend/.env locale, che non è nel repository.
 
 - LINGUA: si parla in italiano. Anche commenti nel codice, messaggi di commit
   e testi dell'interfaccia sono in italiano.
-- GIT: Claude fa i commit, l'utente fa SEMPRE i push da sé. Non fare mai
-  push. Dopo i commit, mostrare il comando `git push` come blocco a parte.
+- GIT (da ottobre 2026): si lavora SEMPRE sul branch `premain`. Claude fa
+  commit e push su premain; l'utente apre la PR premain → main su GitHub e fa
+  il merge. Dopo ogni merge premain si riallinea a main (fast-forward).
+  (Prima: Claude faceva solo i commit e l'utente i push.)
   Firma dei commit: "Co-Authored-By: Claude ... <noreply@anthropic.com>".
 - SEGRETI: mai committare .env o chiavi. history-kilo.txt è nel repository.
 - RepDB: l'attribuzione "Exercise data by RepDB (repdb.co)" deve restare
@@ -353,6 +355,63 @@ apostrofi italiani nel JSX sono innocui. `npm run lint` = `eslint .`.
 - Integratori: pallini dei 7 giorni a 36 px; nel calendario si vedono i due
   mesi successivi, spenti; la schermata si ricarica tornando sull'app (cambio
   di giorno dopo la mezzanotte).
+
+
+--- Ottobre 2026: sessione cloud su premain (PR #1-#5 e infrastruttura) ----
+Scheda e catalogo:
+- Giorno di oggi preselezionato, giorni in ordine, carichi modificabili dopo
+  la sessione, RIR suggerito; seconda scheda Push/Pull 4 giorni generata
+  dagli esercizi già usati (split_type push_pull).
+- Più schede attive con "scheda in uso" (WorkoutPlan.is_current): giorni di
+  allenamento, promemoria e Oggi seguono quella scelta nel menu.
+- Catalogo rivisto: adduttori/abduttori (gruppo "Adductors", solo catalogo),
+  doppioni verificati uno per uno (data/exercise_duplicates.json), nomi
+  italiani scelti a mano (manual_exercises.NAME_IT_OVERRIDES), ricerca
+  tollerante (con 3+ parole una può mancare; sinonimi italiano→inglese e
+  "singolo/monolaterale/a un braccio"), filtro per attrezzatura,
+  hyperextension 45° fra i femorali (Everkinetic 0103).
+- "Cambia" non segna più l'esercizio tolto come sgradito (lo faceva sparire
+  dalle scelte); quelli da evitare restano in fondo, segnalati. "Aggiungi
+  esercizio" esclude solo quelli già nel giorno.
+- Allenamento senza rete (lib/offline.ts: coda con client_id idempotenti),
+  cambio esercizio solo per oggi, note per esercizio, riscaldamento proposto.
+- Progressione con il RIR (services/progression.py): "↑ Prova 105 kg × 8" in
+  sessione e in Scheda, stessa regola della notifica "Sei pronto a salire".
+- Volume contato in un modo solo (workout_generator.set_weights: indirette
+  a metà) in Scheda, Progressi e autoregolazione; variazioni di volume per
+  gruppo, una serie alla volta.
+- Coach: riceve scheda giorno per giorno, prossimi passi, massimali, serie per
+  muscolo, costanza e peso (chat_agent._training_context).
+Diario e progressi:
+- Ricerca fra "I miei prodotti", "↺ Come ieri" sui pasti vuoti
+  (/nutrition/diary/copy), pesate correggibili e cancellabili (il peso del
+  profilo segue la pesata più recente per data).
+Sicurezza dei dati e robustezza:
+- Backup settimanale cifrato (.github/workflows/backup.yml), "Scarica i miei
+  dati" (ZIP con CSV + JSON, /profile/{id}/export).
+- Richieste con timeout e un nuovo tentativo (lib/api.ts), errori con
+  "Riprova" invece di falsi stati vuoti, avvio senza rete con l'account e le
+  schede salvati sul telefono (lib/account.ts, lib/localData.ts), service
+  worker che tiene il guscio dell'app (public/sw.js).
+- Telefono condiviso: all'uscita via copie locali e notifiche di chi esce.
+- PROXY_SECRET (middleware.ts): IP vero per i limiti di accesso.
+Notifiche e pagine:
+- Integratori ricordati una volta al giorno, proteine "entro un paio d'ore",
+  "proteine basse" solo a cena segnata; note duplicate tolte (Oggi mostra un
+  rimando, Progressi non ripete i riquadri).
+Infrastruttura (ultimo pacchetto):
+- Controlli su ogni PR (.github/workflows/controlli.yml: alembic su Postgres
+  + check, pytest, tsc, eslint, build).
+- Migrazioni nella build di Render, non a ogni avvio.
+- /maintenance/run chiamato dal job orario: traduzione del catalogo ripresa
+  se interrotta (translation.translate_library con lucchetto, services/
+  locks.py) e pulizia dei registri. Traduzione al volo nelle pagine limitata
+  a due blocchi.
+- Promemoria: un giro alla volta, salvataggio per persona (niente doppi invii).
+- Gemini: pausa condivisa dopo un 429, modello di riserva anche in streaming,
+  limite giornaliero sui suggerimenti di ricette, registrazione su invito
+  facoltativa (ALLOWED_EMAILS).
+- Indice trigram sugli alimenti (migrazione a3f7c2e9d1b4, solo Postgres).
 
 
 ================================================================================

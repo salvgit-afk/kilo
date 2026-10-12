@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import random
+import re
 import time
 from typing import Any
 
@@ -50,6 +51,33 @@ def fallback_model(model: str) -> str:
 
 def is_configured() -> bool:
     return get_settings().gemini_configured
+
+
+# Dopo un 429 (quota esaurita) per un po' non si chiama più Gemini da nessuna
+# parte dell'app: ogni funzione che riprovasse per conto suo consumerebbe
+# richieste e allungherebbe l'attesa di chi usa l'app. Gemini dice quanto
+# aspettare ("retryDelay"); senza, un minuto. Mai più di 10 minuti.
+QUOTA_PAUSE_SECONDS = 60.0
+QUOTA_PAUSE_MAX_SECONDS = 600.0
+_pausa_fino = 0.0
+
+
+def _in_pausa() -> bool:
+    return time.monotonic() < _pausa_fino
+
+
+def _metti_in_pausa(corpo: str) -> None:
+    global _pausa_fino
+    attesa = QUOTA_PAUSE_SECONDS
+    trovato = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', corpo or "")
+    if trovato:
+        attesa = float(trovato.group(1))
+    _pausa_fino = time.monotonic() + min(max(attesa, 5.0), QUOTA_PAUSE_MAX_SECONDS)
+
+
+def _quota_esaurita(corpo: str) -> LLMQuotaExceeded:
+    _metti_in_pausa(corpo)
+    return LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
 
 
 # Errori temporanei del server: vale la pena riprovare. Il 429 no: sul piano
@@ -89,6 +117,8 @@ def generate_structured(
     settings = get_settings()
     if not settings.gemini_configured:
         raise LLMNotConfigured("GEMINI_API_KEY non configurata nel file .env")
+    if _in_pausa():
+        raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto da poco: in pausa")
 
     config: dict[str, Any] = {
         "temperature": temperature,
@@ -124,7 +154,7 @@ def generate_structured(
             modello = fallback_model(modello)
             resp = _send(modello, payload, settings.gemini_api_key, scadenza)
         if resp.status_code == 429:
-            raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
+            raise _quota_esaurita(resp.text)
         resp.raise_for_status()
 
         dati = resp.json()
@@ -221,6 +251,8 @@ def stream_structured(
     settings = get_settings()
     if not settings.gemini_configured:
         raise LLMNotConfigured("GEMINI_API_KEY non configurata nel file .env")
+    if _in_pausa():
+        raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto da poco: in pausa")
 
     config: dict[str, Any] = {
         "temperature": temperature,
@@ -237,43 +269,57 @@ def stream_structured(
         payload["systemInstruction"] = {"parts": [{"text": system}]}
 
     modello = model or settings.gemini_model
-    url = _GEMINI_URL.format(model=modello).replace(":generateContent", ":streamGenerateContent")
+    # Come `generate_structured`: se la versione fissata è stata ritirata
+    # (404 prima di qualsiasi frammento) si riprova con l'alias "latest".
+    modelli = [modello] if modello == fallback_model(modello) else [modello, fallback_model(modello)]
     try:
-        with httpx.stream(
-            "POST",
-            url,
-            params={"alt": "sse"},
-            headers={"x-goog-api-key": settings.gemini_api_key},
-            json=payload,
-            timeout=timeout,
-        ) as risposta:
-            if risposta.status_code == 429:
-                raise LLMQuotaExceeded("Limite di richieste Gemini raggiunto")
-            if risposta.status_code >= 400:
-                risposta.read()
-                raise LLMError(f"HTTP {risposta.status_code}")
-            for riga in risposta.iter_lines():
-                if not riga.startswith("data:"):
+        for n, modello in enumerate(modelli):
+            url = _GEMINI_URL.format(model=modello).replace(":generateContent", ":streamGenerateContent")
+            with httpx.stream(
+                "POST",
+                url,
+                params={"alt": "sse"},
+                headers={"x-goog-api-key": settings.gemini_api_key},
+                json=payload,
+                timeout=timeout,
+            ) as risposta:
+                if risposta.status_code == 404 and n + 1 < len(modelli):
+                    logger.warning("Modello %s non disponibile: uso %s", modello, modelli[n + 1])
                     continue
-                dati = riga[5:].strip()
-                if not dati or dati == "[DONE]":
-                    continue
-                try:
-                    blocco = json.loads(dati)
-                except ValueError:
-                    continue
-                if "usageMetadata" in blocco:
-                    _log_usage(purpose, modello, blocco["usageMetadata"])
-                for candidato in blocco.get("candidates") or []:
-                    for parte in (candidato.get("content") or {}).get("parts") or []:
-                        testo = parte.get("text")
-                        if testo:
-                            yield testo
+                yield from _stream_chunks(risposta, purpose, modello)
+                return
     except LLMError:
         raise
     except Exception as e:
         logger.warning("Streaming LLM fallito (%s): %s", purpose, e)
         raise LLMError(str(e)) from e
+
+
+def _stream_chunks(risposta: httpx.Response, purpose: str, modello: str):
+    """I frammenti di testo di una risposta in streaming già aperta."""
+    if risposta.status_code == 429:
+        risposta.read()
+        raise _quota_esaurita(risposta.text)
+    if risposta.status_code >= 400:
+        risposta.read()
+        raise LLMError(f"HTTP {risposta.status_code}")
+    for riga in risposta.iter_lines():
+        if not riga.startswith("data:"):
+            continue
+        dati = riga[5:].strip()
+        if not dati or dati == "[DONE]":
+            continue
+        try:
+            blocco = json.loads(dati)
+        except ValueError:
+            continue
+        if "usageMetadata" in blocco:
+            _log_usage(purpose, modello, blocco["usageMetadata"])
+        for candidato in blocco.get("candidates") or []:
+            for parte in (candidato.get("content") or {}).get("parts") or []:
+                testo = parte.get("text")
+                if testo:
+                    yield testo
 
 
 def partial_string(raw: str, key: str) -> str:

@@ -809,7 +809,15 @@ class Ingredient(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("ix_ingredient_source_id", "source", "source_id"),)
+    __table_args__ = (
+        Index("ix_ingredient_source_id", "source", "source_id"),
+        # Ricerca per parole dentro il nome (ILIKE '%riso%'): indice trigram,
+        # solo su Postgres (migrazione a3f7c2e9d1b4).
+        Index(
+            "ix_ingredients_name_trgm", "name",
+            postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"},
+        ).ddl_if(dialect="postgresql"),
+    )
 
 
 class Recipe(Base):
@@ -1222,10 +1230,13 @@ class NotificationSettings(Base):
     """
 
     __tablename__ = "notification_settings"
+    # Come lo crea la migrazione: vincolo unico più indice semplice (uguale
+    # a un indice unico, ma così `alembic check` non vede differenze).
+    __table_args__ = (UniqueConstraint("user_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     training: Mapped[bool] = mapped_column(Boolean, default=True)
     supplements: Mapped[bool] = mapped_column(Boolean, default=True)

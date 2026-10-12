@@ -694,6 +694,8 @@ export type CatalogStatus = {
   exercises_cached: number;
   ingredients_cached: number;
   muscles: string[];
+  /** Esercizi ancora senza italiano: li traduce Kilo in automatico. */
+  untranslated?: number;
 };
 
 // --- Date locali --------------------------------------------------------------

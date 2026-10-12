@@ -53,3 +53,18 @@ def test_senza_segreto_configurato_come_prima(monkeypatch):
     assert client_ip(_richiesta(x_forwarded_for="1.1.1.1, 76.76.21.1", x_kilo_proxy_secret="",
                                 x_kilo_client_ip="1.2.3.4")) == "76.76.21.1"
     assert client_ip(_richiesta()) == "10.0.0.9"
+
+
+def test_registrazione_su_invito(ambiente, monkeypatch):
+    """Con ALLOWED_EMAILS solo gli invitati creano un account; vuoto, aperta."""
+    client, _db = ambiente
+    monkeypatch.setattr(get_settings(), "allowed_emails", "salvo@example.com, Bea@Example.com")
+    r = client.post("/auth/register", json={"email": "estraneo@example.com", "password": "passwordlunga1"})
+    assert r.status_code == 403 and "invito" in r.json()["detail"]
+    for email in ("salvo@example.com", "bea@example.com"):
+        assert client.post("/auth/register", json={"email": email, "password": "passwordlunga1"}).status_code == 201
+    # Chi ha già l'account entra anche se poi l'invito viene tolto.
+    monkeypatch.setattr(get_settings(), "allowed_emails", "altro@example.com")
+    assert client.post("/auth/login", json={"email": "bea@example.com", "password": "passwordlunga1"}).status_code == 200
+    monkeypatch.setattr(get_settings(), "allowed_emails", "")
+    assert client.post("/auth/register", json={"email": "nuovo@example.com", "password": "passwordlunga1"}).status_code == 201

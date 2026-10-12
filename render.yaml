@@ -12,12 +12,14 @@ services:
     # attraversa l'oceano se backend e database stanno in continenti diversi.
     region: frankfurt
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    # Il pre-deploy command non è disponibile sul piano free, quindi le
-    # migrazioni partono all'avvio. `upgrade head` è idempotente: se lo schema
-    # è già aggiornato non fa nulla. Se una migrazione fallisce, il servizio
-    # non parte e la versione precedente resta online.
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Il pre-deploy command non è disponibile sul piano free: le migrazioni
+    # partono nella build (le variabili d'ambiente ci sono anche lì), una
+    # volta per deploy. Prima giravano a ogni avvio, cioè a ogni risveglio di
+    # Render, allungando l'attesa e facendo dipendere la partenza da Neon.
+    # Se una migrazione fallisce la build fallisce e resta online la versione
+    # precedente. `upgrade head` è idempotente.
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
@@ -51,6 +53,9 @@ services:
       # Stesso valore su Vercel: il proxy di Next dice al backend l'indirizzo
       # vero di chi si collega (limiti contro i tentativi di accesso). Vedi DEPLOY.md.
       - key: PROXY_SECRET
+        sync: false
+      # Facoltativo: registrazione solo per queste email (separate da virgola).
+      - key: ALLOWED_EMAILS
         sync: false
       # Email di verifica e password dimenticata (Brevo, gratuito). Senza,
       # la registrazione non chiede il codice. Vedi DEPLOY.md.

@@ -31,6 +31,8 @@ PUBLIC_ROUTES = {
     # Il job orario non ha un account: si autentica con PUSH_CRON_SECRET
     # (vedi test_push.test_dispatch_richiede_il_segreto).
     ("POST", "/push/dispatch"),
+    # Anche la manutenzione: lo stesso segreto del job (vedi test_maintenance).
+    ("POST", "/maintenance/run"),
 }
 
 PASSWORD = "passwordlunga1"

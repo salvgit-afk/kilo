@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # catalogo: l'operazione scarica le fonti e avvia centinaia di chiamate
     # all'LLM, non deve poterla lanciare chiunque.
     admin_emails: str = ""
+    # Registrazione su invito: se impostato (email separate da virgola), solo
+    # questi indirizzi possono creare un account. Vuoto: aperta come prima.
+    # Gli account già creati entrano comunque. Protegge la quota gratuita di
+    # Gemini, che è una sola per tutti.
+    allowed_emails: str = ""
     # /docs e /openapi.json descrivono tutta l'API: utili in locale, in
     # produzione sono una mappa per chi cerca punti deboli. Spenti di default.
     docs_enabled: bool = False
@@ -135,6 +140,13 @@ class Settings(BaseSettings):
     @property
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+
+    def registration_allowed(self, email: str) -> bool:
+        """Con `ALLOWED_EMAILS` impostato, solo quegli indirizzi (e gli admin)."""
+        invitati = {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
+        if not invitati:
+            return True
+        return email.strip().lower() in invitati | self.admin_email_set
 
     @property
     def cors_origins(self) -> list[str]:
