@@ -6,7 +6,7 @@
  * (macchina occupata). Filtri per gruppo muscolare, attrezzatura e nome.
  */
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
   MUSCLE_LABELS,
@@ -15,9 +15,10 @@ import {
   formatEquipment,
   type Alternative,
   type PlanExercise,
+  type PlanExerciseParams,
   type WorkoutPlan,
 } from "@/lib/api";
-import { DemoAnimation, Modal, ModalHeader, OptionGroup } from "@/components/controls";
+import { DemoAnimation, Modal, ModalHeader } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 
 // Gruppi fra cui scegliere quando si cambia proprio il muscolo: quelli che
@@ -46,6 +47,18 @@ const ATTREZZI: { value: string; label: string }[] = [
   { value: "elastici", label: "Elastici" },
 ];
 
+/**
+ * La scelta fatta durante l'allenamento. Con `alsoInPlan` la scheda è già
+ * aggiornata (`plan`); senza, vale solo per la sessione e la scheda non
+ * cambia. `defaults`: i parametri di un esercizio aggiunto solo per oggi.
+ */
+export type SessionPick = {
+  exercise: Alternative["exercise"];
+  alsoInPlan: boolean;
+  plan?: WorkoutPlan;
+  defaults?: PlanExerciseParams | null;
+};
+
 export function thumbnails(ex: PlanExercise["exercise"]) {
   return ex.demo_images?.length ? ex.demo_images : ex.image_url ? [ex.image_url] : [];
 }
@@ -56,8 +69,9 @@ export function thumbnails(ex: PlanExercise["exercise"]) {
  * abbastanza per capire di cosa si tratta prima di sceglierlo.
  *
  * Con `item` sostituisce quell'esercizio; con `addTo` ne aggiunge uno nuovo
- * in fondo al giorno. Con `inSession` (durante l'allenamento) si sceglie se
- * il cambio vale solo per oggi o anche nella scheda.
+ * in fondo al giorno. Con `inSession` (durante l'allenamento), toccato
+ * l'esercizio, si sceglie se la modifica vale solo per oggi o anche nella
+ * scheda: una domanda esplicita, non un interruttore che si può non vedere.
  */
 export function AlternativesDialog({
   item,
@@ -71,7 +85,7 @@ export function AlternativesDialog({
   item?: PlanExercise;
   addTo?: { planId: number; day: string };
   /** Durante l'allenamento: `onPick` riceve l'esercizio scelto e se vale anche per la scheda. */
-  inSession?: { onPick: (exercise: Alternative["exercise"], alsoInPlan: boolean) => void };
+  inSession?: { onPick: (pick: SessionPick) => void };
   profileId: number;
   onClose: () => void;
   onSwapped: (plan: WorkoutPlan) => void;
@@ -83,9 +97,8 @@ export function AlternativesDialog({
   const [query, setQuery] = useState("");
   const [quanti, setQuanti] = useState(PAGINA_ALTERNATIVE);
   const [attrezzo, setAttrezzo] = useState("");
-  // Durante l'allenamento: di base il cambio vale solo per oggi (macchina
-  // occupata), la scheda resta com'è.
-  const [ancheScheda, setAncheScheda] = useState(false);
+  // Durante l'allenamento: l'esercizio toccato, in attesa di "solo oggi" o "anche nella scheda".
+  const [scelta, setScelta] = useState<Alternative | null>(null);
   const originale = item?.exercise.primary_muscle ?? "";
   // Il gruppo da cui pescare: di base lo stesso, ma si può cambiare proprio
   // il muscolo allenato da questo esercizio.
@@ -121,24 +134,25 @@ export function AlternativesDialog({
     return () => clearTimeout(timer);
   }, [item, addTo, profileId, query, muscle, cambiaMuscolo, quanti, attrezzo]);
 
-  async function swap(exerciseId: number) {
+  async function swap(alt: Alternative, ancheScheda = true) {
+    const exerciseId = alt.exercise.id;
+    setScelta(null);
     setBusy(exerciseId);
     setError(null);
     try {
       if (inSession && !ancheScheda) {
         // Solo per oggi: la scheda non cambia e nessuna preferenza viene toccata.
-        const scelto = alts?.find((x) => x.exercise.id === exerciseId)?.exercise;
-        if (scelto) inSession.onPick(scelto, false);
+        inSession.onPick({ exercise: alt.exercise, alsoInPlan: false, defaults: alt.defaults });
         onClose();
         return;
       }
       if (addTo) {
-        onSwapped(
-          await api.post<WorkoutPlan>(`/workout/plans/${addTo.planId}/exercises?profile_id=${profileId}`, {
-            exercise_id: exerciseId,
-            day_label: addTo.day,
-          })
-        );
+        const piano = await api.post<WorkoutPlan>(`/workout/plans/${addTo.planId}/exercises?profile_id=${profileId}`, {
+          exercise_id: exerciseId,
+          day_label: addTo.day,
+        });
+        onSwapped(piano);
+        inSession?.onPick({ exercise: alt.exercise, alsoInPlan: true, plan: piano });
         onClose();
         return;
       }
@@ -152,7 +166,7 @@ export function AlternativesDialog({
       onSwapped(updated);
       if (inSession) {
         const nuovo = updated.exercises.find((e) => e.id === item!.id)?.exercise;
-        if (nuovo) inSession.onPick(nuovo, true);
+        if (nuovo) inSession.onPick({ exercise: nuovo, alsoInPlan: true, plan: updated });
       }
       onClose();
     } catch (e) {
@@ -243,18 +257,6 @@ export function AlternativesDialog({
             );
           })}
         </div>
-        {inSession && (
-          <OptionGroup
-            ariaLabel="Dove vale il cambio"
-            columns="grid-cols-2"
-            value={ancheScheda ? "scheda" : "oggi"}
-            onChange={(v) => setAncheScheda(v === "scheda")}
-            options={[
-              { value: "oggi", label: "Solo oggi", hint: "La scheda resta com'è" },
-              { value: "scheda", label: "Anche nella scheda", hint: "Da qui in avanti" },
-            ]}
-          />
-        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
@@ -343,7 +345,7 @@ export function AlternativesDialog({
                       <button
                         className="btn-primary flex-1 px-3 py-2 text-[12.5px]"
                         disabled={busy !== null}
-                        onClick={() => swap(ex.id)}
+                        onClick={() => (inSession ? setScelta(a) : swap(a))}
                       >
                         {busy === ex.id ? (addTo ? "Aggiungo…" : "Cambio…") : addTo ? "Aggiungi" : "Scegli questo"}
                       </button>
@@ -366,14 +368,96 @@ export function AlternativesDialog({
       </div>
 
       <p className="shrink-0 border-t border-white/[0.06] px-5 py-3 text-[11.5px] leading-snug text-white/35">
-        {inSession && !ancheScheda
-          ? "Le serie di oggi si segnano sull'esercizio scelto; la scheda e le preferenze non cambiano."
+        {inSession
+          ? "Scelto l'esercizio, decidi se vale solo per l'allenamento di oggi o anche nella scheda."
           : addTo
           ? "Quello che aggiungi diventa un preferito: le prossime schede lo propongono per primo."
           : cambiaMuscolo
           ? "L'esercizio tolto resta disponibile per le prossime schede; quello che scegli diventa un preferito."
           : "L'esercizio sostituito non ti verrà più proposto nelle prossime schede; quello che scegli diventa un preferito."}
       </p>
+
+      <AnimatePresence>
+        {scelta && (
+          <WhereDialog
+            key="dove"
+            nome={exerciseName(scelta.exercise)}
+            adding={!!addTo}
+            onToday={() => swap(scelta, false)}
+            onPlan={() => swap(scelta, true)}
+            onCancel={() => setScelta(null)}
+          />
+        )}
+      </AnimatePresence>
     </Modal>
+  );
+}
+
+/**
+ * "Solo oggi" o "anche nella scheda": la domanda dopo aver scelto l'esercizio
+ * durante l'allenamento, sopra l'elenco.
+ */
+function WhereDialog({
+  nome,
+  adding,
+  onToday,
+  onPlan,
+  onCancel,
+}: {
+  nome: string;
+  adding: boolean;
+  onToday: () => void;
+  onPlan: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-10 flex items-end bg-black/70 backdrop-blur-[2px]"
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Dove vale la modifica"
+    >
+      <motion.div
+        initial={{ y: 40 }}
+        animate={{ y: 0 }}
+        exit={{ y: 40 }}
+        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+        className="w-full space-y-2.5 rounded-t-3xl border-t border-white/10 bg-[#121416] p-4 pb-5"
+      >
+        <p className="text-[12px] font-medium uppercase tracking-wide text-white/40">
+          {adding ? "Aggiungi" : "Cambia con"}
+        </p>
+        <p className="text-[16px] font-semibold leading-snug text-white">{nome}</p>
+        <div className="grid gap-2 pt-1">
+          <button
+            onClick={onToday}
+            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-left transition hover:border-lime-400/40"
+          >
+            <span className="block text-[14.5px] font-semibold text-white">Solo per oggi</span>
+            <span className="block text-[12px] leading-snug text-white/50">
+              {adding
+                ? "Lo fai in questo allenamento; la scheda resta com'è."
+                : "Le serie di oggi vanno su questo; la scheda resta com'è."}
+            </span>
+          </button>
+          <button
+            onClick={onPlan}
+            className="rounded-2xl border border-lime-400/50 bg-lime-400/[0.12] px-4 py-3 text-left transition hover:bg-lime-400/20"
+          >
+            <span className="block text-[14.5px] font-semibold text-lime-100">Anche nella scheda</span>
+            <span className="block text-[12px] leading-snug text-white/55">
+              {adding ? "Entra nella scheda e lo ritrovi le prossime volte." : "Lo cambia nella scheda, da qui in avanti."}
+            </span>
+          </button>
+          <button onClick={onCancel} className="w-full py-2 text-[13px] font-medium text-white/45 hover:text-white/80">
+            Annulla
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

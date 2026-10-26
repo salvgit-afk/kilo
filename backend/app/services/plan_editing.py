@@ -38,6 +38,26 @@ def day_labels(plan: WorkoutPlan) -> list[str]:
     return sorted(primo, key=primo.__getitem__)
 
 
+def default_params(profile: UserProfile, plan: WorkoutPlan, exercise: Exercise) -> dict[str, int]:
+    """Serie, ripetizioni, RIR e recupero che il generatore darebbe a questo
+    esercizio nella scheda. Servono anche all'allenamento, quando un esercizio
+    si aggiunge solo per quella volta."""
+    reps_min, reps_max = wg.rep_range(plan.goal, exercise.is_compound)
+    return {
+        "target_sets": wg.TARGET_SETS_PER_EXERCISE,
+        "target_reps_min": reps_min,
+        "target_reps_max": reps_max,
+        "target_rir": wg.RIR_BY_EXPERIENCE.get(profile.experience_level, 2),
+        "rest_seconds": (
+            wg.REST_STRENGTH_SECONDS
+            if plan.goal == Goal.STRENGTH
+            else wg.REST_COMPOUND_SECONDS
+            if exercise.is_compound
+            else wg.REST_ISOLATION_SECONDS
+        ),
+    }
+
+
 def add_exercise(
     db: Session, profile: UserProfile, plan: WorkoutPlan, exercise: Exercise, day_label: str
 ) -> WorkoutPlanExercise:
@@ -48,23 +68,12 @@ def add_exercise(
     """
     if day_label not in day_labels(plan):
         raise EditError(f"La scheda non ha un giorno «{day_label}».")
-    reps_min, reps_max = wg.rep_range(plan.goal, exercise.is_compound)
     riga = WorkoutPlanExercise(
         workout_plan_id=plan.id,
         exercise_id=exercise.id,
         day_label=day_label,
         order_index=1 + max((e.order_index for e in plan.exercises if e.day_label == day_label), default=-1),
-        target_sets=wg.TARGET_SETS_PER_EXERCISE,
-        target_reps_min=reps_min,
-        target_reps_max=reps_max,
-        target_rir=wg.RIR_BY_EXPERIENCE.get(profile.experience_level, 2),
-        rest_seconds=(
-            wg.REST_STRENGTH_SECONDS
-            if plan.goal == Goal.STRENGTH
-            else wg.REST_COMPOUND_SECONDS
-            if exercise.is_compound
-            else wg.REST_ISOLATION_SECONDS
-        ),
+        **default_params(profile, plan, exercise),
     )
     db.add(riga)
     # Sceglierlo è un modo di dire che piace: le prossime schede lo propongono.

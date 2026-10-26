@@ -470,6 +470,7 @@ def list_candidates(
         AlternativeOut(
             exercise=c.exercise, preserves_stimulus=False,
             already_preferred=c.already_preferred, avoided=c.avoided,
+            defaults=plan_editing.default_params(profile, piano, c.exercise),
         )
         for c in candidati
     ]

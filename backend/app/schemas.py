@@ -276,6 +276,14 @@ class PlanGenerationOut(BaseModel):
     knowledge_tags: list[str]
 
 
+class PlanExerciseParamsOut(BaseModel):
+    target_sets: int
+    target_reps_min: int
+    target_reps_max: int
+    target_rir: int
+    rest_seconds: int
+
+
 class AlternativeOut(BaseModel):
     exercise: ExerciseOut
     preserves_stimulus: bool
@@ -283,6 +291,9 @@ class AlternativeOut(BaseModel):
     # "replaced" (tolto da una scheda) o "disliked" (segnato come sgradito):
     # resta fra le scelte, in fondo e segnalato.
     avoided: str | None = None
+    # Solo fra i candidati da aggiungere: i parametri con cui entrerebbe nella
+    # scheda, per aggiungerlo anche solo all'allenamento in corso.
+    defaults: PlanExerciseParamsOut | None = None
 
 
 class PreferenceIn(BaseModel):

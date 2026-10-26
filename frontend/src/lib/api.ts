@@ -365,6 +365,8 @@ export type Alternative = {
   already_preferred: boolean;
   /** Da evitare: tolto da una scheda in passato o segnato come sgradito. Resta fra le scelte, in fondo. */
   avoided?: "replaced" | "disliked" | null;
+  /** Fra i candidati da aggiungere: i parametri con cui entrerebbe nella scheda. */
+  defaults?: PlanExerciseParams | null;
 };
 
 export type NutritionTargets = {

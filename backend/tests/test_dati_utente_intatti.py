@@ -205,7 +205,10 @@ def test_nessun_dato_dell_utente_cancellato_o_modificato(ambiente):
     assert note == {str(ex["0199"].id): "Cavo alla tacca 3"}
     riga = next(r for r in tre.exercises if r.exercise_id == ex["Q"].id)
     assert client.get(f"/workout/plan-exercises/{riga.id}/alternatives?{q}&equipment=macchine", headers=h).status_code == 200
-    assert client.get(f"/workout/plans/{tre.id}/candidates?{q}&muscle=Adductors", headers=h).status_code == 200
+    candidati = client.get(f"/workout/plans/{tre.id}/candidates?{q}&muscle=Adductors", headers=h)
+    assert candidati.status_code == 200
+    # Con i parametri per aggiungerlo solo all'allenamento in corso: leggerli non tocca niente.
+    assert all(c["defaults"]["target_sets"] >= 1 for c in candidati.json())
     assert client.get(f"/profile/{pid}/reminders?today={OGGI}", headers=h).status_code in (200, 404)
 
     # Allenamento senza rete: sessione e serie mandate due volte.
