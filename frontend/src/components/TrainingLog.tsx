@@ -20,6 +20,11 @@
  * grandi: nella scheda valgono per sempre, durante l'allenamento per la
  * sessione, con "Salva anche nella scheda" per tenerli.
  *
+ * Durante l'allenamento ogni modifica (esercizio cambiato o aggiunto, serie
+ * in più, parametri) chiede o permette di scegliere: solo per oggi, oppure
+ * anche nella scheda. Quelle "solo per oggi" restano segnate sull'esercizio
+ * con "Salva nella scheda", per cambiare idea anche dopo.
+ *
  * `exercises` va passato stabile (una copia fatta all'apertura): la sessione
  * si carica una volta sola, e un nuovo array a ogni render della pagina la
  * ricaricherebbe azzerando le serie in corso.
@@ -54,7 +59,7 @@ import {
 } from "@/components/controls";
 import { Empty, Notice, Spinner } from "@/components/ui";
 import { Mascot } from "@/components/Mascot";
-import { AlternativesDialog } from "@/components/ExercisePicker";
+import { AlternativesDialog, type SessionPick } from "@/components/ExercisePicker";
 import { ExerciseDetailHost } from "@/components/ExerciseDetail";
 import { ExerciseNoteLine, recallNotes, rememberNotes } from "@/components/ExerciseNote";
 import {
@@ -136,6 +141,16 @@ function paramsOf(item: PlanExercise): PlanExerciseParams {
 
 function sameParams(a: PlanExerciseParams, b: PlanExerciseParams): boolean {
   return (Object.keys(a) as (keyof PlanExerciseParams)[]).every((k) => a[k] === b[k]);
+}
+
+/** Cosa è cambiato rispetto alla scheda, in parole: "4 serie", "recupero". */
+function diffParams(v: PlanExerciseParams, prima: PlanExerciseParams): string[] {
+  const out: string[] = [];
+  if (v.target_sets !== prima.target_sets) out.push(`${v.target_sets} serie invece di ${prima.target_sets}`);
+  if (v.target_reps_min !== prima.target_reps_min || v.target_reps_max !== prima.target_reps_max) out.push("ripetizioni");
+  if (v.target_rir !== prima.target_rir) out.push("RIR");
+  if (v.rest_seconds !== prima.rest_seconds) out.push("recupero");
+  return out;
 }
 
 // --- Parametri ----------------------------------------------------------------------
@@ -463,7 +478,12 @@ type Phase = "loading" | "ready" | "running" | "done";
 
 const SWAPS_KEY = "kilo:cambi-allenamento";
 const TODAY_KEY = "kilo:allenamento-oggi";
+const EXTRAS_KEY = "kilo:aggiunti-allenamento";
+const OVERRIDES_KEY = "kilo:parametri-allenamento";
 type Swaps = Record<number, PlanExercise["exercise"]>;
+/** Esercizio aggiunto solo per oggi: id negativo, non è una riga della scheda. */
+type Extra = { id: number; exercise: PlanExercise["exercise"]; params: PlanExerciseParams };
+type Overrides = Record<number, PlanExerciseParams>;
 
 function readStore<T>(key: string, chiave: string): T | null {
   try {
@@ -493,6 +513,52 @@ function readSwaps(chiave: string): Swaps {
 
 function writeSwaps(chiave: string, swaps: Swaps) {
   writeStore(SWAPS_KEY, chiave, Object.keys(swaps).length ? swaps : null);
+}
+
+/** Gli esercizi aggiunti "solo per oggi", in fondo alla seduta. */
+function readExtras(chiave: string): Extra[] {
+  return readStore<Extra[]>(EXTRAS_KEY, chiave) ?? [];
+}
+
+function writeExtras(chiave: string, extras: Extra[]) {
+  writeStore(EXTRAS_KEY, chiave, extras.length ? extras : null);
+}
+
+/** Serie, ripetizioni, RIR e recupero cambiati "solo per oggi": riga -> parametri. */
+function readOverrides(chiave: string): Overrides {
+  return readStore<Overrides>(OVERRIDES_KEY, chiave) ?? {};
+}
+
+function writeOverrides(chiave: string, o: Overrides) {
+  writeStore(OVERRIDES_KEY, chiave, Object.keys(o).length ? o : null);
+}
+
+// Un esercizio aggiunto senza i parametri delle fonti (serie già segnate su un
+// altro telefono): valori prudenti, si cambiano come gli altri.
+const PARAMETRI_DI_RISERVA: PlanExerciseParams = {
+  target_sets: 3,
+  target_reps_min: 8,
+  target_reps_max: 12,
+  target_rir: 2,
+  rest_seconds: 90,
+};
+
+function extraItem(e: Extra, dayLabel: string): PlanExercise {
+  return { id: e.id, day_label: dayLabel, order_index: 1000, notes: null, exercise: e.exercise, ...e.params };
+}
+
+const isExtra = (item: PlanExercise) => item.id < 0;
+
+/** La riga appena entrata nella scheda per quell'esercizio (la più recente del giorno). */
+function newPlanRow(plan: WorkoutPlan, dayLabel: string, exerciseId: number): PlanExercise | undefined {
+  return plan.exercises
+    .filter((e) => e.day_label === dayLabel && e.exercise.id === exerciseId)
+    .sort((a, b) => b.id - a.id)[0];
+}
+
+/** La scheda accetta da 1 a 10 serie. */
+function forPlan(v: PlanExerciseParams): PlanExerciseParams {
+  return { ...v, target_sets: Math.min(10, Math.max(1, v.target_sets)) };
 }
 
 /** La sessione di oggi letta l'ultima volta: senza rete non se ne crea una seconda. */
@@ -580,6 +646,9 @@ export function SessionDialog({
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlanExercise | null>(null);
   const [swapping, setSwapping] = useState<PlanExercise | null>(null);
+  const [adding, setAdding] = useState(false);
+  // La riga che si sta salvando nella scheda con "Salva nella scheda".
+  const [promoting, setPromoting] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -601,11 +670,16 @@ export function SessionDialog({
     let annullato = false;
     (async () => {
       const cambi = readSwaps(chiaveGiorno);
-      const lista = exercises.map((e) => (cambi[e.id] ? { ...e, exercise: cambi[e.id] } : e));
+      let aggiunti = readExtras(chiaveGiorno);
+      const lista = [
+        ...exercises.map((e) => (cambi[e.id] ? { ...e, exercise: cambi[e.id] } : e)),
+        ...aggiunti.map((e) => extraItem(e, dayLabel)),
+      ];
       const ids = lista.map((e) => e.exercise.id);
       let corrente: WorkoutSessionLog | null = null;
       let ultime: Record<number, ExerciseSession> = {};
       let note: Record<number, string> = {};
+      let inRete = true;
       try {
         corrente = await api.get<WorkoutSessionLog | null>(
           `/workout/sessions/current?profile_id=${profileId}&day_label=${encodeURIComponent(dayLabel)}&plan_id=${plan.id}&today=${oggi}`
@@ -627,6 +701,7 @@ export function SessionDialog({
           setError(e instanceof Error ? e.message : "Non riesco a caricare l'allenamento.");
           return;
         }
+        inRete = false;
         corrente = recallToday(chiaveGiorno);
         ultime = recallLast<ExerciseSession>(ids);
         note = recallNotes(ids);
@@ -636,7 +711,37 @@ export function SessionDialog({
       // Avviato senza rete e non ancora arrivato: la sessione provvisoria.
       if (!corrente) corrente = pendingSession(plan.id, dayLabel, oggi);
       const segnate = loggedSets(corrente);
+      // Serie di esercizi che il telefono non conosce (aggiunti "solo per
+      // oggi" su un altro telefono): tornano come esercizi aggiunti.
+      const noti = new Set(ids);
+      const orfani = [...new Set(segnate.map((x) => x.exercise_id))].filter((id) => !noti.has(id));
+      if (orfani.length && inRete) {
+        const trovati = await Promise.all(
+          orfani.map((id) => api.get<PlanExercise["exercise"]>(`/workout/exercises/${id}`).catch(() => null))
+        );
+        if (annullato) return;
+        const nuovi = trovati
+          .filter((x): x is PlanExercise["exercise"] => x !== null)
+          .map((exercise, i) => ({
+            id: -(Date.now() + i),
+            exercise,
+            params: {
+              ...PARAMETRI_DI_RISERVA,
+              target_sets: Math.max(1, segnate.filter((x) => x.exercise_id === exercise.id).length),
+            },
+          }));
+        if (nuovi.length) {
+          aggiunti = [...aggiunti, ...nuovi];
+          writeExtras(chiaveGiorno, aggiunti);
+          lista.push(...nuovi.map((e) => extraItem(e, dayLabel)));
+        }
+      }
+      const cambiati = readOverrides(chiaveGiorno);
+      const partenza = Object.fromEntries(lista.map((e) => [e.id, paramsOf(e)]));
+      const obiettivi = Object.fromEntries(lista.map((e) => [e.id, cambiati[e.id] ?? paramsOf(e)]));
       setItems(lista);
+      setBase(partenza);
+      setTargets(obiettivi);
       setSession(corrente);
       setLast(ultime);
       setNotes(note);
@@ -645,7 +750,7 @@ export function SessionDialog({
           lista.map((e) => [
             e.id,
             rowsFor(
-              paramsOf(e),
+              obiettivi[e.id],
               segnate.filter((s) => s.exercise_id === e.exercise.id).sort((a, b) => a.set_number - b.set_number)
             ),
           ])
@@ -846,9 +951,26 @@ export function SessionDialog({
       }
     }
     setRows((prev) => ({ ...prev, [item.id]: prev[item.id].filter((r) => r.key !== row.key) }));
+    // Una serie vuota tolta è una serie in meno oggi; una segnata e poi
+    // cancellata no: era una serie sbagliata, non una in meno da fare.
+    const t = targets[item.id];
+    const restano = (rows[item.id]?.length ?? 1) - 1;
+    if (row.saved === null && restano < t.target_sets) changeTargets(item, { ...t, target_sets: Math.max(1, restano) });
+  }
+
+  /** "+ Aggiungi serie": una serie in più per oggi, da tenere anche nella scheda se si vuole. */
+  function addRow(item: PlanExercise) {
+    const t = targets[item.id];
+    const righe = (rows[item.id]?.length ?? 0) + 1;
+    setRows((prev) => ({ ...prev, [item.id]: [...prev[item.id], emptyRow()] }));
+    if (righe > t.target_sets) changeTargets(item, { ...t, target_sets: righe });
   }
 
   function changeTargets(item: PlanExercise, v: PlanExerciseParams) {
+    const cambiati = readOverrides(chiaveGiorno);
+    if (sameParams(v, base[item.id])) delete cambiati[item.id];
+    else cambiati[item.id] = v;
+    writeOverrides(chiaveGiorno, cambiati);
     setTargets((prev) => ({ ...prev, [item.id]: v }));
     setRows((prev) => {
       let righe = [...prev[item.id]];
@@ -862,15 +984,130 @@ export function SessionDialog({
     setSavingParams(true);
     setParamsError(null);
     try {
-      onPlanUpdated(await api.patch<WorkoutPlan>(`/workout/plan-exercises/${item.id}?profile_id=${profileId}`, v));
-      changeTargets(item, v);
-      setBase((prev) => ({ ...prev, [item.id]: v }));
+      // Un esercizio aggiunto o cambiato solo per oggi entra nella scheda con i nuovi parametri.
+      await salvaNellaScheda(item, v);
       setEditing(null);
     } catch (e) {
       setParamsError(e instanceof Error ? e.message : "Non sono riuscito a salvare nella scheda.");
     } finally {
       setSavingParams(false);
     }
+  }
+
+  /**
+   * Porta nella scheda quello che oggi vale solo per la sessione: l'esercizio
+   * aggiunto, il cambio di esercizio, serie e parametri. Lancia l'errore a chi
+   * chiama.
+   */
+  async function salvaNellaScheda(item: PlanExercise, valori: PlanExerciseParams = targets[item.id]) {
+    const v = forPlan(valori);
+    const q = `profile_id=${profileId}`;
+    let piano: WorkoutPlan | null = null;
+    let riga: PlanExercise | undefined;
+    if (isExtra(item)) {
+      piano = await api.post<WorkoutPlan>(`/workout/plans/${plan.id}/exercises?${q}`, {
+        exercise_id: item.exercise.id,
+        day_label: dayLabel,
+      });
+      riga = newPlanRow(piano, dayLabel, item.exercise.id);
+      if (!riga) throw new Error("l'esercizio non risulta nella scheda");
+    } else if (readSwaps(chiaveGiorno)[item.id]) {
+      const originale = exercises.find((e) => e.id === item.id)?.exercise;
+      piano = await api.post<WorkoutPlan>(`/workout/plan-exercises/${item.id}/swap?${q}`, {
+        replacement_exercise_id: item.exercise.id,
+        allow_muscle_change: item.exercise.primary_muscle !== originale?.primary_muscle,
+      });
+      riga = piano.exercises.find((e) => e.id === item.id);
+    }
+    if (!riga || !sameParams(paramsOf(riga), v)) {
+      const rigaId = riga?.id ?? item.id;
+      piano = await api.patch<WorkoutPlan>(`/workout/plan-exercises/${rigaId}?${q}`, v);
+      riga = piano.exercises.find((e) => e.id === rigaId);
+    }
+    if (piano) onPlanUpdated(piano);
+    const id = riga?.id ?? item.id;
+
+    // Sul telefono non resta niente "solo per oggi" per questo esercizio.
+    const cambi = readSwaps(chiaveGiorno);
+    delete cambi[item.id];
+    writeSwaps(chiaveGiorno, cambi);
+    const cambiati = readOverrides(chiaveGiorno);
+    delete cambiati[item.id];
+    writeOverrides(chiaveGiorno, cambiati);
+    if (isExtra(item)) writeExtras(chiaveGiorno, readExtras(chiaveGiorno).filter((e) => e.id !== item.id));
+
+    // L'esercizio aggiunto prende l'id della sua riga nella scheda.
+    const rinomina = <T,>(rec: Record<number, T>, valore?: T): Record<number, T> => {
+      const { [item.id]: vecchio, ...resto } = rec;
+      return { ...resto, [id]: valore ?? vecchio };
+    };
+    setItems((prev) => prev.map((e) => (e.id === item.id ? { ...e, ...v, id, exercise: riga?.exercise ?? e.exercise } : e)));
+    setTargets((prev) => rinomina(prev, v));
+    setBase((prev) => rinomina(prev, v));
+    setRows((prev) => {
+      const righe = [...(prev[item.id] ?? [])];
+      while (righe.length < v.target_sets) righe.push(emptyRow());
+      return rinomina({ ...prev, [item.id]: righe });
+    });
+  }
+
+  async function promuovi(item: PlanExercise) {
+    setPromoting(item.id);
+    setError(null);
+    try {
+      await salvaNellaScheda(item);
+    } catch (e) {
+      setError(e instanceof Error ? `Non salvato nella scheda: ${e.message}` : "Non sono riuscito a salvare nella scheda.");
+    } finally {
+      setPromoting(null);
+    }
+  }
+
+  /** Toglie un esercizio aggiunto solo per oggi (prima di averne segnato le serie). */
+  function togliAggiunto(item: PlanExercise) {
+    writeExtras(chiaveGiorno, readExtras(chiaveGiorno).filter((e) => e.id !== item.id));
+    const cambiati = readOverrides(chiaveGiorno);
+    delete cambiati[item.id];
+    writeOverrides(chiaveGiorno, cambiati);
+    setItems((prev) => prev.filter((e) => e.id !== item.id));
+  }
+
+  /** L'ultima volta e la nota di un esercizio entrato durante l'allenamento. */
+  function caricaStorico(exerciseId: number) {
+    const params = new URLSearchParams({ profile_id: String(profileId), exercise_ids: String(exerciseId) });
+    const s = sessionRef.current;
+    if (s && s.id > 0) params.set("exclude_session_id", String(s.id));
+    api
+      .get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`)
+      .then((u) => {
+        rememberLast(u);
+        setLast((prev) => ({ ...prev, ...u }));
+      })
+      .catch(() => setLast((prev) => ({ ...prev, ...recallLast<ExerciseSession>([exerciseId]) })));
+    api
+      .get<Record<number, string>>(`/workout/exercise-notes?profile_id=${profileId}&exercise_ids=${exerciseId}`)
+      .then((n) => setNotes((prev) => ({ ...prev, ...n })))
+      .catch(() => setNotes((prev) => ({ ...prev, ...recallNotes([exerciseId]) })));
+  }
+
+  /** "+ Aggiungi esercizio" durante l'allenamento: in fondo, solo per oggi o anche nella scheda. */
+  function aggiungiEsercizio(pick: SessionPick) {
+    let item: PlanExercise | undefined;
+    if (pick.alsoInPlan && pick.plan) {
+      item = newPlanRow(pick.plan, dayLabel, pick.exercise.id);
+    } else {
+      const extra: Extra = { id: -Date.now(), exercise: pick.exercise, params: pick.defaults ?? PARAMETRI_DI_RISERVA };
+      writeExtras(chiaveGiorno, [...readExtras(chiaveGiorno), extra]);
+      item = extraItem(extra, dayLabel);
+    }
+    if (!item) return;
+    const nuovo = item;
+    const v = paramsOf(nuovo);
+    setTargets((prev) => ({ ...prev, [nuovo.id]: v }));
+    setBase((prev) => ({ ...prev, [nuovo.id]: v }));
+    setRows((prev) => ({ ...prev, [nuovo.id]: rowsFor(v, []) }));
+    setItems((prev) => [...prev, nuovo]);
+    caricaStorico(nuovo.exercise.id);
   }
 
   const tutte = Object.values(rows).flat();
@@ -883,29 +1120,15 @@ export function SessionDialog({
   const cambiOggi = readSwaps(chiaveGiorno);
 
   /** Cambio dell'esercizio durante l'allenamento (prima di averne segnato le serie). */
-  function cambiaEsercizio(item: PlanExercise, nuovo: PlanExercise["exercise"], ancheScheda: boolean) {
+  function cambiaEsercizio(item: PlanExercise, pick: SessionPick) {
     const cambi = readSwaps(chiaveGiorno);
     const originale = exercises.find((e) => e.id === item.id)?.exercise;
-    if (ancheScheda || nuovo.id === originale?.id) delete cambi[item.id];
-    else cambi[item.id] = nuovo;
+    if (pick.alsoInPlan || pick.exercise.id === originale?.id) delete cambi[item.id];
+    else cambi[item.id] = pick.exercise;
     writeSwaps(chiaveGiorno, cambi);
-    setItems((prev) => prev.map((e) => (e.id === item.id ? { ...e, exercise: nuovo } : e)));
+    setItems((prev) => prev.map((e) => (e.id === item.id ? { ...e, exercise: pick.exercise } : e)));
     setRows((prev) => ({ ...prev, [item.id]: rowsFor(targets[item.id], []) }));
-    // L'ultima volta e la nota del nuovo esercizio.
-    const params = new URLSearchParams({ profile_id: String(profileId), exercise_ids: String(nuovo.id) });
-    const s = sessionRef.current;
-    if (s && s.id > 0) params.set("exclude_session_id", String(s.id));
-    api
-      .get<Record<number, ExerciseSession>>(`/workout/last-performance?${params}`)
-      .then((u) => {
-        rememberLast(u);
-        setLast((prev) => ({ ...prev, ...u }));
-      })
-      .catch(() => setLast((prev) => ({ ...prev, ...recallLast<ExerciseSession>([nuovo.id]) })));
-    api
-      .get<Record<number, string>>(`/workout/exercise-notes?profile_id=${profileId}&exercise_ids=${nuovo.id}`)
-      .then((n) => setNotes((prev) => ({ ...prev, ...n })))
-      .catch(() => setNotes((prev) => ({ ...prev, ...recallNotes([nuovo.id]) })));
+    caricaStorico(pick.exercise.id);
   }
 
   return (
@@ -918,7 +1141,7 @@ export function SessionDialog({
           title={dayLabel.length <= 2 ? `Giorno ${dayLabel}` : dayLabel}
           subtitle={
             phase === "ready"
-              ? `${exercises.length} esercizi · ${tutte.length} serie · circa ${stimaMinuti} minuti${session?.ended_at ? " · già completato oggi" : ""}`
+              ? `${items.length} esercizi · ${tutte.length} serie · circa ${stimaMinuti} minuti${session?.ended_at ? " · già completato oggi" : ""}`
               : undefined
           }
           onClose={onClose}
@@ -989,6 +1212,12 @@ export function SessionDialog({
                 const righe = rows[item.id] ?? [];
                 const suggerimenti = hintsFor(righe, t, volta);
                 const iniziato = righe.some((r) => r.saved);
+                const aggiunto = isExtra(item);
+                const soloOggi = [
+                  aggiunto && "esercizio aggiunto",
+                  !!cambiOggi[item.id] && "esercizio cambiato",
+                  ...(cambiati ? diffParams(t, base[item.id]) : []),
+                ].filter(Boolean) as string[];
                 return (
                   <motion.section
                     key={item.id}
@@ -1005,12 +1234,19 @@ export function SessionDialog({
                         <div className="flex items-start gap-2">
                           <h3 className="min-w-0 flex-1 text-[16px] font-semibold leading-snug text-white">
                             {exerciseName(item.exercise)}
-                            {cambiOggi[item.id] && (
-                              <span className="ml-1.5 align-middle text-[11px] font-medium text-iris-200/80">· solo oggi</span>
-                            )}
                           </h3>
+                          {/* Aggiunto solo per oggi e non ancora cominciato: si toglie. */}
+                          {aggiunto && !iniziato && (
+                            <button
+                              onClick={() => togliAggiunto(item)}
+                              aria-label={`Togli ${exerciseName(item.exercise)}`}
+                              className="inline-flex h-8 shrink-0 items-center rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[12px] font-medium text-white/60 transition hover:border-rose-400/40 hover:text-rose-200"
+                            >
+                              Togli
+                            </button>
+                          )}
                           {/* Macchina occupata: si cambia prima di cominciare l'esercizio. */}
-                          {!iniziato && (
+                          {!iniziato && !aggiunto && (
                             <button
                               onClick={() => setSwapping(item)}
                               aria-label={`Cambia ${exerciseName(item.exercise)}`}
@@ -1061,6 +1297,21 @@ export function SessionDialog({
                     <div className="mt-3">
                       <ParamsChips value={t} changed={cambiati} onEdit={() => setEditing(item)} />
                     </div>
+
+                    {soloOggi.length > 0 && (
+                      <div className="mt-2 flex items-center gap-2 rounded-xl border border-iris-400/25 bg-iris-400/[0.07] py-1.5 pl-3 pr-1.5">
+                        <p className="min-w-0 flex-1 text-[12px] leading-snug text-iris-100/85">
+                          <span className="font-semibold">Solo per oggi:</span> {soloOggi.join(", ")}
+                        </p>
+                        <button
+                          onClick={() => promuovi(item)}
+                          disabled={promoting !== null}
+                          className="shrink-0 rounded-lg bg-iris-400/20 px-2.5 py-1.5 text-[12px] font-semibold text-iris-100 transition hover:bg-iris-400/30 disabled:opacity-50"
+                        >
+                          {promoting === item.id ? "Salvo…" : "Salva nella scheda"}
+                        </button>
+                      </div>
+                    )}
 
                     {item.id === primoMulti && !iniziato && (
                       <WarmupLine workKg={righe[0]?.kg ?? suggerimenti[0]?.kg ?? null} />
@@ -1201,7 +1452,7 @@ export function SessionDialog({
                         })}
                       </div>
                       <button
-                        onClick={() => setRows((prev) => ({ ...prev, [item.id]: [...prev[item.id], emptyRow()] }))}
+                        onClick={() => addRow(item)}
                         className="mt-2 w-full rounded-2xl py-2.5 text-[13px] font-medium text-white/45 transition hover:bg-white/[0.04] hover:text-white/80"
                       >
                         + Aggiungi serie
@@ -1210,6 +1461,12 @@ export function SessionDialog({
                   </motion.section>
                 );
               })}
+              <button
+                onClick={() => setAdding(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/15 py-3.5 text-[13.5px] font-semibold text-white/60 transition hover:border-lime-400/40 hover:text-lime-200"
+              >
+                + Aggiungi esercizio
+              </button>
             </div>
           )}
         </div>
@@ -1283,8 +1540,19 @@ export function SessionDialog({
             key={`cambia-${swapping.id}`}
             item={swapping}
             profileId={profileId}
-            inSession={{ onPick: (nuovo, ancheScheda) => cambiaEsercizio(swapping, nuovo, ancheScheda) }}
+            inSession={{ onPick: (pick) => cambiaEsercizio(swapping, pick) }}
             onClose={() => setSwapping(null)}
+            onSwapped={onPlanUpdated}
+            onOpenDetail={setDetailId}
+          />
+        )}
+        {adding && (
+          <AlternativesDialog
+            key="aggiungi"
+            addTo={{ planId: plan.id, day: dayLabel }}
+            profileId={profileId}
+            inSession={{ onPick: aggiungiEsercizio }}
+            onClose={() => setAdding(false)}
             onSwapped={onPlanUpdated}
             onOpenDetail={setDetailId}
           />
@@ -1413,7 +1681,7 @@ function RestCapsule({ rest, remaining }: { rest: Rest; remaining: number }) {
     >
       <motion.div
         layout
-        className={`flex items-center gap-3 rounded-full border py-2 pl-2 pr-2 transition-colors duration-300 ${
+        className={`flex items-center gap-2 rounded-full border py-2 pl-2 pr-2 transition-colors duration-300 ${
           rest.done
             ? "border-lime-300 bg-lime-400 text-ink-900 shadow-[0_0_34px_-6px_rgba(174,212,74,0.9)]"
             : "border-lime-400/60 bg-[#101214] shadow-[0_0_24px_-8px_rgba(174,212,74,0.7),0_12px_40px_-12px_rgba(0,0,0,0.9)]"
@@ -1450,16 +1718,25 @@ function RestCapsule({ rest, remaining }: { rest: Rest; remaining: number }) {
           </button>
         ) : (
           <>
+            {/* −15 si ferma a 5 secondi dalla fine: per chiudere subito c'è "Salta". */}
+            <button
+              onClick={() => restTimer.shift(-15)}
+              disabled={remaining <= 5}
+              aria-label="Togli 15 secondi"
+              className="grid h-10 w-11 shrink-0 place-items-center rounded-full bg-white/[0.08] font-mono text-[12.5px] text-white/80 transition hover:bg-white/[0.14] disabled:opacity-35"
+            >
+              −15
+            </button>
             <button
               onClick={() => restTimer.shift(15)}
               aria-label="Aggiungi 15 secondi"
-              className="grid h-10 w-12 shrink-0 place-items-center rounded-full bg-white/[0.08] font-mono text-[12.5px] text-white/80 transition hover:bg-white/[0.14]"
+              className="grid h-10 w-11 shrink-0 place-items-center rounded-full bg-white/[0.08] font-mono text-[12.5px] text-white/80 transition hover:bg-white/[0.14]"
             >
               +15
             </button>
             <button
               onClick={() => restTimer.clear()}
-              className="grid h-10 shrink-0 place-items-center rounded-full bg-lime-400 px-4 text-[13px] font-semibold text-ink-900 transition hover:bg-lime-300"
+              className="grid h-10 shrink-0 place-items-center rounded-full bg-lime-400 px-3.5 text-[13px] font-semibold text-ink-900 transition hover:bg-lime-300"
             >
               Salta
             </button>

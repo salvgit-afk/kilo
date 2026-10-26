@@ -1,6 +1,6 @@
 ================================================================================
 KILO — EXPORT DELLA CONVERSAZIONE DI SVILUPPO (per Claude Code sul PC di casa)
-Aggiornato al 12 ottobre 2026 · ultimo merge incluso: PR #5 (34bae22) + pacchetto infrastruttura
+Aggiornato al 26 ottobre 2026 · ultimo merge incluso: PR #6 (2d05e7f) + modifiche all'allenamento in corso
 ================================================================================
 
 COME USARE QUESTO FILE
@@ -399,7 +399,7 @@ Notifiche e pagine:
 - Integratori ricordati una volta al giorno, proteine "entro un paio d'ore",
   "proteine basse" solo a cena segnata; note duplicate tolte (Oggi mostra un
   rimando, Progressi non ripete i riquadri).
-Infrastruttura (ultimo pacchetto):
+Infrastruttura:
 - Controlli su ogni PR (.github/workflows/controlli.yml: alembic su Postgres
   + check, pytest, tsc, eslint, build).
 - Migrazioni nella build di Render, non a ogni avvio.
@@ -412,6 +412,17 @@ Infrastruttura (ultimo pacchetto):
   limite giornaliero sui suggerimenti di ricette, registrazione su invito
   facoltativa (ALLOWED_EMAILS).
 - Indice trigram sugli alimenti (migrazione a3f7c2e9d1b4, solo Postgres).
+Allenamento in corso (ultimo pacchetto):
+- Recupero: −15 accanto a +15 e Salta (non scende sotto 5 secondi).
+- "+ Aggiungi esercizio" anche durante l'allenamento (i candidati portano i
+  parametri delle fonti in `defaults`, plan_editing.default_params).
+- Ogni modifica in sessione chiede "Solo per oggi" o "Anche nella scheda";
+  quelle solo per oggi (esercizio aggiunto o cambiato, serie in più,
+  parametri) restano sul telefono e sull'esercizio compare "Salva nella
+  scheda" per tenerle dopo. Chiavi: kilo:aggiunti-allenamento,
+  kilo:parametri-allenamento (oltre a kilo:cambi-allenamento).
+- La mascotte della chat torna nascosta sotto le finestre (!important in
+  globals.css: lo spostamento animato la rimetteva sopra "Salta").
 
 
 ================================================================================

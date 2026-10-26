@@ -385,11 +385,13 @@ input[type="range"] {
 
 /* Con una finestra aperta (allenamento, ricerca alimenti, storico) il
    pulsante della chat coprirebbe i controlli in basso a destra. Il pannello
-   della chat, se aperto da dentro una finestra, resta sopra. */
+   della chat, se aperto da dentro una finestra, resta sopra.
+   `!important`: lo spostamento laterale animato scrive opacità e posizione
+   direttamente sull'elemento, e senza vincerebbe sempre lui. */
 body:has([role="dialog"][aria-modal="true"]) .chat-fab {
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0.8);
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden;
 }
 .chat-fab {
   transition: opacity 0.2s ease, transform 0.2s ease;
