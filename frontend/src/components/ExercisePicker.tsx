@@ -104,8 +104,16 @@ export function AlternativesDialog({
   // il muscolo allenato da questo esercizio.
   const [muscle, setMuscle] = useState(originale || GRUPPI_SOSTITUZIONE[0]);
   const cambiaMuscolo = !!item && muscle !== originale;
+  // Valori semplici, non gli oggetti: durante l'allenamento il pannello si
+  // ridisegna ogni secondo (il cronometro) e passa un `addTo` nuovo ogni
+  // volta. Con l'oggetto fra le dipendenze l'elenco ripartiva dallo spinner
+  // a ogni secondo e non si riusciva a scegliere niente.
+  const itemId = item?.id;
+  const planId = addTo?.planId;
+  const day = addTo?.day;
 
   useEffect(() => {
+    let annullato = false;
     // "Mostra altri" tiene a vista quelli già caricati; una nuova ricerca o
     // un altro gruppo ripartono dallo spinner.
     if (quanti === PAGINA_ALTERNATIVE) setAlts(null);
@@ -118,21 +126,25 @@ export function AlternativesDialog({
       () => {
         api
           .get<Alternative[]>(
-            addTo
+            planId !== undefined && day !== undefined
               ? // Esclusi solo quelli già in questo giorno: lo stesso esercizio può stare nel Pull A e nel Pull B.
-                `/workout/plans/${addTo.planId}/candidates?profile_id=${profileId}&limit=${quanti}&muscle=${encodeURIComponent(muscle)}&day=${encodeURIComponent(addTo.day)}${q}${a}`
-              : `/workout/plan-exercises/${item!.id}/alternatives?profile_id=${profileId}&limit=${quanti}${q}${m}${a}`
+                `/workout/plans/${planId}/candidates?profile_id=${profileId}&limit=${quanti}&muscle=${encodeURIComponent(muscle)}&day=${encodeURIComponent(day)}${q}${a}`
+              : `/workout/plan-exercises/${itemId}/alternatives?profile_id=${profileId}&limit=${quanti}${q}${m}${a}`
           )
-          .then(setAlts)
+          .then((r) => !annullato && setAlts(r))
           .catch((e) => {
+            if (annullato) return;
             setAlts([]);
             setError(e instanceof Error ? e.message : "Alternative non disponibili");
           });
       },
       query ? 300 : 0
     );
-    return () => clearTimeout(timer);
-  }, [item, addTo, profileId, query, muscle, cambiaMuscolo, quanti, attrezzo]);
+    return () => {
+      annullato = true;
+      clearTimeout(timer);
+    };
+  }, [itemId, planId, day, profileId, query, muscle, cambiaMuscolo, quanti, attrezzo]);
 
   async function swap(alt: Alternative, ancheScheda = true) {
     const exerciseId = alt.exercise.id;
